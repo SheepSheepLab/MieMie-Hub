@@ -9,9 +9,9 @@ const artifact = JSON.parse(await read('build/咩咩Hub-' + pkg.version + '.json
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
 // Execute the complete built Hub in a disposable helper-like iframe. There is
-// no character selected, no Polisher artifact, and no permitted network access.
-async function fixture(t) {
-  const errors = [], requests = [], listeners = [], subscriptions = new Set();
+// no character selected, no Polisher artifact, and no real network access.
+async function fixture(t, releaseFetch = async () => ({ok: true, json: async () => [{tag_name: 'v' + pkg.version, draft: false, prerelease: true}]})) {
+  const errors = [], requests = [], releaseRequests = [], listeners = [], subscriptions = new Set();
   const virtualConsole = new VirtualConsole();
   virtualConsole.on('jsdomError', error => errors.push(error.message));
   virtualConsole.on('error', (...args) => errors.push(args.map(String).join(' ')));
@@ -58,6 +58,10 @@ async function fixture(t) {
     frame = doc.createElement('iframe'); doc.body.appendChild(frame);
     const scope = frame.contentWindow;
     blockNetwork(scope);
+    scope.fetch = (url, init) => {
+      assert.equal(url, 'https://api.github.com/repos/SheepSheepLab/MieMie-Hub/releases?per_page=100&page=1');
+      releaseRequests.push({url, init}); return releaseFetch(url, init);
+    };
     scope.getCharWorldbookNames = () => ({primary: '', additional: []});
     scope.getVariables = () => ({});
     scope.eventOn = (type, fn) => {
@@ -82,7 +86,7 @@ async function fixture(t) {
   async function launch(id) {
     await host.__MieMieHub.open(); await click('[data-hub-app="' + id + '"]');
   }
-  return {host, doc, query, click, launch, listeners, subscriptions, requests, unmount, mount};
+  return {host, doc, query, click, launch, listeners, subscriptions, requests, releaseRequests, unmount, mount};
 }
 
 test('Core system launchers coexist with existing entries without registering Extensions', async t => {
@@ -112,22 +116,58 @@ test('settings uses the actual package and built Core version, with an honest in
   assert.equal(artifact.name, '咩咩Hub ' + pkg.version);
   assert.equal(f.query('[data-hub-update-status]').dataset.hubUpdateStatus, 'unchecked');
   assert.equal(f.query('[data-hub-update-status]').textContent, '尚未检查');
+  assert.equal(f.query('[data-hub-latest-version]').parentElement.hidden, true);
+  assert.equal(f.releaseRequests.length, 0);
 });
 
-test('checking updates only changes local UI state and never requests the network', async t => {
-  const f = await fixture(t);
-  await f.launch('settings');
-  for (let i = 0; i < 3; i++) await f.click('[data-hub-action="check-updates"]');
-  const status = f.query('[data-hub-update-status]');
-  assert.equal(status.dataset.hubUpdateStatus, 'unavailable');
-  assert.equal(status.textContent, '在线更新服务尚未接入');
-  assert.equal(status.getAttribute('role'), 'status');
-  await f.click('[data-hub-panel="settings"] .mm-return');
-  await f.launch('settings');
-  assert.equal(f.query('[data-hub-update-status]'), status);
-  assert.equal(status.textContent, '在线更新服务尚未接入');
-  assert.doesNotMatch(f.query('[data-hub-panel="settings"]').textContent, /已是最新|发现新版本|最新版本/);
-  assert.deepEqual(f.requests, []);
+for (const [version, state, label] of [[pkg.version, 'current', '✓ 已是最新版'], ['0.2.1', 'available', '● 发现新版本'], ['0.2.0-alpha.3', 'ahead', '当前版本高于已发布版本']]) {
+  test('settings shows remote version and ' + state + ' without an update action', async t => {
+    const f = await fixture(t, async () => ({ok: true, json: async () => [{tag_name: 'v' + version, draft: false, prerelease: true}]}));
+    await f.launch('settings'); await f.click('[data-hub-action="check-updates"]');
+    const status = f.query('[data-hub-update-status]');
+    assert.equal(status.dataset.hubUpdateStatus, state); assert.equal(status.textContent, label);
+    assert.equal(status.getAttribute('role'), 'status');
+    assert.equal(f.query('[data-hub-latest-version]').textContent, version);
+    assert.equal(f.query('[data-hub-latest-version]').parentElement.hidden, false);
+    assert.equal(f.query('[data-hub-action="update"]'), null);
+    assert.equal(f.query('[data-hub-action="check-updates"]').disabled, false);
+    await f.click('[data-hub-panel="settings"] .mm-return'); await f.launch('settings');
+    assert.equal(f.query('[data-hub-update-status]'), status); assert.equal(status.textContent, label);
+    assert.equal(f.releaseRequests.length, 1); assert.deepEqual(f.requests, []);
+  });
+}
+
+test('checking disables duplicate clicks and failure clears stale success and permits retry', async t => {
+  let finish, attempt = 0;
+  const success = {ok: true, json: async () => [{tag_name: 'v' + pkg.version, draft: false}]};
+  const f = await fixture(t, () => ++attempt === 2 ? new Promise(resolve => {finish = resolve;}) : success);
+  await f.launch('settings'); await f.click('[data-hub-action="check-updates"]');
+  const button = f.query('[data-hub-action="check-updates"]'), status = f.query('[data-hub-update-status]');
+  button.click(); button.click(); button.onclick(); await settle();
+  assert.equal(button.disabled, true); assert.equal(status.textContent, '正在检查…');
+  assert.equal(f.releaseRequests.length, 2); assert.equal(f.query('[data-hub-latest-version]').parentElement.hidden, true);
+  finish({ok: false, status: 403, json() {throw Error('unused');}}); await settle();
+  assert.equal(status.textContent, '检查更新失败'); assert.equal(button.disabled, false);
+  assert.match(f.query('[data-hub-update-error]').textContent, /HTTP 403/);
+  assert.equal(f.query('[data-hub-latest-version]').parentElement.hidden, true);
+  await f.click('[data-hub-action="check-updates"]');
+  assert.equal(status.textContent, '✓ 已是最新版'); assert.equal(f.releaseRequests.length, 3);
+  assert.equal(f.query('[data-hub-update-error]').hidden, true);
+});
+
+test('Hub pagehide aborts a pending check and late results cannot touch the disposed panel or a new Hub', async t => {
+  let finish;
+  const f = await fixture(t, () => new Promise(resolve => {finish = resolve;}));
+  await f.launch('settings'); await f.click('[data-hub-action="check-updates"]');
+  const status = f.query('[data-hub-update-status]'), button = f.query('[data-hub-action="check-updates"]'), handler = button.onclick;
+  f.unmount(); assert.equal(f.releaseRequests[0].init.signal.aborted, true);
+  assert.equal(button.onclick, null); handler();
+  finish({ok: true, json: async () => [{tag_name: '9.0.0', draft: false}]}); await settle();
+  assert.equal(status.textContent, '正在检查…'); assert.equal(f.releaseRequests.length, 1);
+  assert.equal(f.query('[data-hub-panel="settings"]'), null);
+  await f.mount(); await f.launch('settings');
+  assert.equal(f.query('[data-hub-update-status]').textContent, '尚未检查');
+  assert.equal(f.query('[data-hub-action="check-updates"]').disabled, false);
 });
 
 test('timeline and optional Extension launchers still work alongside Core panels', async t => {

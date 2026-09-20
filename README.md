@@ -1,8 +1,8 @@
 # MieMie Hub · 咩咩Hub
 
-轻量 Hub Core，当前版本 **0.2.0-alpha.3**。本项目独立维护主悬浮球、Hub UI、内置时间线、Extension Runtime 和 Hello Mie；润色业务由独立的 MieMie Polisher 提供。
+轻量 Hub Core，当前版本 **0.2.0-alpha.4**（Pre-release）。项目独立维护主悬浮球、Hub UI、内置时间线、Extension Runtime 和 Hello Mie；润色业务由独立的 MieMie Polisher 提供。
 
-本版在已完成物理拆分的项目中新增「扩展中心」与「设置」两个 Core 系统入口，继续使用主悬浮球与子悬浮球。项目不需要 Polisher 目录、旧工具箱 JSON 或混合开发项目即可构建和运行基础测试。
+本版将「设置 → 检查更新」接入公开的 GitHub Release 版本查询，并采用 SheepSheep 提供的 Hub 主图标与时间线图标修正版，保留现有主悬浮球、Core 入口及 Panel。项目不需要 Polisher 目录、旧工具箱 JSON 或混合开发项目即可构建和运行基础测试。
 
 ## 开发
 
@@ -16,13 +16,14 @@ npm test
 
 `npm test` 会先构建本项目。构建仅使用 Node 内置模块；锁定的开发依赖 `jsdom` 用于 Core 面板 DOM 测试及单独执行的组合测试，不进入运行产物。`package-lock.json` 应提交，`node_modules/`、`build/`、`test-results/` 不提交。
 
-生成 `build/咩咩Hub-0.2.0-alpha.3.json`（导入酒馆助手）及 `build/miemie-hub.js`（检查用）。Hub 版本由本项目 `package.json` 管理，与 Polisher 版本独立。构建注入 `HUB_VERSION`，同时用于运行中的 Hub 版本与设置页显示，无额外版本常量。
+生成 `build/咩咩Hub-0.2.0-alpha.4.json`（导入酒馆助手）及 `build/miemie-hub.js`（检查用）。Hub 版本由本项目 `package.json` 管理，与 Polisher 版本独立。构建注入 `HUB_VERSION`，同时用于运行中的 Hub 版本与设置页显示，无额外版本常量。本地产物暂保留中文文件名；GitHub Release 附件使用 ASCII 名称 `MieMie-Hub-<版本>.json`，仅调整文件名，不改变内容。
 
 ## 目录职责
 
 ```text
 assets/                       Hub 与时间线样式、图片、HTML
 src/                          Core、Runtime、Shell、UI、内置时间线
+src/hub-update-check.js        Hub 公开版本查询、SemVer 比较、超时及取消
 extensions/hello-mie/          内置生命周期测试扩展及 Manifest
 packaging/script-template.json 酒馆助手导出元数据
 tools/build.mjs               只构建 Hub
@@ -41,8 +42,14 @@ docs/                         Extension API、测试说明
 「扩展中心」与「设置」由 Core 直接打开自己的 Panel，不注册到 Extension Runtime，不使用 Manifest。原时间线与扩展管理入口保留，Extension Launcher 仍由扩展声明的可选能力决定。
 
 - 扩展中心目前显示准备中说明，没有发现、安装或更新服务。
-- 设置显示当前 Hub 版本；更新状态初始为「尚未检查」，点击「检查更新」仅在本地改为「在线更新服务尚未接入」，不发起网络请求。同一脚本实例内保留该提示，重新载入后回到「尚未检查」。
-- 更新状态与显示逻辑分开，后续可接入版本检查。当前没有实现下载、校验、助手脚本替换、Loader 或回滚。
+- 设置显示当前 Hub 版本；只在点击「检查更新」时查询 `SheepSheepLab/MieMie-Hub` 的公开 Release。无需 GitHub 登录或 Token，也不查询 Polisher 或其他 Extension。
+- 支持尚未检查、检查中、已是最新版、发现新版本、当前版本高于已发布版本、检查失败。同一脚本实例内保留结果，重新载入后恢复尚未检查。发现新版本只显示版本信息，不提供更新按钮。
+
+请求固定为 `GET https://api.github.com/repos/SheepSheepLab/MieMie-Hub/releases?per_page=100&page=1`，必要时递增页码。使用包含 Pre-release 的 [Release 列表 API](https://docs.github.com/en/rest/releases/releases#list-releases)，不使用 `/releases/latest`。最多读取 10 页；如果第 10 页仍满 100 项，按未能完成检查处理，不用不完整的列表宣称已是最新版。
+
+忽略 Draft、无效 Tag 和无效记录，在所有读取完成的页中选择最高有效 [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)。允许单个小写 `v` 前缀，逐段比较主／次／补丁与预发布标识，忽略构建元数据的优先级。数字标识使用十进制长度及位序比较，避免大整数精度损失；拒绝不合法的前导零。预发布通道暂不另行区分。
+
+每次检查总超时为 15 秒，包含分页与读取 JSON。检查中禁用按钮并合并重复调用；失败后可重试。Hub teardown 会 abort 并结束等待，迟到响应不能更新已销毁面板。请求使用脚本 iframe 的 fetch，明确省略凭据和 Referrer，拒绝重定向；不使用酒馆请求头，不读取或发送聊天、设置、密钥，也不经过 Polisher 的宿主 fetch Hook。只读取 Release 元数据，不请求附件或源码包。
 
 本版本没有 Catalog、在线下载、安装包管理、在线更新、Pinned 或蜂窝 UI。
 

@@ -55,6 +55,7 @@ host.__loadArtifact = kind => {
     window.addEventListener('error', e => parent.__fixture.pageErrors.push(e.message));
     window.addEventListener('unhandledrejection', e => parent.__fixture.pageErrors.push(String(e.reason)));
     for (const name of ['getVariables','replaceVariables','getCharWorldbookNames','eventOn','setChatMessages','formatAsTavernRegexedString']) window[name] = (...args) => parent.__fixture[name](...args);
+    window.fetch = (...args) => parent.__fixture.hubReleaseFetch(...args);
     const interval = window.setInterval.bind(window), clear = window.clearInterval.bind(window);
     window.setInterval = (...args) => {const id = interval(...args); parent.__fixture.activeTimers.add(id); return id;};
     window.clearInterval = id => {parent.__fixture.activeTimers.delete(id); return clear(id);};

@@ -27,6 +27,7 @@ const seedVariables = {
   },
 };
 let variables, worldbook, frame, polisherFrame, pendingRequest, requestMode = "normal", responseText = "处理后的正文。", probeRequests = [], delayedWrite = null, saveCount = 0, externalRequests = 0, fetchCalls = 0, interceptedMain = null;
+const hubReleaseRequests = [];
 const eventNames = ['GENERATION_STARTED', 'GENERATION_ENDED', 'MESSAGE_RECEIVED', 'GENERATION_STOPPED', 'CHAT_CHANGED', 'GENERATION_AFTER_COMMANDS', 'CHAT_COMPLETION_SETTINGS_READY', 'MESSAGE_SWIPED', 'MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_UPDATED'];
 const ctx = {
   characterId: 0, characters: [{name: '测试角色', avatar: 'fixture-hero.png'}], chatId: 'fixture-chat', groupId: null, mainApi: 'openai', streamingProcessor: null,
@@ -70,6 +71,13 @@ async function fixtureFetch(input, init) {
 window.fetch = fixtureFetch;
 window.__fixture = {
   pageErrors,
+  async hubReleaseFetch(url, init) {
+    assert(url === 'https://api.github.com/repos/SheepSheepLab/MieMie-Hub/releases?per_page=100&page=1', 'Hub 请求了错误的地址');
+    assert(init.method === 'GET' && init.credentials === 'omit' && init.referrerPolicy === 'no-referrer' && !init.body, 'Hub 请求包含多余数据');
+    assert(JSON.stringify(init.headers) === JSON.stringify({Accept: 'application/vnd.github+json'}), 'Hub 请求包含多余 Header');
+    hubReleaseRequests.push({url, init});
+    return new Response(JSON.stringify([{tag_name: 'v' + __MieMieHub.version, draft: false, prerelease: true}]));
+  },
   getVariables: spec => clone(variables[spec.extension_id] || {}),
   replaceVariables: (value, spec) => {variables[spec.extension_id] = clone(value);},
   getCharWorldbookNames: () => ({primary: '测试世界书', additional: []}),
@@ -155,12 +163,14 @@ async function runTests() {
       assert(document.querySelector('[data-hub-version]').textContent === __MieMieHub.version, '设置版本与运行版本不一致');
       assert(JSON.stringify(__MieMieHub.extensions.list().map(item => item.manifest.id)) === ids, 'Core 入口改变了 Extension 注册列表');
     });
-    await check('检查更新仅显示未接入状态，不联网也不改变扩展状态', async () => {
+    await check('Hub 只查询自己的公开 Release 元数据，不经过润色 Hook，也不改变扩展状态', async () => {
       const before = fetchCalls, extensions = JSON.stringify(__MieMieHub.extensions.list());
+      assert(hubReleaseRequests.length === 0, '未点击时出现版本检查');
       assert(document.querySelector('[data-hub-update-status]').textContent === '尚未检查', '初始更新状态错误');
       click('[data-hub-action="check-updates"]');
-      await until(() => document.querySelector('[data-hub-update-status]').textContent === '在线更新服务尚未接入', '未接入提示');
-      assert(fetchCalls === before, '检查更新触发了请求');
+      await until(() => document.querySelector('[data-hub-update-status]').textContent === '✓ 已是最新版', '模拟 Release 查询');
+      assert(hubReleaseRequests.length === 1 && fetchCalls === before, '查询没有隔离宿主请求与润色 Hook');
+      assert(document.querySelector('[data-hub-latest-version]').textContent === __MieMieHub.version, '远程版本显示错误');
       assert(JSON.stringify(__MieMieHub.extensions.list()) === extensions, '检查更新改变了扩展状态');
       click('[data-hub-panel="settings"] .mm-return');
       await until(() => document.querySelector('#meeme-combined-menu').dataset.open === 'true', '设置返回菜单');

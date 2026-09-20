@@ -55,22 +55,31 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     term.textContent = label; row.append(term, value); versionDetails.appendChild(row); return value;
   }
   const currentVersion = settingRow('当前版本'); currentVersion.dataset.hubVersion = ''; currentVersion.textContent = hubVersion;
+  const latestVersion = settingRow('最新版本'); latestVersion.dataset.hubLatestVersion = '';
   const updateStatus = settingRow('更新状态'); updateStatus.setAttribute('role', 'status'); updateStatus.setAttribute('aria-live', 'polite');
-  // Keep update state separate from presentation; this phase has no network service.
-  const updateState = {status: 'unchecked'};
-  const updateLabels = {unchecked: '尚未检查', unavailable: '在线更新服务尚未接入'};
-  function renderUpdateState() {
+  const updateError = doc.createElement('p'); updateError.className = 'mm-hub-note'; updateError.dataset.hubUpdateError = '';
+  const updateLabels = {unchecked: '尚未检查', checking: '正在检查…', current: '✓ 已是最新版',
+    available: '● 发现新版本', ahead: '当前版本高于已发布版本', failed: '检查更新失败'};
+  function renderUpdateState(updateState) {
+    if (disposed) return;
     updateStatus.dataset.hubUpdateStatus = updateState.status;
     updateStatus.textContent = updateLabels[updateState.status];
+    latestVersion.textContent = updateState.latestVersion || '';
+    latestVersion.parentElement.hidden = !updateState.latestVersion;
+    updateError.textContent = updateState.error; updateError.hidden = !updateState.error;
+    checkUpdateButton.disabled = updateState.status === 'checking';
+    versionCard.setAttribute('aria-busy', String(checkUpdateButton.disabled));
   }
   function checkHubUpdate() {
     if (disposed) return;
-    updateState.status = 'unavailable'; renderUpdateState();
+    void updateChecker.check();
   }
   const checkUpdateButton = doc.createElement('button'); checkUpdateButton.type = 'button'; checkUpdateButton.className = 'mm-system-action';
   checkUpdateButton.dataset.hubAction = 'check-updates'; checkUpdateButton.textContent = '检查更新'; checkUpdateButton.onclick = checkHubUpdate;
-  versionCard.append(versionTitle, versionDetails, checkUpdateButton); settings.body.appendChild(versionCard);
-  renderUpdateState();
+  // Use the helper iframe's fetch, keeping this request separate from host / Extension hooks.
+  const updateChecker = createHubUpdateChecker({currentVersion: hubVersion, onChange: renderUpdateState});
+  versionCard.append(versionTitle, versionDetails, updateError, checkUpdateButton); settings.body.appendChild(versionCard);
+  renderUpdateState(updateChecker.getState());
 
   function place() {
     if (disposed) return;
@@ -252,6 +261,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     dispose() {
       if (disposed) return;
       disposed = true; ++serial; cancelAnimations(); doc.removeEventListener('keydown', key, true);
+      updateChecker.dispose();
       host.visualViewport?.removeEventListener('resize', place); host.visualViewport?.removeEventListener('scroll', place);
       checkUpdateButton.onclick = null;
       root.remove(); manager.panel.remove(); message.panel.remove(); center.panel.remove(); settings.panel.remove();

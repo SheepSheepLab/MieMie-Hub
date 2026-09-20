@@ -1,12 +1,12 @@
 {
   "format": 1,
-  "description": "Hub Core system panels with the accepted Polisher 1.0.1-hub.2 artifact; JSON artifacts only, no sibling source imports.",
+  "description": "Hub public Release version checks with the accepted Polisher 1.0.1-hub.2 artifact; only fixed JSON artifacts, no sibling source imports.",
   "artifacts": {
     "hub": {
-      "version": "0.2.0-alpha.3",
-      "filename": "咩咩Hub-0.2.0-alpha.3.json",
+      "version": "0.2.0-alpha.4",
+      "filename": "咩咩Hub-0.2.0-alpha.4.json",
       "scriptId": "e85cd9a3-6352-4b23-938a-6c94d826b4d3",
-      "sha256": "a0140f5f05ed0722e356e9c77a11bbf665d87da47543c738dc8e3abb49d5b300"
+      "sha256": "880ba7b90309f4e6ba5bb5a2140a5667839cc88edef660a3c6463cfda5792585"
     },
     "polisher": {
       "version": "1.0.1-hub.2",

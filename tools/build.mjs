@@ -21,13 +21,13 @@ const assets = {
 };
 const manifest = JSON.parse(await read('extensions/hello-mie/manifest.json'));
 const functions = [];
-for (const file of ['src/extension-runtime.js', 'src/hub-root.js', 'src/hub-ui.js', 'extensions/hello-mie/hello-mie.js']) {
+for (const file of ['src/extension-runtime.js', 'src/hub-root.js', 'src/hub-update-check.js', 'src/hub-ui.js', 'extensions/hello-mie/hello-mie.js']) {
   let source = (await read(file)).replace(/^export /gm, '');
   if (file === 'src/hub-ui.js') source = source.replace('/* LEGACY_ANIMATIONS */', await read('src/legacy-animations.inc.js'));
   functions.push(source);
 }
 const content = [
-  '// 咩咩Hub ' + pkg.version + ' · Core 系统入口 / 基于咩咩工具箱 1.0.1',
+  '// 咩咩Hub ' + pkg.version + ' · Hub Release 版本检查 / 基于咩咩工具箱 1.0.1',
   '(() => {',
   "'use strict';",
   'const h=window.parent;',
@@ -44,7 +44,7 @@ const content = [
 ].join('\n');
 new vm.Script(content, {filename: 'miemie-hub.js'});
 data.name = '咩咩Hub ' + pkg.version;
-data.info = '内置时间线、扩展管理、设置、扩展中心入口及 Hello Mie；翻译／润色请另行导入独立扩展脚本。停用旧版并刷新后启用；原有设置沿用。扩展中心正在准备中，在线更新服务尚未接入。';
+data.info = '内置时间线、扩展管理、设置、扩展中心入口及 Hello Mie；翻译／润色请另行导入独立扩展脚本。停用旧版并刷新后启用；原有设置沿用。设置可查询公开 GitHub Release（含预发布）并比较 Hub 版本；不下载或安装更新。扩展中心正在准备中。';
 data.content = content;
 await mkdir(path.join(project, 'build'), {recursive: true});
 await writeFile(path.join(project, 'build/miemie-hub.js'), content);
