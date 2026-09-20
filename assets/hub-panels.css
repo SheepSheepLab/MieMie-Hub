@@ -30,3 +30,23 @@
 /* Core update controls share the existing settings panel and button style. */
 #timeline-switcher-v1 .mm-system-actions{display:flex;flex-wrap:wrap;gap:10px}
 #timeline-switcher-v1 .mm-system-action[hidden]{display:none}
+
+/* Extension ecosystem containers: content authors supply rectangular artwork. */
+.mm-ecosystem-tabs { display:flex; gap:8px; margin-bottom:14px; position:sticky; top:0; z-index:1; background:#101322; padding:8px 0; }
+.mm-ecosystem-tabs button { flex:1; border:1px solid #545e83; border-radius:18px; padding:9px 12px; background:#20263e; color:#e6ebff; cursor:pointer; }
+.mm-ecosystem-tabs button[aria-selected="true"] { background:#55468a; border-color:#bd9bff; }
+.mm-catalog-search,.mm-submit-profile { display:flex; align-items:center; gap:10px; margin:10px 0; }
+.mm-catalog-search input { min-width:0; flex:1; }
+.mm-hub-body input,.mm-hub-body textarea,.mm-hub-body select { max-width:100%; box-sizing:border-box; border:1px solid #555d79; border-radius:8px; padding:8px; background:#141a2c; color:#edf0ff; }
+.mm-submission-form { display:grid; gap:12px; }
+.mm-submission-form label { display:grid; gap:5px; }
+.mm-submission-form textarea { min-height:100px; resize:vertical; }
+.mm-hub-body details { margin:12px 0; padding:10px; border:1px solid #434965; border-radius:10px; }
+.mm-hub-body details input { width:100%; margin:8px 0; }
+.mm-hub-body a { color:#b9bdff; margin-right:10px; }
+.mm-extension-icon,.mm-launcher-image { display:inline-flex; flex:none; width:44px; height:44px; border-radius:50%; overflow:hidden; align-items:center; justify-content:center; background:#293049; border:1px solid #a9a2db; box-shadow:0 2px 10px #0005; transition:transform .15s ease; }
+.mm-extension-icon img,.mm-launcher-image img { width:100%; height:100%; object-fit:cover; display:block; }
+.mm-extension-card>.mm-extension-icon { margin-right:10px; vertical-align:middle; }
+.mm-submit-profile .mm-extension-icon { width:26px; height:26px; }
+.mm-small:hover .mm-launcher-image { transform:scale(1.05); }
+.mm-extension-card .mm-extension-actions { flex-wrap:wrap; }

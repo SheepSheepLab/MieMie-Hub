@@ -95,7 +95,11 @@ window.__fixture = {
 async function emit(name, ...args) {for (const fn of [...(events.get(name) || [])]) await fn(...args);}
 async function removeFrame(item) {
   if (!item) return;
-  item.contentWindow.dispatchEvent(new Event('pagehide')); item.remove(); await waits(30);
+  const source = window.__MieMiePolisherSource, hub = window.__MieMieHub;
+  item.contentWindow.dispatchEvent(new Event('pagehide'));
+  if (hub && window.__MieMieHub !== hub) await hub.whenDisposed;
+  if (source) await source.settled();
+  item.remove(); await waits(5);
 }
 async function unmount() {
   await removeFrame(polisherFrame); polisherFrame=null;
@@ -120,7 +124,7 @@ async function mount(kind='hub') {
 }
 function click(selector) {const el = document.querySelector(selector); assert(el && !el.disabled, '找不到可点击元素：' + selector); el.click();}
 async function menu() {await __MieMieHub.open(); await until(() => document.querySelector('#meeme-combined-menu')?.dataset.open === 'true', '菜单打开');}
-async function manage() {await menu(); click('[data-hub-app="extensions"]'); await until(() => !document.querySelector('[data-hub-panel="extensions"]').hidden, '扩展管理');}
+async function manage() {await menu(); click('[data-hub-app="extension-center"]'); await until(() => !document.querySelector('[data-hub-panel="extension-center"]').hidden, '扩展中心');click('[data-center-tab="installed"]');await waits(5);}
 const registered = () => __MieMieHub.extensions.get('miemie.hello');
 const launcher = () => document.querySelector('[data-hub-app="miemie.hello"]');
 const messagePanel = () => document.querySelector('[data-hub-panel="message"]');
@@ -150,13 +154,14 @@ async function runTests() {
     await check('扩展中心与设置作为 Core 入口共存，版本与实际 Hub 一致', async () => {
       const ids = JSON.stringify(__MieMieHub.extensions.list().map(item => item.manifest.id));
       await menu();
-      for (const id of ['timeline', 'extension-center', 'settings', 'extensions', 'miemie.hello', 'miemie.polisher']) {
+      for (const id of ['timeline', 'extension-center', 'settings', 'miemie.hello', 'miemie.polisher']) {
         assert(document.querySelectorAll('[data-hub-app="' + id + '"]').length === 1, '入口缺失或重复：' + id);
       }
       click('[data-hub-app="extension-center"]');
       const center = document.querySelector('[data-hub-panel="extension-center"]');
       await until(() => !center.hidden, '扩展中心打开');
-      assert(center.textContent.includes('扩展中心正在准备中'), '扩展中心占位内容错误');
+      for(const tab of ['discover','installed','mine']) assert(center.querySelector('[data-center-tab="'+tab+'"]'),'扩展中心分页缺失');
+      assert(!document.querySelector('[data-hub-app="extensions"]'),'旧扩展管理入口未合并');
       await menu(); click('[data-hub-app="settings"]');
       await until(() => !document.querySelector('[data-hub-panel="settings"]').hidden, '设置打开');
       assert(center.hidden, '设置打开后扩展中心未关闭');
@@ -281,9 +286,9 @@ async function runTests() {
       assert(oldHub.extensions.get('miemie.polisher')?.enabled && sourceFrame.isConnected, '测试前润色未启用或源 iframe 缺失');
       await removeFrame(frame); frame = null;
       assert(polisherFrame === sourceFrame && sourceFrame.isConnected && sourceFrame.contentWindow === sourceWindow, '错误地重载了 Polisher 源 iframe');
-      assert(!window.__MieMieHub && !window.__meemeTranslation01 && !document.querySelector('#meeme-translation'), '旧 Hub 停止后残留润色 UI 或实例');
-      assert(!document.querySelector('[data-hub-app="miemie.polisher"]') && window.fetch === fixtureFetch, '旧 Hub 停止后残留入口或润色 Hook');
-      assert([...events.values()].every(handlers => handlers.size === 0) && activeTimers.size === 0, '旧 Hub 停止后残留宿主监听或轮询');
+      assert(!window.__MieMieHub && window.__meemeTranslation01 && document.querySelectorAll('#meeme-translation').length===1, 'Hub 停止后未恢复单个独立润色实例');
+      assert(!document.querySelector('[data-hub-app="miemie.polisher"]') && window.fetch !== fixtureFetch, '独立润色Hook或Hub入口清理错误');
+      assert([...events.values()].reduce((n,handlers)=>n+handlers.size,0)===10, '独立润色业务监听缺失或重复');
       assert([...oldPolisherPanel.querySelectorAll('*')].every(el => !el.onclick && !el.oninput && !el.onchange && !el.onkeydown), '旧润色节点残留事件回调');
       assert(localStorage.getItem('miemie_hub_extensions_v1') === before.preferences, 'Hub teardown 改写了扩展启用偏好');
       frame = await loadFrame('hub');

@@ -71,4 +71,4 @@ Hub 主球位置、Extension 注册／启用偏好、时间线变量与世界书
 - `src/hub-ui.js`：更新进度、失败、等待确认和重试操作。
 - `tools/build.mjs`：严格版本、构建身份、ASCII 附件及机器更新元数据。
 
-Extension 更新、Catalog、Package Manager 与未来 Loader/Core 不属于本轮实现。
+本文件记录Hub自更新边界。Hub0.3.0另有独立Extension Package和Registry模块，详见ECOSYSTEM.md；未来Loader/Core仍未实现。

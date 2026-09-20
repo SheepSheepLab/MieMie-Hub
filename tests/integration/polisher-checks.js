@@ -121,9 +121,9 @@ async function runPolisherChecks(check) {
   });
   await check('Core 可单独运行；扩展先于 Core 载入，以及 Core 单独重载均正常',async()=>{
     await unmount();await mount('core');assert(!runtime().get(id)&&!document.querySelector('#meeme-translation')&&window.fetch===fixtureFetch,'Core 隐含启动润色');
-    await unmount();polisherFrame=await loadFrame('polisher');assert(!document.querySelector('#meeme-translation'),'没有 Core 仍激活');
+    await unmount();polisherFrame=await loadFrame('polisher');await window.__MieMiePolisherSource.settled();assert(document.querySelector('#meeme-translation')&&window.__MieMiePolisherSource.mode==='standalone','无Core独立润色未启动');
     await mount('core');await until(()=>runtime().get(id)?.enabled,'先加载扩展后加载 Core');
-    await removeFrame(frame);frame=null;assert(!document.querySelector('#meeme-translation')&&window.fetch===fixtureFetch,'Core 停用未清理扩展');
+    await removeFrame(frame);frame=null;assert(document.querySelectorAll('#meeme-translation').length===1&&window.__MieMiePolisherSource.mode==='standalone','Core停用未恢复独立润色');
     await mount('core');await until(()=>runtime().get(id)?.enabled,'Core 单独重载');
     assert(document.querySelectorAll('#meeme-translation').length===1,'Core 重启重复实例');
   });

@@ -1,18 +1,18 @@
 {
   "format": 1,
-  "description": "Hub self-update and Polisher 1.0.1 compatibility; fixed JSON artifacts only, no sibling source imports.",
+  "description": "Hub ecosystem MVP and Polisher dual-mode compatibility; explicit version-locked built artifacts only.",
   "artifacts": {
     "hub": {
-      "version": "0.2.2",
-      "filename": "MieMie-Hub-0.2.2.json",
+      "version": "0.3.0",
+      "filename": "MieMie-Hub-0.3.0.json",
       "scriptId": "e85cd9a3-6352-4b23-938a-6c94d826b4d3",
-      "sha256": "0794e69026ff42506fb09ddcb03ccfc91395749a5b2a8b274ccd58b4783573e5"
+      "sha256": "4a86ad9528fc16c6bf8518196c166124d0e34a90a01e5aaf50b5db7606c65d12"
     },
     "polisher": {
-      "version": "1.0.1",
-      "filename": "咩咩润色工具-Extension-1.0.1.json",
+      "version": "1.1.0",
+      "filename": "MieMie-Polisher-Extension-1.1.0.json",
       "scriptId": "4dd658f1-9d4b-4f74-bba8-305c4ef2a9c8",
-      "sha256": "6bab205ab77804c2128c031e0e615295e8661ae978d58700a16da4b8958d4fbc"
+      "sha256": "6041b413629366ad8fe5d6667fe35e005224eabc4ddaae33f1824d489b8f0f84"
     }
   }
 }

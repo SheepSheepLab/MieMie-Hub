@@ -23,5 +23,8 @@ Polisher Release 使用：
 
 - `MieMie-Polisher-Extension-<version>.json`
 - `manifest.json`
+- `MieMie-Extension-update.json`（从1.1.0起）
 
 发布附件的 hash 必须针对最终上传字节计算。机器元数据与对应版本一起构建，不从 Release Notes 自然语言解析 hash。Release Notes 可同时提供人工校验用 SHA-256。
+
+生态MVP新增功能版本为Hub0.3.0、Polisher1.1.0和Registry0.1.0。Polisher没有收到新Icon，未制作1.0.2 Icon版本；旧1.0.1保留作为实际升级基线。

@@ -73,17 +73,55 @@ const hubSelfUpdater = createHubSelfUpdater({currentVersion: HUB_VERSION, host: 
     },
   }),
 });
+const packageManager = createExtensionPackageManager({
+  getScriptTrees: typeof getScriptTrees === 'function' ? getScriptTrees : undefined,
+  updateScriptTreesWith: typeof updateScriptTreesWith === 'function' ? updateScriptTreesWith : undefined,
+  fetch: (...args) => window.fetch(...args), crypto: window.crypto,
+  storage: {getItem: key => h.localStorage.getItem(key), setItem: (key,value) => h.localStorage.setItem(key,value)},
+  onChange() {hubUI?.refresh();},
+  async backup(script, context) {
+    const bytes = JSON.stringify(script, null, 2) + '\n';
+    const url = h.URL.createObjectURL(new h.Blob([bytes], {type: 'application/json'}));
+    const link = h.document.createElement('a'); link.href = url; link.download = 'MieMie-Extension-recovery-' + Date.now() + '.json';
+    link.hidden = true; h.document.body.appendChild(link);
+    try {link.click();} finally {link.remove(); h.setTimeout(() => h.URL.revokeObjectURL(url), 60000);}
+    if (context.reason === 'uninstall' && !h.confirm('已请求浏览器下载恢复 JSON，请确认文件已实际保存。卸载会删除此脚本条目及其 data，工具外部设置不会清空。确认继续卸载？')) throw Error('已取消卸载，脚本保留。');
+  },
+});
+const packageUI = Object.create(packageManager);
+async function withPackagePreference(id, enabled, action) {
+  const previous = savedHubState.extensions[id];
+  savedHubState.extensions[id] = {registered: true, enabled};
+  try {
+    h.localStorage.setItem(HUB_STATE_KEY, JSON.stringify(savedHubState));
+    const result = await action();
+    if (result?.ok === false) throw Error(result.error);
+    return result;
+  } catch (error) {
+    if (previous) savedHubState.extensions[id] = previous; else delete savedHubState.extensions[id];
+    try {h.localStorage.setItem(HUB_STATE_KEY, JSON.stringify(savedHubState));} catch (_) {}
+    throw error;
+  }
+}
+packageUI.setEnabled = (id, enabled) => withPackagePreference(id, enabled, () => packageManager.setEnabled(id, enabled));
+packageUI.install = candidate => {
+  if (!/^[a-z0-9][a-z0-9._-]{1,79}$/.test(candidate?.id || '')) return Promise.reject(Error('Extension ID 无效。'));
+  return withPackagePreference(candidate.id, true, () => packageManager.install(candidate));
+};
+const registryClient = createRegistryClient({host: h, fetch: (...args) => window.fetch(...args), crypto: window.crypto});
 hubUI = createHubUI(h, hubShell, HUB_ASSETS, extensionRuntime, {
   list: () => [...sources.values()].map(s => JSON.parse(JSON.stringify(s.manifest))),
   register: registerSource,
-}, HUB_VERSION, hubSelfUpdater);
+}, HUB_VERSION, hubSelfUpdater, {packages: packageUI, registry: registryClient});
 // Keep the previous Hub bridge for callers; no polishing implementation lives here.
 const combinedUI = {open: hubUI.open, toggle: hubUI.toggle, back: hubUI.back};
 h.__meemeCombinedUI = combinedUI;
 const helloSource = provide(HELLO_MANIFEST, createHelloMie);
+let finishHubDisposal;
+const whenDisposed = new Promise(resolve => {finishHubDisposal = resolve;});
 const publicHub = Object.freeze({
   version: HUB_VERSION, apiVersion: 1, open: hubUI.open,
-  ready: helloSource.ready,
+  ready: helloSource.ready, whenDisposed,
   extensions: Object.freeze({
     register: extensionRuntime.register, enable: extensionRuntime.enable,
     disable: extensionRuntime.disable, uninstall: extensionRuntime.uninstall,
@@ -101,7 +139,7 @@ function cleanupHub() {
   hubDisposed = true;
   hubSelfUpdater.dispose();
   // dispose() revokes every extension synchronously before its first await.
-  void extensionRuntime.dispose();
+  void Promise.resolve(extensionRuntime.dispose()).finally(finishHubDisposal);
   sources.clear(); hubUI.dispose(); hubShell.dispose();
   if (h.__MieMieHub === publicHub) delete h.__MieMieHub;
   if (h.__meemeCombinedUI === combinedUI) delete h.__meemeCombinedUI;

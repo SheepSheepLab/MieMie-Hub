@@ -24,7 +24,7 @@ const assets = {
 };
 const manifest = JSON.parse(await read('extensions/hello-mie/manifest.json'));
 const functions = [];
-for (const file of ['src/extension-runtime.js', 'src/hub-root.js', 'src/hub-update-check.js', 'src/hub-script-host.js', 'src/hub-self-update.js', 'src/hub-ui.js', 'extensions/hello-mie/hello-mie.js']) {
+for (const file of ['src/extension-runtime.js', 'src/hub-root.js', 'src/hub-update-check.js', 'src/hub-script-host.js', 'src/hub-self-update.js', 'src/registry-client.js', 'src/extension-packages.js', 'src/extension-center.js', 'src/hub-ui.js', 'extensions/hello-mie/hello-mie.js']) {
   let source = (await read(file)).replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
   if (file === 'src/hub-ui.js') source = source.replace('/* LEGACY_ANIMATIONS */', await read('src/legacy-animations.inc.js'));
   functions.push(source);
@@ -36,7 +36,7 @@ const content = [
   "'use strict';",
   'const h=window.parent;',
   'if(h.__MieMieHub){h.__MieMieHub.open();return;}',
-  "if(h.__meemeCombinedUI||h.__timelineSwitcherV1||h.__meemeTranslation01){h.alert('请先停用旧咩咩工具箱或独立时间线／润色脚本并刷新，再启用咩咩Hub。原有设置会沿用。');return;}",
+  "if(h.__meemeCombinedUI||h.__timelineSwitcherV1||(h.__meemeTranslation01&&!h.__MieMiePolisherSource)){h.alert('请先停用旧咩咩工具箱或独立时间线／润色脚本并刷新，再启用咩咩Hub。原有设置会沿用。');return;}",
   'const HUB_VERSION=' + JSON.stringify(pkg.version) + ';',
   'const HUB_ASSETS=' + JSON.stringify(assets) + ';',
   'const HELLO_MANIFEST=' + JSON.stringify(manifest) + ';',
@@ -48,7 +48,7 @@ const content = [
 ].join('\n');
 new vm.Script(content, {filename: 'miemie-hub.js'});
 data.name = '咩咩Hub ' + pkg.version;
-data.info = '内置时间线、扩展管理、设置、扩展中心入口及 Hello Mie；润色请另行导入独立扩展。首次从旧版本升级需手动导入并停用旧 Hub。设置可查询官方 GitHub Release；全局脚本支持校验后就地更新自身。浏览器 CORS 或宿主校验失败时拒绝安装；请保留更新前请求下载的恢复文件。扩展中心正在准备中。';
+data.info = '内置时间线、扩展管理、设置、扩展中心入口及 Hello Mie；润色请另行导入独立扩展。首次从旧版本升级需手动导入并停用旧 Hub。设置可查询官方 GitHub Release；全局脚本支持校验后就地更新自身。浏览器 CORS 或宿主校验失败时拒绝安装；请保留更新前请求下载的恢复文件。扩展中心支持 Catalog、Discord 投稿管理和作者 GitHub Package 安装更新；Registry 地址需要配置。';
 data.content = content;
 await mkdir(path.join(project, 'build'), {recursive: true});
 await writeFile(path.join(project, 'build/miemie-hub.js'), content);

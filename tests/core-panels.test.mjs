@@ -93,7 +93,7 @@ test('Core system launchers coexist with existing entries without registering Ex
   const f = await fixture(t);
   await f.click('.ts-orb');
   assert.equal(f.query('#meeme-combined-menu').dataset.open, 'true');
-  for (const [id, label] of [['timeline', '时间线切换器'], ['extension-center', '扩展中心'], ['settings', '设置'], ['extensions', '扩展管理'], ['miemie.hello', 'Hello Mie']]) {
+  for (const [id, label] of [['timeline', '时间线切换器'], ['extension-center', '扩展中心'], ['settings', '设置'], ['miemie.hello', 'Hello Mie']]) {
     assert.equal(f.doc.querySelectorAll('[data-hub-app="' + id + '"]').length, 1);
     assert.equal(f.query('[data-hub-app="' + id + '"]').getAttribute('aria-label'), label);
   }
@@ -101,9 +101,10 @@ test('Core system launchers coexist with existing entries without registering Ex
   await f.click('[data-hub-app="extension-center"]');
   const panel = f.query('[data-hub-panel="extension-center"]');
   assert.equal(panel.hidden, false); assert.equal(panel.inert, false);
-  assert.match(panel.textContent, /扩展中心正在准备中/);
-  assert.match(panel.textContent, /以后可以在这里发现、安装和更新扩展。/);
-  await f.launch('extensions');
+  assert.equal(f.query('[data-hub-app="extensions"]'), null);
+  for (const tab of ['discover', 'installed', 'mine']) assert.ok(f.query('[data-center-tab="' + tab + '"]'));
+  assert.match(panel.textContent, /尚未配置 Registry/);
+  await f.click('[data-center-tab="installed"]');
   assert.equal(f.doc.querySelectorAll('[data-extension-id]').length, 1);
 });
 
@@ -121,7 +122,7 @@ test('settings uses the actual package and built Core version, with an honest in
   assert.equal(f.releaseRequests.length, 0);
 });
 
-for (const [version, state, label] of [[pkg.version, 'current', '✓ 已是最新版'], ['0.3.0', 'available', '● 发现新版本'], ['0.2.0', 'ahead', '当前版本高于已发布版本']]) {
+for (const [version, state, label] of [[pkg.version, 'current', '✓ 已是最新版'], ['9.0.0', 'available', '● 发现新版本'], ['0.2.0', 'ahead', '当前版本高于已发布版本']]) {
   test('settings shows remote version and ' + state + ', offering update only for a newer release', async t => {
     const f = await fixture(t, async () => ({ok: true, json: async () => [{id: 123, tag_name: 'v' + version, draft: false, prerelease: true}]}));
     await f.launch('settings'); await f.click('[data-hub-action="check-updates"]');

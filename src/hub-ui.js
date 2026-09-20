@@ -1,4 +1,4 @@
-export function createHubUI(host, shell, assets, runtime, localSources, hubVersion, selfUpdater) {
+export function createHubUI(host, shell, assets, runtime, localSources, hubVersion, selfUpdater, ecosystemOptions) {
   const doc = host.document, orb = shell.orb, icons = assets.icons;
   const timeline = host.__timelineSwitcherV1;
   const tp = timeline.root.querySelector('.ts-panel');
@@ -28,12 +28,12 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     panel.append(header, body); shell.root.appendChild(panel); returnButton(panel);
     return {panel, body, heading};
   }
-  const manager = makePanel('已安装扩展', '咩咩Hub · 本地扩展测试');
   const message = makePanel('Hello Mie', '咩咩Hub Extension');
   // Core panels have no Extension registration, Manifest or lifecycle.
   const center = makePanel('咩咩Hub · 扩展中心', '发现更多咩咩工具');
+  const manager = {panel: center.panel, body: center.body};
   const settings = makePanel('咩咩Hub · 设置', 'Hub 版本与更新');
-  manager.panel.dataset.hubPanel = 'extensions'; message.panel.dataset.hubPanel = 'message';
+  message.panel.dataset.hubPanel = 'message';
   center.panel.dataset.hubPanel = 'extension-center'; settings.panel.dataset.hubPanel = 'settings';
   const panels = new Set([tp, manager.panel, message.panel, center.panel, settings.panel]);
   function panelFor(next) {
@@ -42,10 +42,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     return next === 'timeline' ? tp : next === 'extensions' ? manager.panel : next === 'extension' ? message.panel : extensionPanels.get(next)?.panel;
   }
 
-  const centerCard = doc.createElement('div'); centerCard.className = 'mm-system-card';
-  const centerTitle = doc.createElement('h2'); centerTitle.textContent = '扩展中心正在准备中';
-  const centerNote = doc.createElement('p'); centerNote.className = 'mm-hub-note'; centerNote.textContent = '以后可以在这里发现、安装和更新扩展。';
-  centerCard.append(centerTitle, centerNote); center.body.appendChild(centerCard);
+  const ecosystem = createExtensionCenter({host, body: center.body, runtime, sources: localSources, ...ecosystemOptions, refreshLaunchers: renderMenu});
 
   const versionCard = doc.createElement('div'); versionCard.className = 'mm-system-card';
   const versionTitle = doc.createElement('h2'); versionTitle.textContent = 'Hub 版本';
@@ -153,13 +150,14 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
 
   async function change(next) {
     if (disposed) return;
+    if (next === 'extensions') {void ecosystem.activate('installed'); next = 'extension-center';}
+    else if (next === 'extension-center') void ecosystem.activate();
     const id = ++serial, previous = state; state = next;
     cancelAnimations(); menuVisible(false); orb.classList.toggle('mm-tool-active', next !== 'closed');
     const p = panelFor(next);
     if (p) {
       hideWindows();
       if (next === 'timeline') timeline.open();
-      if (next === 'extensions') renderManager();
       p.hidden = false; p.inert = false; p.style.opacity = '1'; p.style.transform = 'none'; place(); p.scrollTop = 0;
       const art = next === 'timeline' ? icons.timeline : extensionPanels.get(next)?.icon;
       const splash = art ? prepareSplash(p, art) : null;
@@ -196,7 +194,6 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
       {id: 'timeline', title: '时间线切换器', icon: '🕒', className: 'mm-time', open: () => go('timeline')},
       {id: 'extension-center', title: '扩展中心', icon: '🧩', className: 'mm-center', open: () => go('extension-center')},
       {id: 'settings', title: '设置', icon: '⚙️', className: 'mm-settings', open: () => go('settings')},
-      {id: 'extensions', title: '扩展管理', icon: '🧩', className: 'mm-manage', open: () => go('extensions')},
       ...runtime.list().filter(x => x.launcherAvailable).map(x => ({
         id: x.manifest.id, title: x.manifest.contributes.launcher.title, icon: x.manifest.contributes.launcher.icon || '🧩', className: 'mm-extension',
         open: async () => { const result = await runtime.open(x.manifest.id); if (result.ok) lastError = ''; else if (!result.cancelled) { lastError = result.error; await go('extensions'); } },
@@ -204,49 +201,17 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     ];
     menuButtons = apps.map(app => {
       const b = doc.createElement('button'); b.type = 'button'; b.className = 'mm-small ' + app.className; b.dataset.hubApp = app.id; b.setAttribute('aria-label', app.title);
-      const icon = doc.createElement('span'), label = doc.createElement('small'); icon.textContent = app.icon; label.textContent = app.title; b.append(icon, label);
+      const icon = doc.createElement('span'), label = doc.createElement('small'); icon.textContent = app.icon;
+      const art = extensionPanels.get('panel:' + app.id)?.icon;
+      if (typeof art === 'string' && /^(?:data:image\/(?:png|webp|jpeg);base64,|https:\/\/)/.test(art)) {const img = doc.createElement('img'); img.src = art; img.alt = ''; img.referrerPolicy = 'no-referrer'; img.onerror = () => {img.remove(); icon.textContent = app.icon;}; icon.replaceChildren(img); icon.className = 'mm-launcher-image';}
+      label.textContent = app.title; b.append(icon, label);
       b.onclick = () => { void Promise.resolve().then(app.open).catch(error => { lastError = error.message; void go('extensions'); }); };
       root.appendChild(b); return b;
     });
     place();
     if (state === 'menu' && focused) (menuButtons.find(b => b.dataset.hubApp === focused) || menuButtons[0])?.focus({preventScroll: true});
   }
-  function renderManager() {
-    const focused = manager.body.contains(doc.activeElement) ? doc.activeElement.dataset.action : null;
-    manager.body.replaceChildren();
-    const note = doc.createElement('p'); note.className = 'mm-hub-note'; note.textContent = '可停用、卸载和重新注册当前已载入的扩展。卸载保留工具设置与备份。'; manager.body.appendChild(note);
-    if (lastError) { const error = doc.createElement('p'); error.className = 'mm-extension-error'; error.setAttribute('role', 'status'); error.textContent = lastError; manager.body.appendChild(error); }
-    const labels = {disabled: '已停用', enabled: '已启用', enabling: '启用中', disabling: '停用中', uninstalling: '卸载中', error: '运行出错'};
-    function button(parent, label, action, key, disabled = false) {
-      const b = doc.createElement('button'); b.type = 'button'; b.textContent = label; b.dataset.action = key; b.disabled = disabled;
-      b.onclick = async () => {
-        b.disabled = true; lastError = '';
-        try { const result = await action(); if (result && !result.ok && !result.cancelled) lastError = result.error; }
-        catch (error) { lastError = error.message; }
-        if (!disposed) { renderManager(); renderMenu(); }
-      };
-      parent.appendChild(b);
-    }
-    for (const item of runtime.list()) {
-      const card = doc.createElement('article'); card.className = 'mm-extension-card'; card.dataset.extensionId = item.manifest.id;
-      const title = doc.createElement('div'); title.className = 'mm-extension-title';
-      const name = doc.createElement('strong'), status = doc.createElement('small'); name.textContent = item.manifest.name;
-      status.textContent = item.manifest.version + ' · ' + labels[item.state]; title.append(name, status); card.appendChild(title);
-      const desc = doc.createElement('p'); desc.className = 'mm-hub-note'; desc.textContent = item.manifest.description || item.manifest.id; card.appendChild(desc);
-      if (item.error) { const error = doc.createElement('p'); error.className = 'mm-extension-error'; error.textContent = item.error; card.appendChild(error); }
-      if (item.launcherError) { const warning = doc.createElement('p'); warning.className = 'mm-extension-error'; warning.textContent = item.launcherError; card.appendChild(warning); }
-      const actions = doc.createElement('div'); actions.className = 'mm-extension-actions'; card.appendChild(actions);
-      if (item.launcherAvailable) button(actions, '打开', () => runtime.open(item.manifest.id), item.manifest.id + ':open', item.busy);
-      button(actions, item.enabled ? '停用' : '启用', () => item.enabled ? runtime.disable(item.manifest.id) : runtime.enable(item.manifest.id), item.manifest.id + ':toggle', item.busy);
-      button(actions, '卸载', () => runtime.uninstall(item.manifest.id), item.manifest.id + ':uninstall', item.busy);
-      manager.body.appendChild(card);
-    }
-    for (const manifest of localSources.list().filter(m => !runtime.get(m.id))) {
-      const actions = doc.createElement('div'); actions.className = 'mm-extension-actions';
-      button(actions, '注册 ' + manifest.name, () => localSources.register(manifest.id), manifest.id + ':register'); manager.body.appendChild(actions);
-    }
-    if (state === 'extensions' && focused) [...manager.body.querySelectorAll('button')].find(b => b.dataset.action === focused && !b.disabled)?.focus({preventScroll: true});
-  }
+  function renderManager() {void ecosystem.activate('installed'); if (lastError) ecosystem.report(lastError);}
   function key(e) {
     if (e.key === 'Escape' && state !== 'closed') { e.preventDefault(); e.stopImmediatePropagation(); void go(state === 'menu' ? 'closed' : 'menu'); }
   }
@@ -256,7 +221,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   renderMenu(); menuVisible(false);
   return {
     open: () => go('menu'), toggle: () => go(state === 'closed' ? 'menu' : 'closed'), back: () => go('menu'),
-    refresh() { if (!disposed) { renderMenu(); if (state === 'extensions') renderManager(); } },
+    refresh() { if (!disposed) { renderMenu(); ecosystem.refresh(); } },
     showMessage(id, title, text) {
       if (disposed) return;
       activeExtension = id; message.heading.textContent = title; message.panel.setAttribute('aria-label', title);
@@ -286,12 +251,12 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
       };
     },
     showPanel(id) { if (extensionPanels.has('panel:' + id)) return go('panel:' + id); return false; },
-    report(error) { lastError = error; if (state === 'extensions') renderManager(); },
+    report(error) { lastError = error; ecosystem.report(error); },
     dispose() {
       if (disposed) return;
       disposed = true; ++serial; cancelAnimations(); doc.removeEventListener('keydown', key, true);
       updateChecker.dispose();
-      unsubscribeUpdate?.(); selfUpdater?.dispose();
+      unsubscribeUpdate?.(); selfUpdater?.dispose(); ecosystem.dispose();
       host.visualViewport?.removeEventListener('resize', place); host.visualViewport?.removeEventListener('scroll', place);
       checkUpdateButton.onclick = null;
       installButton.onclick = null; confirmButton.onclick = null;

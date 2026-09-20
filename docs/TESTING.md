@@ -1,6 +1,6 @@
 # Hub 构建、更新与产物兼容验证
 
-当前版本：Hub **0.2.2**（GitHub Pre-release）；组合测试锁定 Polisher **1.0.1**。本版仅增加设置页可见测试文字，沿用 0.2.1 的第一代全局 Hub 脚本自更新，用作真实更新目标。
+当前版本：Hub **0.3.0**（GitHub Pre-release）；组合测试锁定 Polisher **1.1.0**。保留Hub自更新回归，新增生态UI、Registry客户端和Extension Package安装更新测试。
 
 ## 独立构建与测试
 
@@ -27,10 +27,10 @@ npm test
 ## 锁定产物组合测试
 
 ```sh
-npm run test:integration -- --polisher /absolute/path/咩咩润色工具-Extension-1.0.1.json
+npm run test:integration -- --polisher /absolute/path/MieMie-Polisher-Extension-1.1.0.json
 ```
 
-组合测试只引用完整 JSON 产物，不导入另一仓库源码。`tests/integration/artifacts.lock.json` 锁定当前 Hub 与 Polisher 1.0.1 的版本、脚本 ID 和 SHA-256；校验失败时拒绝执行。具体 hash 以该锁定文件为准，每个发布版本都重新计算最终构建字节，不在本文复制会过时的 Hub hash。
+组合测试只引用完整 JSON 产物，不导入另一仓库源码。`tests/integration/artifacts.lock.json` 锁定当前 Hub 与 Polisher 1.1.0 的版本、脚本 ID 和 SHA-256；校验失败时拒绝执行。具体 hash 以该锁定文件为准，每个发布版本都重新计算最终构建字节，不在本文复制会过时的 Hub hash。
 
 JSON 可以是中文本地文件名或 ASCII Release 文件名；校验针对实际字节、版本及脚本 ID。测试不自动寻找兄弟源码目录或下载附件。可以用 `--hub` 和 `--lock` 显式选择另一份已确认的锁定组合。
 
@@ -38,21 +38,30 @@ JSON 可以是中文本地文件名或 ASCII Release 文件名；校验针对实
 
 **自动测试不是实际 GitHub 网络、浏览器 CORS 或真实酒馆验收。** 它也不能验证真实布局、动画、拖动及浏览器是否成功保存恢复文件。
 
-## 真实酒馆：0.2.1 → 0.2.2
+## Ecosystem MVP 黄金路径
 
-建议先在有恢复材料的测试环境执行。首次操作步骤见 [自更新说明](SELF-UPDATE.md)。
+当前版本 **Hub 0.3.0 / Polisher 1.1.0 / Registry 0.1.0**。原Hub自更新回归仍保留；本阶段不把模拟HTTP或浏览器DOM测试称为真实Discord授权或Tavern验收。
 
-1. 导出旧 Hub 恢复材料，停止生成并保存所有编辑。手动安装 `MieMie-Hub-0.2.1.json` 到全局脚本，只保留一个 Hub 候选。已有自定义脚本 `data` 时优先原条目只替换 content；不要清空 Hub／Polisher／时间线数据。
-2. 刷新，确认设置页当前版本为 `0.2.1`。可以在助手中给该条目改一个自定义名称，记录其安装 ID、`data`、文件夹和前后脚本位置，用于确认更新保留这些字段。
-3. 发布 `0.2.2` 后点击「检查更新」，应显示最新版本 `0.2.2`、发现新版本和可用的「更新」按钮。此前已发布的 `alpha.4` 没有这个按钮，不能代替 `0.2.1` 做本次验收。
-4. 打开浏览器网络面板后点击更新，观察准备、下载、校验、安装、等待新版确认等状态。核对 GitHub 请求无用户 Token、酒馆密钥或聊天／设置内容；只有保存确认调用本地同源宿主接口。
-5. 检查浏览器是否实际保存了旧 Hub 恢复 JSON，不把界面“已请求下载”当成可靠落盘证明。若 CORS 阻止读取、HTTP 失败、超时或校验错误，应明确失败，当前代码保持不变，不出现未校验安装。
-6. 安装成功应由宿主重新加载 Hub，新版设置页显示 `0.2.2` 和该版本的轻量可见测试文字。持久读回未确认前不能显示已确认完成；确认后再刷新整个酒馆页面，版本仍应为 `0.2.2`。
-7. 核对实际安装 ID、自定义脚本名、`data`、启用状态、文件夹及相邻条目保持不变。助手列表名保留旧版本后缀属于保留用户名称的结果，实际版本以 Hub 设置页为准。
-8. 复核主球位置、时间线设置和世界书、Hello Mie、Polisher 旧设置／提示词／记住的密钥、润色与翻译各一次、恢复与发送原文、扩展停用和重新启用。检查桌面／窄屏布局、面板开关和拖动。
-9. 回到设置页再次查询，最新版本和当前版本均应为 `0.2.2`。未确认状态可点击重新确认保存；不能通过提示消失推断新版已经持久保存。
+- A：只启用Polisher1.1.0，独立球打开原UI，核对旧设置、Key、Prompt、备份。
+- B：Polisher先运行后启动Hub；球收纳到Hub，再停用/启用Hub，球恢复/再次收纳。重复操作无重复实例。
+- C：Hub首页只有扩展中心管理入口，内部发现/已安装/我的；Registry离线仍可使用时间线和本地工具。
+- D：确保没有重复Polisher条目，在发现选已配置Catalog项目，或使用作者GitHub直接预览入口，点击安装；不手工导入JSON。作者仓库为SheepSheepLab/MieMie-Polisher，机器校验全部通过才执行。
+- E：已发布1.0.1作为旧基线，本轮可测试原位更新至1.1.0并验证双模式及原设置保留。尚无修正版Icon，因此新Icon验收延期，不伪造1.0.2。
+- F：按Registry部署说明配置真实Discord应用，使用我的登录，分别提交GitHub/Discord项目，核对作者与投稿者、公开资料与来源。
+- G：同一身份编辑、下架、重新上架；发现同步变化、我的保留；已安装代码不远程停用。
+- H：修改Discord显示名/头像后重新登录，资料更新而旧投稿仍归同一身份。
 
-如果真实浏览器无法安全读取 GitHub Release 附件，本次应记录明确的 CORS 失败，不能将该环境标记为完整一键更新通过；不临时开启 Proxy 或采用未校验安装绕过。
+物理卸载会先请求恢复文件并确认实际保存，再删除该脚本条目及其data。Runtime注销不会删除原脚本。更新作者代码启动失败时手工恢复旧content，没有自动回滚；宿主写入结果不能冒称服务器保存完成。
+
+## 完整 Package 产物测试
+
+```sh
+npm run test:ecosystem -- --polisher /path/to/MieMie-Polisher-Extension-1.1.0.json --metadata /path/to/MieMie-Extension-update.json --legacy-polisher /path/to/MieMie-Polisher-Extension-1.0.1.json
+```
+
+显式读取Hub完整构建JSON、Polisher1.1.0 JSON和metadata以及已发布1.0.1 JSON；不导入另一仓库源码。验证metadata/digest，报告记录每份产物SHA-256。只在模拟宿主中由正式树API触发创建/重载/删除iframe，执行真实构建代码，GitHub响应替身明确为Development Fixture。结果在ignored `test-results/ecosystem.json`。
+
+Registry另有显式产物合同测试 `tests/hub-contract.mjs --hub <Hub JSON> --sha256 <锁定SHA256> --report <本地输出>`。它验证指定HubJSON的hash、使用其中实际客户端连接临时本地HTTP服务与隔离SQLite；Discord/GitHub上游是测试适配器。基础Registry测试不要求Hub目录存在。
 
 ## 失败与恢复验证
 
