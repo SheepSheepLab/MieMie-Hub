@@ -131,9 +131,11 @@ export async function validateExtensionPackage(bytes, metadata, crypto = globalT
 }
 
 export function createExtensionPackageManager({getScriptTrees, updateScriptTreesWith, fetch: request = (...args) => globalThis.fetch(...args),
-  crypto = globalThis.crypto, randomUUID = () => crypto.randomUUID(), onChange = () => {}, backup, getRegistryBaseURL = () => '', metadataTimeoutMs = 15000, assetTimeoutMs = 60000} = {}) {
+  crypto = globalThis.crypto, randomUUID = () => crypto.randomUUID(), onChange = () => {}, backup, confirmUninstall, getRegistryBaseURL = () => '', now = Date.now, downloadCacheTtlMs = 120000, metadataTimeoutMs = 15000, assetTimeoutMs = 60000} = {}) {
   let disposed = false, busy = false;
   const controllers = new Set(), legacyContents = new Set(), listeners = new Set();
+  const downloaded = new Map(); let cacheBytes = 0, relayCooldown = null;
+  function pruneDownloads() {for (const [key, entry] of downloaded) if (entry.until <= now()) {cacheBytes -= entry.bytes.byteLength; downloaded.delete(key);}}
   const notify = () => {try {onChange();} catch {} for (const listener of listeners) {try {listener();} catch {}}};
   function alive() {if (disposed) throw extensionPackageError('disposed', '扩展安装任务已取消。');}
   function readTree() {
@@ -191,11 +193,34 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
       // send Tavern cookies, Registry sessions or GitHub credentials to it.
       relayBase = registryBaseURL(getRegistryBaseURL());
       if (!relayBase) throw extensionPackageError('download', '作者 GitHub 附件被浏览器跨域限制拦截。请在“Registry 连接设置”配置 Registry 0.1.1 或以上版本以安全转发；无需 Discord 登录。未安装扩展。');
+      if (relayCooldown?.base === relayBase && relayCooldown.until > now()) throw extensionPackageError('github_rate_limited', 'GitHub 匿名访问额度暂时用完，请在 ' + new Date(relayCooldown.until).toLocaleTimeString() + ' 后重试；本地扩展未被修改。');
       relayURL = relayBase + '/api/packages/github/asset';
       try {response = await request(relayURL, {method: 'POST', headers: {Accept: 'application/octet-stream', 'Content-Type': 'application/json'},
         body: JSON.stringify(relayContext), mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', cache: 'no-store', signal});}
       catch {signal.throwIfAborted(); throw extensionPackageError('relay', '无法连接 Registry 安全下载通道，请检查服务地址与 CORS Origin 配置；未安装扩展。');}
       if (registryBaseURL(getRegistryBaseURL()) !== relayBase) throw extensionPackageError('cancelled', 'Registry 地址已改变，请重新预览项目。');
+    }
+    if (relayBase && (response?.url !== relayURL || response.redirected)) throw extensionPackageError('redirect', 'Registry 下载响应地址发生变化，已拒绝安装。');
+    if (relayBase && !response?.ok && !['opaque', 'opaqueredirect'].includes(response?.type)) {
+      // Only consume a bounded structured error. Never show arbitrary upstream
+      // HTML/body text (which may contain IPs or internal service details).
+      let errorData;
+      if (response?.body?.getReader) {
+        const reader = response.body.getReader(), parts = []; let length = 0;
+        const cancel = () => {void reader.cancel().catch(() => {});}; signal.addEventListener('abort', cancel, {once: true});
+        try {for (;;) {signal.throwIfAborted(); const {done, value} = await reader.read(); if (done) break; length += value.byteLength; if (length > 16384) break; parts.push(value);}
+          if (length <= 16384) {const bytes = new Uint8Array(length); let offset = 0; for (const part of parts) {bytes.set(part, offset); offset += part.length;} try {errorData = extensionJSON(bytes)?.error;} catch {}}
+        } finally {signal.removeEventListener('abort', cancel); cancel();}
+      }
+      signal.throwIfAborted();
+      if (errorData?.code === 'github_rate_limited') {
+        const at = Date.parse(errorData.retryAt);
+        const retryAt = Number.isFinite(at) && at > now() && at <= now() + 86400000 ? at : now() + 60000;
+        relayCooldown = {base: relayBase, until: retryAt};
+        throw extensionPackageError('github_rate_limited', 'GitHub 匿名访问额度暂时用完，请在 ' + new Date(retryAt).toLocaleTimeString() + ' 后重试；本地扩展未被修改。');
+      }
+      const messages = {github_unavailable: 'Registry 暂时无法连接作者 GitHub，请稍后重试', upstream_timeout: '读取作者 GitHub 文件超时，请稍后重试', relay_busy: 'Registry 下载任务繁忙，请稍后重试', rate_limited: '请求过于频繁，请稍后重试', origin_denied: 'Registry 尚未允许当前酒馆 Origin', release_changed: '作者 Release 已发生变化，请重新预览'};
+      if (Object.hasOwn(messages, errorData?.code || '')) throw extensionPackageError(errorData.code, messages[errorData.code] + '；未安装扩展。');
     }
     if (!response?.ok || ['opaque', 'opaqueredirect'].includes(response.type)) throw extensionPackageError(relayBase ? 'relay' : 'http',
       (relayBase ? 'Registry 安全转发失败，请确认服务为 0.1.1 或以上版本并允许当前酒馆 Origin' : 'GitHub 请求失败') + (response?.status ? '（HTTP ' + response.status + '）' : '') + '；未安装扩展。');
@@ -227,9 +252,23 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
       || item.browser_download_url !== repo.url + '/releases/download/' + release.tag_name + '/' + name) throw extensionPackageError('asset', 'Release Asset ID、地址、大小或 digest 无效。');
     return {id: item.id, name, size: item.size, sha256: item.digest.slice(7), url: item.url, repository: repo.url, releaseId: release.id};
   }
-  async function download(item, limit, signal) {return deadline(async signal => {const bytes = await publicBytes(item.url, {signal, limit, size: item.size, binary: true,
+  async function download(item, limit, signal) {return deadline(async signal => {
+    // Short-lived iframe memory only, keyed by the full authoritative asset lock.
+    // Every install still re-reads Release before/after verification. A cache hit
+    // never bypasses digest, package/content hash, identity or write-time checks.
+    pruneDownloads(); const key = JSON.stringify(item), cached = downloaded.get(key);
+    const bytes = cached ? cached.bytes.slice() : await publicBytes(item.url, {signal, limit, size: item.size, binary: true,
       relayContext: {repository: item.repository, releaseId: item.releaseId, assetId: item.id}});
-    if (await extensionHash(bytes, crypto) !== item.sha256) throw extensionPackageError('hash', 'GitHub Asset digest 校验失败。'); signal.throwIfAborted(); return bytes;}, limit === extensionMetadataLimit ? metadataTimeoutMs : assetTimeoutMs, signal);}
+    if (bytes.byteLength !== item.size || bytes.byteLength > limit || await extensionHash(bytes, crypto) !== item.sha256) throw extensionPackageError('hash', 'GitHub Asset digest 校验失败。');
+    signal.throwIfAborted(); alive();
+    if (!cached && downloadCacheTtlMs > 0) {
+      while (downloaded.size && (downloaded.size >= 8 || cacheBytes + bytes.byteLength > 32 * 1024 * 1024)) {
+        const oldest = downloaded.keys().next().value; cacheBytes -= downloaded.get(oldest).bytes.byteLength; downloaded.delete(oldest);
+      }
+      downloaded.set(key, {bytes: bytes.slice(), until: now() + Math.min(downloadCacheTtlMs, 120000)}); cacheBytes += bytes.byteLength;
+    }
+    return bytes;
+  }, limit === extensionMetadataLimit ? metadataTimeoutMs : assetTimeoutMs, signal);}
   async function releaseById(repo, id, signal) {
     if (!Number.isSafeInteger(id) || id < 1) throw extensionPackageError('release', 'Release ID 无效。');
     const release = await query(repo.api + '/releases/' + id, signal);
@@ -324,15 +363,14 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
       return {ok: true, ...row(installed), action: enabled ? 'enabled' : 'disabled', persistence: 'unconfirmed'};
     });},
     uninstall(id) {return exclusive(async () => {const saved = await snapshot(id);
-      if (typeof backup !== 'function') throw extensionPackageError('backup-required', '请先导出并确认保存恢复文件，再物理卸载该脚本及其 data。');
-      if (typeof backup === 'function') await backup(extensionClone(saved.script), {id, version: saved.version, reason: 'uninstall'});
+      if (typeof confirmUninstall === 'function' && await confirmUninstall(extensionClone(saved.script)) === false) throw extensionPackageError('cancelled', '已取消卸载，脚本保留。');
       alive();
       const result = writeTree(trees => {const entry = ensureSnapshot(trees, saved);
-        if (JSON.stringify(entry.script) !== JSON.stringify(saved.script)) throw extensionPackageError('changed', '备份后脚本 data 或其他字段已变化，请重新备份后卸载。');
+        if (JSON.stringify(entry.script) !== JSON.stringify(saved.script)) throw extensionPackageError('changed', '确认期间脚本 data 或其他字段已变化，请重新确认卸载。');
         entry.parent.splice(entry.index, 1); return trees;});
       if (extensionValidateTree(result).some(entry => entry.script.id === saved.instanceId)) throw extensionPackageError('host-write', '宿主未删除目标条目。');
       return {ok: true, id, instanceId: saved.instanceId, action: 'uninstalled', physical: true, persistence: 'unconfirmed'};
     });},
-    dispose() {disposed = true; for (const controller of controllers) controller.abort(); controllers.clear(); listeners.clear();},
+    dispose() {disposed = true; for (const controller of controllers) controller.abort(); controllers.clear(); listeners.clear(); downloaded.clear(); cacheBytes = 0; relayCooldown = null;},
   };
 }

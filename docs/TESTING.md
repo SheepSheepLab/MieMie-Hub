@@ -1,6 +1,6 @@
 # Hub 构建、更新与产物兼容验证
 
-当前版本：Hub **0.3.1**（GitHub Pre-release）；组合测试锁定 Polisher **1.1.0**。保留Hub自更新回归，新增生态UI、Registry客户端和Extension Package安装更新测试。
+当前版本：Hub **0.3.2**（GitHub Pre-release）；组合测试锁定 Polisher **1.1.0**。保留Hub自更新回归，新增生态UI、Registry客户端和Extension Package安装更新测试。
 
 ## 独立构建与测试
 
@@ -40,7 +40,7 @@ JSON 可以是中文本地文件名或 ASCII Release 文件名；校验针对实
 
 ## Ecosystem MVP 黄金路径
 
-当前版本 **Hub 0.3.1 / Polisher 1.1.0 / Registry 0.1.1**。原Hub自更新回归仍保留；本阶段不把模拟HTTP或浏览器DOM测试称为真实Discord授权或Tavern验收。
+当前版本 **Hub 0.3.2 / Polisher 1.1.0 / Registry 0.1.2**。原Hub自更新回归仍保留；本阶段不把模拟HTTP或浏览器DOM测试称为真实Discord授权或Tavern验收。
 
 - A：只启用Polisher1.1.0，独立球打开原UI，核对旧设置、Key、Prompt、备份。
 - B：Polisher先运行后启动Hub；球收纳到Hub，再停用/启用Hub，球恢复/再次收纳。重复操作无重复实例。
@@ -51,7 +51,7 @@ JSON 可以是中文本地文件名或 ASCII Release 文件名；校验针对实
 - G：同一身份编辑、下架、重新上架；发现同步变化、我的保留；已安装代码不远程停用。
 - H：修改Discord显示名/头像后重新登录，资料更新而旧投稿仍归同一身份。
 
-物理卸载会先请求恢复文件并确认实际保存，再删除该脚本条目及其data。Runtime注销不会删除原脚本。更新作者代码启动失败时手工恢复旧content，没有自动回滚；宿主写入结果不能冒称服务器保存完成。
+物理卸载确认后删除该脚本条目及其data，不请求或生成备份。Runtime注销不会删除原脚本。更新作者代码启动失败时手工恢复旧content，没有自动回滚；宿主写入结果不能冒称服务器保存完成。
 
 ## 完整 Package 产物测试
 
@@ -76,13 +76,13 @@ Hub 与时间线图片保持 SheepSheep 提供的源 PNG 字节，构建仅 Base
 发布前执行构建、全部基础测试、锁定产物组合测试、敏感信息和 staged 内容检查。发布均标记 GitHub Pre-release；附件只使用 ASCII 名称，并匿名重新下载核对最终字节 hash、Tag／Commit、元数据和工作区状态。正式发布不等于真实酒馆验收完成。
 
 
-## 浏览器 CORS 回归（0.3.1）
+## 浏览器 CORS 回归（0.3.2）
 
 ```sh
 node tests/browser-download/run.mjs --serve
 ```
 
-打开输出的 localhost 页面，自动执行 7 项浏览器回归并在页面及终端输出结果。该模式不依赖 Playwright；必须保持正常浏览器安全设置。也可以安装 Playwright 后直接运行同一文件，由 `PLAYWRIGHT_MODULE` 和 `PLAYWRIGHT_BROWSERS_PATH` 指定测试运行环境；它们不属于 Hub 产品运行时依赖。
+打开输出的 localhost 页面，自动执行 8 项浏览器回归并在页面及终端输出结果。该模式不依赖 Playwright；必须保持正常浏览器安全设置。也可以安装 Playwright 后直接运行同一文件，由 `PLAYWRIGHT_MODULE` 和 `PLAYWRIGHT_BROWSERS_PATH` 指定测试运行环境；它们不属于 Hub 产品运行时依赖。
 
 测试使用不同 localhost Origin 与没有 CORS 头的真实 HTTP 附件响应，覆盖阻断、转发成功、元数据和包篡改、错误 Origin、超时、teardown、无凭据。Registry 后端 SSRF 等边界由其独立 24 项新增测试覆盖。本地 fixture 不是社区投稿。
 

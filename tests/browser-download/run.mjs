@@ -109,7 +109,7 @@ try {
   });
   if (serveOnly) {
     const configuration = {githubOrigin, repository, relayOrigin, appOrigin, deniedAppOrigin, productId, scriptId, content};
-    const exerciseSource = async function exerciseInBrowser({githubOrigin, repository, base, install = true, timeout = 3000, disposeAfter}) {
+    const exerciseSource = async function exerciseInBrowser({githubOrigin, repository, base, install = true, timeout = 3000, disposeAfter, reinstall = false}) {
       const {createExtensionPackageManager} = await import('/src/extension-packages.js');
       let trees = [], writes = 0;
       const request = (url, options) => {
@@ -126,7 +126,8 @@ try {
       if (disposeAfter !== undefined) timer = setTimeout(() => manager.dispose(), disposeAfter);
       try {
         const candidate = await manager.inspect(repository);
-        const result = install ? await manager.install(candidate) : null;
+        let result = install ? await manager.install(candidate) : null;
+        if (reinstall) {await manager.uninstall(candidate.id); result = await manager.install(await manager.inspect(repository));}
         return {ok: true, writes, candidate: {id: candidate.id, repoUrl: candidate.repoUrl}, result, trees};
       } catch (error) {return {ok: false, writes, code: error.code, message: error.message, trees};}
       finally {clearTimeout(timer); manager.dispose();}
@@ -159,6 +160,11 @@ try {
         assert(result.candidate.repoUrl===configuration.repository&&result.result.id===configuration.productId,'Source identity changed');
         const counts=await control({});assert(counts.preflights>0&&counts.credentialHeaders===0,'Preflight missing or credentials leaked');
       });
+      await check('Uninstall and reinstall succeed without another relay download',async()=>{
+        await control({mode:'valid'});const before=await control({});const result=await run({reinstall:true});const after=await control({});
+        assert(result.ok&&result.writes===3&&result.trees.length===1,JSON.stringify(result));
+        assert(after.relayPosts-before.relayPosts===2,'Repeated installation redundantly downloaded assets');
+      });
       await check('Tampered relay metadata: digest rejection, zero writes',async()=>{
         await control({mode:'tamper-metadata'});const result=await run({});await control({mode:'valid'});
         assert(!result.ok&&result.code==='hash'&&result.writes===0,JSON.stringify(result));
@@ -190,7 +196,7 @@ try {
       });
       document.cookie='miemie_cors_fixture=; Max-Age=0; Path=/';
       const report={passed:results.filter(r=>r.passed).length,total:results.length,results,observed:await control({}),scope:'Real browser CORS against local fixtures; not real Tavern or public Registry acceptance.'};
-      output.textContent=JSON.stringify(report,null,2);document.title=report.passed===report.total?'PASS 7/7 — MieMie CORS':'FAIL — MieMie CORS';
+      output.textContent=JSON.stringify(report,null,2);document.title=report.passed===report.total?'PASS 8/8 — MieMie CORS':'FAIL — MieMie CORS';
       await control({report});
     </script>`;
     console.log(JSON.stringify({url: appOrigin, mode: 'serve', scope: 'Open this local fixture in a normal browser; results also print here.'}));
@@ -204,9 +210,9 @@ try {
   const page = await context.newPage();
   let corsConsoleErrors = 0;
   page.on('console', message => {if (/CORS|Access-Control-Allow-Origin/.test(message.text())) corsConsoleErrors++;});
-  async function exercise({base = relayOrigin, install = true, timeout = 3000, disposeAfter, origin = appOrigin} = {}) {
+  async function exercise({base = relayOrigin, install = true, timeout = 3000, disposeAfter, reinstall = false, origin = appOrigin} = {}) {
     await page.goto(origin);
-    return page.evaluate(async ({githubOrigin, repository, base, install, timeout, disposeAfter}) => {
+    return page.evaluate(async ({githubOrigin, repository, base, install, timeout, disposeAfter, reinstall}) => {
       const {createExtensionPackageManager} = await import('/src/extension-packages.js');
       let trees = [], writes = 0;
       // Only official fixture API URLs are remapped. Responses and failures are
@@ -225,11 +231,12 @@ try {
       if (disposeAfter !== undefined) timer = setTimeout(() => manager.dispose(), disposeAfter);
       try {
         const candidate = await manager.inspect(repository);
-        const result = install ? await manager.install(candidate) : null;
+        let result = install ? await manager.install(candidate) : null;
+        if (reinstall) {await manager.uninstall(candidate.id); result = await manager.install(await manager.inspect(repository));}
         return {ok: true, writes, candidate: {id: candidate.id, repoUrl: candidate.repoUrl}, result, trees};
       } catch (error) {return {ok: false, writes, code: error.code, message: error.message, trees};}
       finally {clearTimeout(timer); manager.dispose();}
-    }, {githubOrigin, repository, base, install, timeout, disposeAfter});
+    }, {githubOrigin, repository, base, install, timeout, disposeAfter, reinstall});
   }
   async function check(name, action) {await action(); passed.push(name); console.log('PASS ' + name);}
   await check('actual cross-origin GitHub asset rejection, without Registry, writes nothing', async () => {
@@ -244,6 +251,11 @@ try {
     assert.equal(result.candidate.repoUrl, repository); assert.equal(result.result.id, productId);
     assert.equal(result.trees[0].content, content); assert.notEqual(result.trees[0].id, scriptId); assert.deepEqual(result.trees[0].data, {});
     assert(observed.preflights > 0); assert.equal(observed.credentialHeaders, 0);
+  });
+  await check('uninstall and reinstall succeed without repeat relay transfers', async () => {
+    const before = observed.relayPosts, result = await exercise({reinstall: true});
+    assert.equal(result.ok, true, JSON.stringify(result)); assert.equal(result.writes, 3); assert.equal(result.trees.length, 1);
+    assert.equal(observed.relayPosts - before, 2);
   });
   await check('tampered Registry metadata fails digest validation before writing', async () => {
     relayMode = 'tamper-metadata'; const result = await exercise(); relayMode = 'valid';

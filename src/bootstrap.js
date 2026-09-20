@@ -80,13 +80,13 @@ const packageManager = createExtensionPackageManager({
   getRegistryBaseURL: () => registryClient.getBase(),
   storage: {getItem: key => h.localStorage.getItem(key), setItem: (key,value) => h.localStorage.setItem(key,value)},
   onChange() {hubUI?.refresh();},
-  async backup(script, context) {
+  confirmUninstall: () => h.confirm('确定卸载此扩展？将删除该酒馆助手脚本条目及其 data，不创建备份；工具独立保存的设置和其他脚本不受影响。'),
+  async backup(script) {
     const bytes = JSON.stringify(script, null, 2) + '\n';
     const url = h.URL.createObjectURL(new h.Blob([bytes], {type: 'application/json'}));
     const link = h.document.createElement('a'); link.href = url; link.download = 'MieMie-Extension-recovery-' + Date.now() + '.json';
     link.hidden = true; h.document.body.appendChild(link);
     try {link.click();} finally {link.remove(); h.setTimeout(() => h.URL.revokeObjectURL(url), 60000);}
-    if (context.reason === 'uninstall' && !h.confirm('已请求浏览器下载恢复 JSON，请确认文件已实际保存。卸载会删除此脚本条目及其 data，工具外部设置不会清空。确认继续卸载？')) throw Error('已取消卸载，脚本保留。');
   },
 });
 const packageUI = Object.create(packageManager);

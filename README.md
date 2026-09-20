@@ -1,6 +1,6 @@
 # MieMie Hub · 咩咩Hub
 
-当前版本 **0.3.1**（开发测试 Pre-release）。轻量 Core 保留时间线、Extension Runtime 与 Hub 自更新，新增 Extension Ecosystem MVP。基础构建和测试不依赖 Registry 或 Polisher 源码。
+当前版本 **0.3.2**（开发测试 Pre-release）。轻量 Core 保留时间线、Extension Runtime 与 Hub 自更新，新增 Extension Ecosystem MVP。基础构建和测试不依赖 Registry 或 Polisher 源码。
 
 ## 扩展中心
 
@@ -9,7 +9,7 @@
 - **发现**：从自行配置的 Registry 获取上架目录，分页、搜索及来源筛选。作者与 Discord 投稿者分别展示；机器兼容性不等于官方审核。
 - **GitHub**：文件始终来自作者自己的公开 Repository / Release。符合 [Package v1](docs/EXTENSION-PACKAGE.md) 才能安装；普通 GitHub 项目仍可跳转获取。也可直接输入作者仓库预览安装兼容性。
 - **Discord**：仅展示原帖入口，不缓存临时 CDN 附件或自动安装。
-- **已安装**：打开、启停、检查更新、更新，以及备份后物理卸载已识别的全局 Package。未识别为 Package 的运行扩展明确标为「Runtime 注销」，不会冒称已删除助手条目。
+- **已安装**：打开、启停、检查更新、更新，以及确认后物理卸载已识别的全局 Package。未识别为 Package 的运行扩展明确标为「Runtime 注销」，不会冒称已删除助手条目。
 - **我的**：Discord OAuth、公开资料、投稿、编辑、上下架。Registry 登录会话仅留在当前 Hub 内存；重载后需重新登录。管理员身份由 Registry 环境变量白名单判断。
 
 Registry 首次需要部署或本地运行，再在扩展中心「Registry 连接设置」填写服务根地址。没有内置生产地址或 OAuth Secret。配置见 [生态使用与安全边界](docs/ECOSYSTEM.md) 及 [Registry 部署说明](https://github.com/SheepSheepLab/MieMie-Registry/blob/main/docs/DEPLOYMENT.md)。
@@ -20,9 +20,9 @@ Registry 首次需要部署或本地运行，再在扩展中心「Registry 连�
 
 Extension 安装和更新先验证 Release/Asset、Manifest、产品身份、版本、大小和双 SHA-256，才写入酒馆助手全局脚本。更新只替换目标 content，保留实例 ID、名称、data、文件夹与其他脚本。公开包 data 必须为空。脚本 API 返回不等于服务器持久保存或作者代码已成功启动；界面明确提示保存/运行待确认。更新前请求导出旧脚本，作者代码启动失败时可手工恢复，第一版没有自动回滚。
 
-物理卸载会删除目标脚本条目及其 data，先导出恢复 JSON 并确认实际保存；不清空 localStorage、酒馆变量、Polisher 历史设置或其他脚本。请保存编辑并停止正在生成的任务后更新。Hash 校验不能保证作者代码安全，软件并未运行在完整沙盒里。
+物理卸载会删除目标脚本条目及其 data，仅确认删除，不自动生成备份；不清空 localStorage、酒馆变量、Polisher 历史设置或其他脚本。请保存编辑并停止正在生成的任务后更新。Hash 校验不能保证作者代码安全，软件并未运行在完整沙盒里。
 
-GitHub Extension 下载首先直连作者 Release；浏览器因 CORS 无法读取附件时，使用用户已配置的 Registry 0.1.1+ 受限字节转发。转发无需 Discord 登录，不携带 Token、聊天、密钥或宿主凭据。Registry 必须先验证作者仓库、Release 与 Manifest，只能转发匹配的两个附件；Hub 再独立校验 digest／SHA-256／身份。Registry 不持久托管软件文件。没有配置服务、服务不可达、超时或校验失败时拒绝写入，不开启宿主 Proxy、不使用公共代理或 no-cors。详见 [浏览器下载修复与复测](docs/DOWNLOAD-TRANSPORT.md)。这次不修改 Hub 自更新的独立下载流程。
+GitHub Extension 下载首先直连作者 Release；浏览器因 CORS 无法读取附件时，使用用户已配置的 Registry 0.1.2+ 受限字节转发。转发无需 Discord 登录，不携带 Token、聊天、密钥或宿主凭据。Registry 必须先验证作者仓库、Release 与 Manifest，只能转发匹配的两个附件；Hub 再独立校验 digest／SHA-256／身份。Registry 不持久托管软件文件。没有配置服务、服务不可达、超时或校验失败时拒绝写入，不开启宿主 Proxy、不使用公共代理或 no-cors。详见 [浏览器下载修复与复测](docs/DOWNLOAD-TRANSPORT.md)。这次不修改 Hub 自更新的独立下载流程。
 
 Hub 自更新继续使用设置页独立流程，仅更新自己；[既有自更新说明](docs/SELF-UPDATE.md) 中的安装实例定位、仅 content 写入、新 iframe 交接与保存读回确认保持有效。旧 alpha.4 没有更新代码，首次仍需手动引导。
 
@@ -39,8 +39,8 @@ npm test
 输出：
 
 ```text
-build/MieMie-Hub-0.3.1.json
-build/咩咩Hub-0.3.1.json
+build/MieMie-Hub-0.3.2.json
+build/咩咩Hub-0.3.2.json
 build/MieMie-Hub-update.json
 build/miemie-hub.js
 ```

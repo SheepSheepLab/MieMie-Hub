@@ -160,16 +160,16 @@ test('non-global and unknown host fields refuse mutation', async t => {
   const unknown = setup(t, fixture(), {trees: [script({}), {...other(), unfamiliar: true}]}); await assert.rejects(unknown.manager.listInstalled(), code('host-schema'));
 });
 
-test('physical enable/disable and uninstall never affect other scripts; backup contains own data', async t => {
+test('physical enable/disable and uninstall never affect other scripts and create no backup', async t => {
   const sys = setup(t, fixture(), {trees: [folder([script(), other()])]}); const untouched = sys.read()[0].scripts[1];
   await sys.manager.setEnabled(ID, false); assert.equal(sys.read()[0].scripts[0].enabled, false);
   await sys.manager.setEnabled(ID, true); assert.equal(sys.read()[0].scripts[0].enabled, true);
-  const result = await sys.manager.uninstall(ID); assert.equal(result.physical, true); assert.equal(sys.backups.length, 1); assert.deepEqual(sys.backups[0].data, {settings: {keep: true}});
+  const result = await sys.manager.uninstall(ID); assert.equal(result.physical, true); assert.equal(sys.backups.length, 0);
   assert.deepEqual(sys.read()[0].scripts, [untouched]); assert.equal((await sys.manager.listInstalled()).length, 0);
 });
 
-test('data-bearing uninstall requires recovery export facility and disabled folders stay disabled', async t => {
-  const noBackup = setup(t, fixture(), {noBackup: true}); await assert.rejects(noBackup.manager.uninstall(ID), code('backup-required')); assert.equal(noBackup.writes(), 0);
+test('data-bearing uninstall needs no backup facility and disabled folders stay disabled', async t => {
+  const noBackup = setup(t, fixture(), {noBackup: true}); assert.equal((await noBackup.manager.uninstall(ID)).physical, true); assert.equal(noBackup.writes(), 1);
   const tree = folder([script()]); tree.enabled = false; const sys = setup(t, fixture(), {trees: [tree]});
   await assert.rejects(sys.manager.setEnabled(ID, true), code('folder-disabled')); assert.equal(sys.writes(), 0);
 });
@@ -199,11 +199,11 @@ test('async host writes and missing APIs refuse operation instead of claiming su
   const missing = createExtensionPackageManager(); t.after(() => missing.dispose()); await assert.rejects(missing.listInstalled(), code('host-unavailable'));
 });
 
-test('uninstall rejects edits after recovery export and a cancelled recovery export', async t => {
+test('uninstall rejects concurrent edits and a cancelled delete confirmation', async t => {
   const changed = setup(t, fixture(), {beforeWrite: trees => {trees[0].data.newPrompt = 'test edit after export';}});
   await assert.rejects(changed.manager.uninstall(ID), code('changed')); assert.equal(changed.writes(), 0); assert.equal(changed.read().length, 2);
-  const cancelled = setup(t, fixture(), {manager: {backup: async () => {throw Error('user cancelled export confirmation');}}});
-  await assert.rejects(cancelled.manager.uninstall(ID), /cancelled/); assert.equal(cancelled.writes(), 0);
+  const cancelled = setup(t, fixture(), {manager: {confirmUninstall: async () => false}});
+  await assert.rejects(cancelled.manager.uninstall(ID), code('cancelled')); assert.equal(cancelled.writes(), 0);
 });
 
 test('candidate cannot be changed after inspection and duplicate writes cannot cover an existing ID', async t => {
@@ -360,4 +360,37 @@ test('direct successful downloads do not contact Registry and HTTP or digest fai
   let rejected;
   rejected = setup(t, fixture(), {manager: {getRegistryBaseURL() {reads++; return RELAY;}}, fetch: async (url, init) => url.includes('/releases/assets/') ? response(encode('forbidden'), url, 403) : rejected.baseRequest(url, init)});
   await assert.rejects(rejected.manager.inspect(REPO), code('http')); assert.equal(reads, 0); assert.equal(rejected.writes(), 0);
+});
+
+
+test('install, uninstall, reinstall reuses only digest-locked bytes and never downloads an uninstall backup', async t => {
+  const sys = relaySetup(t); const candidate = await sys.manager.inspect(REPO);
+  await sys.manager.install(candidate); const first = sys.relayCalls.length; assert.equal(first, 2);
+  await sys.manager.uninstall(ID); assert.equal(sys.backups.length, 0);
+  await sys.manager.install(await sys.manager.inspect(REPO));
+  assert.equal(sys.relayCalls.length, first); assert.equal(sys.writes(), 3);
+  assert.equal((await sys.manager.listInstalled()).length, 1);
+});
+
+test('cached bytes expire and fresh authoritative Release changes are still rejected', async t => {
+  let time = 0;
+  const sys = relaySetup(t, {manager: {now: () => time}});
+  const candidate = await sys.manager.inspect(REPO); await sys.manager.inspect(REPO); assert.equal(sys.relayCalls.length, 1);
+  time = 120001; await sys.manager.inspect(REPO); assert.equal(sys.relayCalls.length, 2);
+  await assert.rejects(sys.manager.install({...candidate, metadataAsset: {...candidate.metadataAsset, sha256: '0'.repeat(64)}}), code('release-changed'));
+  assert.equal(sys.writes(), 0);
+});
+
+test('Registry GitHub quota errors show retry time and cooldown avoids repeat relay traffic', async t => {
+  let time = Date.now(); const until = time + 90000;
+  const sys = relaySetup(t, {manager: {now: () => time}, reply: (bytes, body, url) => response(encode({error: {code: 'github_rate_limited', message: 'DO NOT expose upstream private details', retryAt: new Date(until).toISOString()}}), url, 429)});
+  await assert.rejects(sys.manager.inspect(REPO), e => e.code === 'github_rate_limited' && e.message.includes('额度') && !e.message.includes('private'));
+  await assert.rejects(sys.manager.inspect(REPO), code('github_rate_limited')); assert.equal(sys.relayCalls.length, 1);
+  time = until + 1; await assert.rejects(sys.manager.inspect(REPO)); assert.equal(sys.relayCalls.length, 2); assert.equal(sys.writes(), 0);
+});
+
+test('Registry upstream failure is distinguished from Origin or service-version misconfiguration', async t => {
+  const sys = relaySetup(t, {reply: (bytes, body, url) => response(encode({error: {code: 'github_unavailable', message: 'private upstream information'}}), url, 502)});
+  await assert.rejects(sys.manager.inspect(REPO), e => e.code === 'github_unavailable' && !e.message.includes('Origin') && !e.message.includes('private') && e.message.includes('作者 GitHub'));
+  assert.equal(sys.writes(), 0);
 });

@@ -140,10 +140,15 @@ try {
     await f.center('installed');await f.action('miemie.polisher:check');await until(()=>f.q('[data-extension-id="miemie.polisher"]').textContent.includes('最新版本：1.1.0'),'same version result');
     assert.equal(f.q('[data-action="miemie.polisher:update"]'),null);assert.equal(f.installed().content,polisherArtifact.content);
   });
-  await check('physical uninstall exports exact recovery JSON and removes only target script; saved business data survives',async()=>{
+  await check('physical uninstall creates no backup and removes only target script; saved business data survives',async()=>{
     const before=clone(f.installed()),data=JSON.stringify(f.vars),key=f.h.localStorage.getItem('meeme_translation_key_v1');
     await f.center('installed');await f.action('miemie.polisher:uninstall');await until(()=>!f.installed(),'target physically removed');await f.drain();
-    assert.deepEqual(JSON.parse(await f.backups.at(-1).blob.text()),before);assert.equal(f.h.__MieMieHub.extensions.get('miemie.polisher'),null);assert.deepEqual(f.trees()[0],f.other);assert.equal(JSON.stringify(f.vars),data);assert.equal(f.h.localStorage.getItem('meeme_translation_key_v1'),key);assert.ok(f.h.__timelineSwitcherV1);
+    assert.equal(f.backups.length,0);assert.equal(f.h.__MieMieHub.extensions.get('miemie.polisher'),null);assert.deepEqual(f.trees()[0],f.other);assert.equal(JSON.stringify(f.vars),data);assert.equal(f.h.localStorage.getItem('meeme_translation_key_v1'),key);assert.ok(f.h.__timelineSwitcherV1);
+  });
+  await check('uninstalled Polisher can be reinstalled through the real center without an uninstall backup',async()=>{
+    await f.center();await f.action('github:preview');await until(()=>f.q('[data-action="package:install"]'),'reinstall preview');await f.action('package:install');
+    await until(()=>f.h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'reinstalled active');await f.drain();
+    assert.equal(f.installed().content,polisherArtifact.content);assert.equal(f.backups.length,0);assert.deepEqual(f.trees()[0],f.other);
   });
   await f.close();activeFixture=null;
   const u=activeFixture=await fixture({legacy:true});

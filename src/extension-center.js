@@ -54,7 +54,7 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
     try {physical = packages ? await packages.listInstalled() : [];} catch (e) {unavailable = e.message;}
     if (disposed || active !== 'installed' || generation !== serial) return;
     content.replaceChildren();
-    content.append(el('p', '已识别的全局 Package 可以管理酒馆助手脚本条目。其他扩展的“Runtime 注销”只清理运行实例，不删除原始脚本。物理卸载会删除该脚本条目及其 data，需先保存恢复备份；localStorage 等外部业务设置不清空。', 'mm-hub-note'));
+    content.append(el('p', '已识别的全局 Package 可以管理酒馆助手脚本条目。其他扩展的“Runtime 注销”只清理运行实例，不删除原始脚本。物理卸载会删除该脚本条目及其 data，确认后直接卸载，不生成备份；localStorage 等外部业务设置不清空。', 'mm-hub-note'));
     if (unavailable) content.append(el('p', 'Package 管理不可用：' + unavailable, 'mm-hub-note'));
     const managed = new Map(physical.map(x => [x.id, x])), records = new Map(runtime.list().map(x => [x.manifest.id, x]));
     const ids = new Set([...managed.keys(), ...records.keys()]);
@@ -77,7 +77,7 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
       if (installed) {
         action(actions, '检查更新', async () => {const next = await packages.check(id); candidates.set(id, next); await renderInstalled();}, id + ':check', busy);
         if (candidate?.available) action(actions, '更新', () => operate(() => packages.update(id, candidate)), id + ':update', busy);
-        action(actions, '备份后卸载脚本', () => operate(async () => {await packages.uninstall(id); if (runtime.get(id)) await runtime.uninstall(id); candidates.delete(id);}), id + ':uninstall', busy);
+        action(actions, '卸载', () => operate(async () => {await packages.uninstall(id); if (runtime.get(id)) await runtime.uninstall(id); candidates.delete(id);}), id + ':uninstall', busy);
         link(actions, '作者 GitHub', installed.repoUrl);
       } else action(actions, 'Runtime 注销', () => operate(() => runtime.uninstall(id)), id + ':uninstall', busy || local?.busy);
       content.append(card);
