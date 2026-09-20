@@ -1,6 +1,6 @@
 # Hub 构建、更新与产物兼容验证
 
-当前版本：Hub **0.3.2**（GitHub Pre-release）；组合测试锁定 Polisher **1.1.0**。保留Hub自更新回归，新增生态UI、Registry客户端和Extension Package安装更新测试。
+当前版本：Hub **0.4.1**（GitHub Pre-release）；组合测试锁定 Polisher **1.1.0**。保留Hub自更新回归，新增生态UI、Registry客户端和Extension Package安装更新测试。
 
 ## 独立构建与测试
 
@@ -40,7 +40,7 @@ JSON 可以是中文本地文件名或 ASCII Release 文件名；校验针对实
 
 ## Ecosystem MVP 黄金路径
 
-当前版本 **Hub 0.3.2 / Polisher 1.1.0 / Registry 0.1.2**。原Hub自更新回归仍保留；本阶段不把模拟HTTP或浏览器DOM测试称为真实Discord授权或Tavern验收。
+当前版本 **Hub 0.4.1 / Polisher 1.1.0 / Registry 0.2.1**。原Hub自更新回归仍保留；本阶段不把模拟HTTP或浏览器DOM测试称为真实Discord授权或Tavern验收。
 
 - A：只启用Polisher1.1.0，独立球打开原UI，核对旧设置、Key、Prompt、备份。
 - B：Polisher先运行后启动Hub；球收纳到Hub，再停用/启用Hub，球恢复/再次收纳。重复操作无重复实例。
@@ -76,7 +76,7 @@ Hub 与时间线图片保持 SheepSheep 提供的源 PNG 字节，构建仅 Base
 发布前执行构建、全部基础测试、锁定产物组合测试、敏感信息和 staged 内容检查。发布均标记 GitHub Pre-release；附件只使用 ASCII 名称，并匿名重新下载核对最终字节 hash、Tag／Commit、元数据和工作区状态。正式发布不等于真实酒馆验收完成。
 
 
-## 浏览器 CORS 回归（0.3.2）
+## 浏览器 CORS 回归（保留 0.3.2 基线）
 
 ```sh
 node tests/browser-download/run.mjs --serve
@@ -86,4 +86,8 @@ node tests/browser-download/run.mjs --serve
 
 测试使用不同 localhost Origin 与没有 CORS 头的真实 HTTP 附件响应，覆盖阻断、转发成功、元数据和包篡改、错误 Origin、超时、teardown、无凭据。Registry 后端 SSRF 等边界由其独立 24 项新增测试覆盖。本地 fixture 不是社区投稿。
 
-本版另外在正常浏览器中用真实已发布 Polisher 1.1.0 附件联调：直接读取被 CORS 拦截，配置真实本地 Registry 后，预览和完整包字节双 hash 校验通过；安装写入目标是隔离内存脚本树，没有改动用户酒馆。这仍不宣称真实 Tavern 安装验收通过。部署／复测步骤见 [下载传输说明](DOWNLOAD-TRANSPORT.md)。
+0.3.2 阶段另外在正常浏览器中用真实已发布 Polisher 1.1.0 附件联调：直接读取被 CORS 拦截，配置真实本地 Registry 后，预览和完整包字节双 hash 校验通过；安装写入目标是隔离内存脚本树，没有改动用户酒馆。这仍不宣称真实 Tavern 安装验收通过。部署／复测步骤见 [下载传输说明](DOWNLOAD-TRANSPORT.md)。
+
+## 生产形态回归（0.4.1）
+
+构建测试区分 development / production：生产缺地址、示例域名、本机地址、非 HTTPS 或带凭据的地址全部拒绝。普通扩展中心不含服务地址或保存配置控件；内置地址直接读取发现及进入 Discord 登录。设置页高级选项默认折叠，仅创建一次，旧覆盖偏好保留、留空恢复默认值，teardown 清理按钮处理器。真实公网部署和 Discord 授权仍需要维护者提供实际 HTTPS 地址及服务端私有凭据；测试 URL 是 Fixture，不宣称服务已上线。

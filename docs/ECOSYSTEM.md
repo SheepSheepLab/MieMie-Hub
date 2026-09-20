@@ -1,6 +1,6 @@
 # Extension Ecosystem MVP
 
-Hub 0.3.2、Polisher 1.1.0、Registry 0.1.2 独立安装依赖、构建、测试与版本。Registry是可选在线目录服务，不是Core启动依赖，不托管社区软件包。目录失效不会停用已安装代码。
+Hub 0.4.1、Polisher 1.1.0、Registry 0.2.1 独立安装依赖、构建、测试与版本。Registry是可选在线目录服务，不是Core启动依赖，不托管社区软件包。目录失效不会停用已安装代码。
 
 ## 社区作者的三种参与方式
 
@@ -40,10 +40,10 @@ Hub仅管理可识别的全局脚本及支持的文件夹。角色/预设位置�
 
 Package已写入不代表作者代码运行成功或服务器已保存。列表同时显示物理版本和Runtime状态；更新前导出恢复文件，运行失败需用旧content手工恢复。物理卸载只需确认删除，不生成备份；它会移除该条目data，但不清空工具自己的外部存储。不要把Runtime注销和真正删除混用。
 
-GitHub API 与 Release 是权威来源。Extension 附件直连被 CORS 拦截时，可以通过已配置的 Registry 0.1.2+ 受限转发：只接受仓库、Release ID、Asset ID，并在服务器验证 Manifest／digest，不接受任意 URL、不持久保存附件。Hub 再独立校验原始字节。不使用 Token、公共代理、no-cors、Hub 镜像或 Discord 附件安装。没有可用转发服务时明确失败。Hash证明内容一致，不证明代码安全或账号可信；扩展和其他酒馆脚本具有宿主脚本权限，当前不是沙盒。发布元数据仍可能由不可信作者提供，安装前应核对作者来源和许可证。
+GitHub API 与 Release 是权威来源。Extension 附件直连被 CORS 拦截时，可以通过内置官方服务（或开发者显式覆盖的 Registry）受限转发：只接受仓库、Release ID、Asset ID，并在服务器验证 Manifest／digest，不接受任意 URL、不持久保存附件。Hub 再独立校验原始字节。不使用 Token、公共代理、no-cors、Hub 镜像或 Discord 附件安装。没有可用转发服务时明确失败。Hash证明内容一致，不证明代码安全或账号可信；扩展和其他酒馆脚本具有宿主脚本权限，当前不是沙盒。发布元数据仍可能由不可信作者提供，安装前应核对作者来源和许可证。
 
 ## 本地联调
 
 Registry需要Node24+。在Registry目录`npm ci`后`npm start`可以读取空Catalog；没有Discord凭据时登录清楚返回未配置，不提供假登录后门。按Registry部署文档在本机.env配置Client ID/Secret、准确Callback URL、随机SESSION_SECRET、CORS_ORIGINS、数据库路径。
 
-正式构建可设置公开的 `MIEMIE_DEFAULT_REGISTRY_URL=https://实际官方服务域名`，当前没有生产域名则保持空值，不虚构地址。Hub「高级 / 开发者设置」可覆盖服务根地址（生产HTTPS，本机可HTTP），留空保存恢复构建默认值，该地址是公开服务地址，不是Secret。Registry服务端CORS必须明确列出Tavern实际origin（含协议/端口）。不要把Client Secret、管理员ID名单、数据库或Session复制到Hub脚本。没有真实凭据的自动测试仅用明确Development Fixture/Test Adapter。
+生产构建使用 `MIEMIE_BUILD_MODE=production` 和真实 `MIEMIE_DEFAULT_REGISTRY_URL`，缺失或假地址会阻止构建。当前开发版尚无生产域名，使用明确的 development 构建、空默认值，不冒充已上线服务。普通扩展中心不显示服务配置；Hub「设置 → 高级 / 开发者选项」可覆盖服务根地址（HTTPS，本机可HTTP），默认折叠，留空保存恢复构建默认值，该地址是公开服务地址，不是Secret。Registry服务端CORS必须明确列出Tavern实际origin（含协议/端口）。不要把Client Secret、管理员ID名单、数据库或Session复制到Hub脚本。没有真实凭据的自动测试仅用明确Development Fixture/Test Adapter。

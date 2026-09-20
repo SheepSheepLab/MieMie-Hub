@@ -327,9 +327,9 @@ test('relay failure, opaque response and redirect never downgrade verification o
   for (const reply of replies) {const sys = relaySetup(t, {reply}); await assert.rejects(sys.manager.inspect(REPO)); assert.equal(sys.writes(), 0);}
 });
 
-test('missing Registry gives actionable CORS setup message without guessing a proxy', async t => {
+test('missing download service reports unavailability without asking ordinary users to configure a proxy', async t => {
   const sys = relaySetup(t, {manager: {getRegistryBaseURL: () => ''}});
-  await assert.rejects(sys.manager.inspect(REPO), error => error.code === 'download' && error.message.includes('Registry 连接设置') && error.message.includes('无需 Discord 登录'));
+  await assert.rejects(sys.manager.inspect(REPO), error => error.code === 'download' && error.message.includes('安全下载服务暂不可用') && !error.message.includes('Registry'));
   assert.equal(sys.relayCalls.length, 0); assert.equal(sys.writes(), 0);
 });
 

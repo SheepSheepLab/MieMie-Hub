@@ -192,15 +192,15 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
       // can transport only Manifest-verified assets, not arbitrary URLs. Never
       // send Tavern cookies, Registry sessions or GitHub credentials to it.
       relayBase = registryBaseURL(getRegistryBaseURL());
-      if (!relayBase) throw extensionPackageError('download', '作者 GitHub 附件被浏览器跨域限制拦截。请在“Registry 连接设置”配置 Registry 0.1.1 或以上版本以安全转发；无需 Discord 登录。未安装扩展。');
+      if (!relayBase) throw extensionPackageError('download', '作者 GitHub 附件被浏览器跨域限制拦截，安全下载服务暂不可用，请稍后重试；未安装扩展。');
       if (relayCooldown?.base === relayBase && relayCooldown.until > now()) throw extensionPackageError('github_rate_limited', 'GitHub 匿名访问额度暂时用完，请在 ' + new Date(relayCooldown.until).toLocaleTimeString() + ' 后重试；本地扩展未被修改。');
       relayURL = relayBase + '/api/packages/github/asset';
       try {response = await request(relayURL, {method: 'POST', headers: {Accept: 'application/octet-stream', 'Content-Type': 'application/json'},
         body: JSON.stringify(relayContext), mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', cache: 'no-store', signal});}
-      catch {signal.throwIfAborted(); throw extensionPackageError('relay', '无法连接 Registry 安全下载通道，请检查服务地址与 CORS Origin 配置；未安装扩展。');}
-      if (registryBaseURL(getRegistryBaseURL()) !== relayBase) throw extensionPackageError('cancelled', 'Registry 地址已改变，请重新预览项目。');
+      catch {signal.throwIfAborted(); throw extensionPackageError('relay', '安全下载服务暂时无法连接，请稍后重试；未安装扩展。');}
+      if (registryBaseURL(getRegistryBaseURL()) !== relayBase) throw extensionPackageError('cancelled', '下载服务已切换，请重新预览项目。');
     }
-    if (relayBase && (response?.url !== relayURL || response.redirected)) throw extensionPackageError('redirect', 'Registry 下载响应地址发生变化，已拒绝安装。');
+    if (relayBase && (response?.url !== relayURL || response.redirected)) throw extensionPackageError('redirect', '安全下载响应地址发生变化，已拒绝安装。');
     if (relayBase && !response?.ok && !['opaque', 'opaqueredirect'].includes(response?.type)) {
       // Only consume a bounded structured error. Never show arbitrary upstream
       // HTML/body text (which may contain IPs or internal service details).
@@ -219,13 +219,13 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
         relayCooldown = {base: relayBase, until: retryAt};
         throw extensionPackageError('github_rate_limited', 'GitHub 匿名访问额度暂时用完，请在 ' + new Date(retryAt).toLocaleTimeString() + ' 后重试；本地扩展未被修改。');
       }
-      const messages = {github_unavailable: 'Registry 暂时无法连接作者 GitHub，请稍后重试', upstream_timeout: '读取作者 GitHub 文件超时，请稍后重试', relay_busy: 'Registry 下载任务繁忙，请稍后重试', rate_limited: '请求过于频繁，请稍后重试', origin_denied: 'Registry 尚未允许当前酒馆 Origin', release_changed: '作者 Release 已发生变化，请重新预览'};
+      const messages = {github_unavailable: '安全下载服务暂时无法连接作者 GitHub，请稍后重试', upstream_timeout: '读取作者 GitHub 文件超时，请稍后重试', relay_busy: '安全下载任务繁忙，请稍后重试', rate_limited: '请求过于频繁，请稍后重试', origin_denied: '安全下载服务暂不支持当前酒馆地址，请联系服务维护者', release_changed: '作者 Release 已发生变化，请重新预览'};
       if (Object.hasOwn(messages, errorData?.code || '')) throw extensionPackageError(errorData.code, messages[errorData.code] + '；未安装扩展。');
     }
     if (!response?.ok || ['opaque', 'opaqueredirect'].includes(response.type)) throw extensionPackageError(relayBase ? 'relay' : 'http',
-      (relayBase ? 'Registry 安全转发失败，请确认服务为 0.1.1 或以上版本并允许当前酒馆 Origin' : 'GitHub 请求失败') + (response?.status ? '（HTTP ' + response.status + '）' : '') + '；未安装扩展。');
+      (relayBase ? '安全下载服务暂不可用，请稍后重试' : 'GitHub 请求失败') + (response?.status ? '（HTTP ' + response.status + '）' : '') + '；未安装扩展。');
     if (relayBase) {
-      if (response.url !== relayURL || response.redirected) throw extensionPackageError('redirect', 'Registry 下载响应地址发生变化，已拒绝安装。');
+      if (response.url !== relayURL || response.redirected) throw extensionPackageError('redirect', '安全下载响应地址发生变化，已拒绝安装。');
     } else if (binary) {
       let final; try {final = new URL(response.url);} catch {}
       if (!final || final.protocol !== 'https:' || final.username || final.password || final.port || !['api.github.com', 'github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'].includes(final.hostname)) throw extensionPackageError('redirect', '附件跳转到不受支持的地址。');
@@ -238,7 +238,7 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
     try {for (;;) {signal.throwIfAborted(); const {done, value} = await reader.read(); signal.throwIfAborted(); if (done) break;
       total += value.byteLength; if (total > limit || (size !== undefined && total > size)) throw extensionPackageError('size', '附件超过允许大小。'); chunks.push(value);}}
     finally {signal.removeEventListener('abort', cancel); void reader.cancel().catch(() => {});}
-    if (relayBase && registryBaseURL(getRegistryBaseURL()) !== relayBase) throw extensionPackageError('cancelled', 'Registry 地址已改变，请重新预览项目。');
+    if (relayBase && registryBaseURL(getRegistryBaseURL()) !== relayBase) throw extensionPackageError('cancelled', '下载服务已切换，请重新预览项目。');
     if (!total || (size !== undefined && total !== size)) throw extensionPackageError('size', '附件大小与 Release 不一致。');
     const bytes = new Uint8Array(total); let offset = 0; for (const chunk of chunks) {bytes.set(chunk, offset); offset += chunk.byteLength;} return bytes;
   }

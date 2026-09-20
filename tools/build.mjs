@@ -10,12 +10,18 @@ const data = JSON.parse(await read('packaging/script-template.json'));
 const pkg = JSON.parse(await read('package.json'));
 if (typeof pkg.version !== 'string' || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$(?![\s\S])/.test(pkg.version)) throw Error('MieMie 官方版本必须使用纯 MAJOR.MINOR.PATCH。');
 const identity = {schemaVersion: 1, productId: 'miemie.hub', version: pkg.version, scriptId: data.id};
-// The official deployment can provide a public root URL at build time. No production
-// address is invented for development; secrets never belong in this setting.
+// Production must carry a real official endpoint; development may remain offline.
+// This setting contains only a public root URL, never server secrets.
+const buildMode = process.env.MIEMIE_BUILD_MODE || 'development';
+if (!['development', 'production'].includes(buildMode)) throw Error('MIEMIE_BUILD_MODE 必须为 development 或 production。');
 let defaultRegistry = '';
+if (buildMode === 'production' && !process.env.MIEMIE_DEFAULT_REGISTRY_URL) throw Error('生产构建必须配置真实官方 HTTPS Registry 地址。');
 if (process.env.MIEMIE_DEFAULT_REGISTRY_URL) {
   const url = new URL(process.env.MIEMIE_DEFAULT_REGISTRY_URL);
-  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw Error('默认 Registry 必须为不含凭据的 HTTPS 服务根地址。');
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if ((url.protocol !== 'https:' && !(buildMode === 'development' && loopback && url.protocol === 'http:')) || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw Error('默认 Registry 必须为不含凭据的 HTTPS 服务根地址（开发模式允许本机 HTTP）。');
+  const placeholder = /(?:^|\.)(?:example\.(?:com|org|net)|example|invalid|test|localhost|local)$/.test(url.hostname.replace(/\.$/, ''));
+  if (buildMode === 'production' && (loopback || placeholder || /^[\d.]+$/.test(url.hostname) || url.hostname.startsWith('[') || !url.hostname.includes('.'))) throw Error('生产构建必须配置真实官方 HTTPS Registry 域名，不能使用示例或本机地址。');
   defaultRegistry = url.origin;
 }
 const icons = {};
@@ -32,7 +38,7 @@ const assets = {
 };
 const manifest = JSON.parse(await read('extensions/hello-mie/manifest.json'));
 const functions = [];
-for (const file of ['src/extension-runtime.js', 'src/hub-root.js', 'src/hub-update-check.js', 'src/hub-script-host.js', 'src/hub-self-update.js', 'src/registry-client.js', 'src/extension-packages.js', 'src/extension-center.js', 'src/hub-ui.js', 'extensions/hello-mie/hello-mie.js']) {
+for (const file of ['src/extension-runtime.js', 'src/hub-root.js', 'src/hub-update-check.js', 'src/hub-script-host.js', 'src/hub-self-update.js', 'src/registry-client.js', 'src/extension-packages.js', 'src/extension-center.js', 'src/registry-settings.js', 'src/hub-ui.js', 'extensions/hello-mie/hello-mie.js']) {
   let source = (await read(file)).replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
   if (file === 'src/hub-ui.js') source = source.replace('/* LEGACY_ANIMATIONS */', await read('src/legacy-animations.inc.js'));
   functions.push(source);
@@ -46,6 +52,7 @@ const content = [
   'if(h.__MieMieHub){h.__MieMieHub.open();return;}',
   "if(h.__meemeCombinedUI||h.__timelineSwitcherV1||(h.__meemeTranslation01&&!h.__MieMiePolisherSource)){h.alert('请先停用旧咩咩工具箱或独立时间线／润色脚本并刷新，再启用咩咩Hub。原有设置会沿用。');return;}",
   'const HUB_VERSION=' + JSON.stringify(pkg.version) + ';',
+  'const HUB_BUILD_MODE=' + JSON.stringify(buildMode) + ';',
   'const HUB_DEFAULT_REGISTRY_URL=' + JSON.stringify(defaultRegistry) + ';',
   'const HUB_ASSETS=' + JSON.stringify(assets) + ';',
   'const HELLO_MANIFEST=' + JSON.stringify(manifest) + ';',

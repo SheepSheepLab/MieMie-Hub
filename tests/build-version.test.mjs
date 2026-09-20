@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp, mkdir, copyFile, writeFile, readFile, rm} from 'node:fs/promises';
+import {mkdtemp, mkdir, copyFile, writeFile, readFile, rm, cp} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {execFile} from 'node:child_process';
@@ -61,6 +61,38 @@ test('Hub ASCII distribution bytes, update metadata and embedded identity agree 
   assert.ok(script.content.includes('const HUB_VERSION=' + JSON.stringify(pkg.version) + ';'));
   const expectedRegistry = process.env.MIEMIE_DEFAULT_REGISTRY_URL ? new URL(process.env.MIEMIE_DEFAULT_REGISTRY_URL).origin : '';
   assert.ok(script.content.includes('const HUB_DEFAULT_REGISTRY_URL=' + JSON.stringify(expectedRegistry) + ';'));
+  assert.ok(script.content.includes('const HUB_BUILD_MODE=' + JSON.stringify(process.env.MIEMIE_BUILD_MODE || 'development') + ';'));
+});
+
+test('production build cannot silently ship an empty, placeholder or localhost official service', async () => {
+  const project = await mkdtemp(path.join(tmpdir(), 'miemie-hub-production-config-'));
+  try {
+    await mkdir(path.join(project, 'tools')); await mkdir(path.join(project, 'packaging'));
+    await copyFile(new URL('../tools/build.mjs', import.meta.url), path.join(project, 'tools/build.mjs'));
+    await copyFile(new URL('../packaging/script-template.json', import.meta.url), path.join(project, 'packaging/script-template.json'));
+    await writeFile(path.join(project, 'package.json'), JSON.stringify({version:'1.0.0'}));
+    for (const url of ['', 'https://registry.example.org', 'https://registry.example.org.', 'https://registry.example', 'https://registry.invalid', 'https://localhost', 'http://127.0.0.1:8787', 'https://127.0.0.1', 'https://[::1]']) {
+      await assert.rejects(run(process.execPath,[path.join(project,'tools/build.mjs')],{env:{...process.env,MIEMIE_BUILD_MODE:'production',MIEMIE_DEFAULT_REGISTRY_URL:url}}), error => {
+        assert.match(error.stderr,/生产构建必须|默认 Registry 必须/);assert.doesNotMatch(error.stderr,/ENOENT/);return true;
+      },url);
+    }
+    await assert.rejects(run(process.execPath,[path.join(project,'tools/build.mjs')],{env:{...process.env,MIEMIE_BUILD_MODE:'prod'}}),error=>{assert.match(error.stderr,/MIEMIE_BUILD_MODE 必须/);return true;});
+  } finally {await rm(project,{recursive:true,force:true});}
+});
+
+test('explicit production and local development builds embed their service once without changing product identity', async () => {
+  const project=await mkdtemp(path.join(tmpdir(),'miemie-hub-build-modes-'));
+  try {
+    for(const name of ['tools','packaging','src','assets','extensions','package.json'])await cp(new URL('../'+name,import.meta.url),path.join(project,name),{recursive:true});
+    // Fixture configuration only: the build does not contact or claim ownership of this URL.
+    for(const [mode,url]of [['production','https://registry.fixture-host.net'],['development','http://127.0.0.1:8787'],['development','']]) {
+      await run(process.execPath,[path.join(project,'tools/build.mjs')],{env:{...process.env,MIEMIE_BUILD_MODE:mode,MIEMIE_DEFAULT_REGISTRY_URL:url}});
+      const content=await readFile(path.join(project,'build/miemie-hub.js'),'utf8');
+      assert.ok(content.includes('const HUB_BUILD_MODE='+JSON.stringify(mode)+';'));
+      assert.ok(content.includes('const HUB_DEFAULT_REGISTRY_URL='+JSON.stringify(url)+';'));
+      assert.match(content.split('\n')[0],/"productId":"miemie.hub"/);
+    }
+  }finally{await rm(project,{recursive:true,force:true});}
 });
 
 test('Hub build embeds each official icon without changing any PNG bytes', async () => {

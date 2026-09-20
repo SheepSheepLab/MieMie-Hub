@@ -104,6 +104,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   const backupNote = doc.createElement('p'); backupNote.className = 'mm-hub-note'; backupNote.dataset.hubBackupNote = '';
   backupNote.textContent = '已请求浏览器下载旧 Hub 恢复文件，请确认文件已保存。若新版无法启动，可在酒馆助手中恢复原条目的 content。';
   versionCard.append(versionTitle, updateTestNote, versionDetails, updateError, actions, updateNote, backupNote); settings.body.appendChild(versionCard);
+  const developerSettings = createRegistryDeveloperSettings({host, body: settings.body, registry: ecosystemOptions.registry});
   const unsubscribeUpdate = selfUpdater?.subscribe(next => {installation = next; showInstallation = next.status !== 'idle'; renderUpdatePanel();});
   renderUpdateState(updateChecker.getState());
 
@@ -256,7 +257,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
       if (disposed) return;
       disposed = true; ++serial; cancelAnimations(); doc.removeEventListener('keydown', key, true);
       updateChecker.dispose();
-      unsubscribeUpdate?.(); selfUpdater?.dispose(); ecosystem.dispose();
+      unsubscribeUpdate?.(); selfUpdater?.dispose(); developerSettings.dispose(); ecosystem.dispose();
       host.visualViewport?.removeEventListener('resize', place); host.visualViewport?.removeEventListener('scroll', place);
       checkUpdateButton.onclick = null;
       installButton.onclick = null; confirmButton.onclick = null;

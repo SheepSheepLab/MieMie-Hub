@@ -40,13 +40,6 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
     const safe = safeURL(url); if (!safe) return;
     const a = el('a', label); a.href = safe; a.target = '_blank'; a.rel = 'noopener noreferrer'; parent.append(a);
   }
-  function configuration(parent) {
-    const details = el('details'); details.append(el('summary', '高级 / 开发者设置'));
-    const input = el('input'); input.type = 'url'; input.placeholder = registry.getDefaultBase?.() || 'http://127.0.0.1:8787'; input.value = registry.getBase(); input.setAttribute('aria-label', 'Registry 服务地址');
-    details.append(el('p', 'Registry 服务地址（仅开发测试或自定义服务）', 'mm-hub-note'), input, el('p', '留空恢复构建内置地址。当前尚未部署正式服务的版本没有默认地址；登录会话只保留在当前 Hub 内存。', 'mm-hub-note'));
-    action(details, '保存连接', async () => {const override = input.value.trim(), previous = registry.getBase(); registry.setBase(override || registry.getDefaultBase?.() || ''); if (override) host.localStorage.setItem(configKey, registry.getBase()); else host.localStorage.removeItem(configKey); if (!registry.subscribe || previous === registry.getBase()) await activate(active);}, 'registry:configure');
-    parent.append(details);
-  }
   async function operate(fn) {
     if (busy) return; busy = true;
     try {const result = await fn(); if (result?.ok === false) throw Error(result.error || '操作失败。'); report('操作完成；脚本保存与运行状态请在酒馆助手中确认。');}
@@ -102,7 +95,7 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
     parent.append(preview);
   }
   async function renderDiscover() {
-    const generation = ++serial; content.replaceChildren(); configuration(content);
+    const generation = ++serial; content.replaceChildren();
     const form = el('form', undefined, 'mm-catalog-search'), search = el('input'); search.placeholder = '搜索扩展'; search.value = query; search.setAttribute('aria-label', '搜索扩展');
     const filter = el('select'); filter.setAttribute('aria-label', '来源筛选'); for (const [v,t] of [['','全部来源'],['github','GitHub'],['discord','Discord']]) {const o = el('option',t); o.value=v; filter.append(o);} filter.value=sourceFilter;
     const submit = el('button', '搜索'); submit.type='submit'; form.append(search,filter,submit); form.onsubmit=e=>{e.preventDefault();query=search.value.slice(0,100);sourceFilter=filter.value;page=1;void activate('discover');}; content.append(form);
@@ -110,7 +103,7 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
     const repo = el('input'); repo.type='url'; repo.placeholder='https://github.com/作者/仓库'; repo.setAttribute('aria-label','GitHub Repository URL'); direct.append(repo);
     action(direct,'预览项目',()=>previewInstall(repo.value.trim(),direct),'github:preview',!packages); content.append(direct);
     const list=el('div'); content.append(list);
-    if (!registry.getBase()) {list.append(el('p','在线扩展服务尚未连接。开发测试可在高级设置填写服务地址；本地已安装扩展不受影响。','mm-hub-note'));return;}
+    if (!registry.getBase()) {list.append(el('p','在线扩展服务暂未开放；本地已安装扩展仍可正常使用。','mm-hub-note'));return;}
     list.append(el('p','正在读取扩展目录…','mm-hub-note'));
     try {
       const params=new URLSearchParams({page:String(page),pageSize:'12',q:query,source:sourceFilter});
@@ -177,7 +170,7 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
     content.replaceChildren(form);
   }
   async function renderMine() {
-    const generation=++serial;content.replaceChildren();configuration(content);
+    const generation=++serial;content.replaceChildren();
     const identity=registry.getIdentity();if(generation!==serial)return;
     if(!identity){content.append(el('p','使用 Discord 登录后即可提交和管理你的扩展。','mm-hub-note'));action(content,'使用 Discord 登录',async()=>{await registry.login();if(!registry.subscribe)await activate('mine');},'registry:login');return;}
     const profile=el('div',undefined,'mm-submit-profile');icon(profile,identity.profile?.avatarUrl);profile.append(el('strong',identity.profile?.displayName||''));content.append(profile);

@@ -22,10 +22,14 @@ test('Catalog pagination/search use optional authorized API and late previous ta
 test('Catalog requires active submission; opening discover never seeds Polisher or submits a repository',async t=>{
  const f=fixture(t,{request:()=>({items:[]})});await f.center.activate('discover');assert.equal(f.body.querySelector('[aria-label="GitHub Repository URL"]').value,'');assert.equal(f.body.querySelector('[data-catalog-id]'),null);assert.doesNotMatch(f.body.textContent,/Polisher|SheepSheepLab/);assert.ok(f.calls.every(call=>call.path?.startsWith('/api/catalog')));assert.equal(f.calls[0].options.authenticated,'optional');
 });
-test('default public service works without developer configuration, override can restore the build default',async t=>{
- const f=fixture(t,{defaultBase:'https://official-registry.example',storedBase:null});await f.center.activate('mine');assert.equal(f.registry.getBase(),'https://official-registry.example');assert.match(f.body.textContent,/高级 \/ 开发者设置/);assert.equal(f.body.querySelector('details').open,false);
- const input=f.body.querySelector('[aria-label="Registry 服务地址"]');input.value='http://127.0.0.1:8787';await f.click('保存连接');assert.equal(f.registry.getBase(),'http://127.0.0.1:8787');assert.equal(f.host.localStorage.getItem('miemie_registry_url_v1'),'http://127.0.0.1:8787');
- f.body.querySelector('[aria-label="Registry 服务地址"]').value='';await f.click('保存连接');assert.equal(f.registry.getBase(),'https://official-registry.example');assert.equal(f.host.localStorage.getItem('miemie_registry_url_v1'),null);
+test('official default supports discovery and Discord login without address controls in any center tab',async t=>{
+ const f=fixture(t,{defaultBase:'https://official-registry.example',storedBase:null});
+ await f.center.activate('discover');assert.equal(f.registry.getBase(),'https://official-registry.example');assert.ok(f.calls.some(x=>x.path?.startsWith('/api/catalog')));assert.match(f.body.textContent,/Development Fixture/);
+ for(const tab of ['discover','installed','mine']){await f.center.activate(tab);assert.equal(f.body.querySelector('[aria-label="Registry 服务地址"]'),null);assert.equal(f.body.querySelector('[data-action="registry:configure"]'),null);assert.doesNotMatch(f.body.textContent,/Registry|高级 \/ 开发者|服务地址/);}
+ await f.click('使用 Discord 登录');assert.match(f.body.textContent,/Development Submitter/);assert.ok(f.body.querySelector('[data-action="registry:logout"]'));await f.click('退出登录');assert.equal(f.body.querySelector('[data-action="registry:login"]').textContent,'使用 Discord 登录');
+});
+test('existing local override is retained without exposing a center configuration form',async t=>{
+ const f=fixture(t,{defaultBase:'https://official-registry.example',storedBase:'http://127.0.0.1:8787'});await f.center.activate('mine');assert.equal(f.registry.getBase(),'http://127.0.0.1:8787');assert.equal(f.body.querySelector('input'),null);
 });
 test('Discord submission defaults public and derives guild restriction from the source URL on the server',async t=>{
  const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}}});await f.center.activate('mine');await f.click('提交扩展');const form=f.body.querySelector('[data-submission-form]');const field=name=>form.querySelector('[name="'+name+'"]');assert.equal(field('visibility').value,'public');

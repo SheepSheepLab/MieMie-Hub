@@ -103,7 +103,7 @@ test('Core system launchers coexist with existing entries without registering Ex
   assert.equal(panel.hidden, false); assert.equal(panel.inert, false);
   assert.equal(f.query('[data-hub-app="extensions"]'), null);
   for (const tab of ['discover', 'installed', 'mine']) assert.ok(f.query('[data-center-tab="' + tab + '"]'));
-  assert.match(panel.textContent, /在线扩展服务尚未连接/);
+  assert.match(panel.textContent, /在线扩展服务暂未开放/);
   await f.click('[data-center-tab="installed"]');
   assert.equal(f.doc.querySelectorAll('[data-extension-id]').length, 1);
 });
@@ -193,6 +193,9 @@ test('repeated panel switching, return, Escape and orb close reuse DOM and liste
   const f = await fixture(t);
   const center = f.query('[data-hub-panel="extension-center"]'), settings = f.query('[data-hub-panel="settings"]');
   const checkButton = f.query('[data-hub-action="check-updates"]'), checkHandler = checkButton.onclick;
+  const developer = settings.querySelector('[data-hub-developer-settings]'), configure = developer.querySelector('button'), configureHandler = configure.onclick;
+  assert.equal(developer.open, false);
+  assert.equal(center.querySelector('[aria-label="Registry 服务地址"]'), null);
   const listenerCount = f.listeners.length;
   const panelCount = f.doc.querySelectorAll('.mm-hub-panel').length;
   for (let i = 0; i < 12; i++) {
@@ -222,6 +225,9 @@ test('repeated panel switching, return, Escape and orb close reuse DOM and liste
   assert.equal(f.doc.querySelectorAll('[data-hub-action="check-updates"]').length, 1);
   assert.equal(f.query('[data-hub-action="check-updates"]'), checkButton);
   assert.equal(checkButton.onclick, checkHandler);
+  assert.equal(f.doc.querySelectorAll('[data-hub-developer-settings]').length, 1);
+  assert.equal(settings.querySelector('[data-hub-developer-settings]'), developer);
+  assert.equal(configure.onclick, configureHandler);
   assert.equal(f.listeners.length, listenerCount);
 });
 
@@ -230,8 +236,10 @@ test('script removal cleans up new panels and handlers, and reload creates one f
   const listenerCount = f.listeners.length;
   await f.launch('settings'); await f.click('[data-hub-action="check-updates"]');
   const oldButton = f.query('[data-hub-action="check-updates"]');
+  const oldConfigure = f.query('[data-action="registry:configure"]');
   f.unmount(); await settle();
   assert.equal(oldButton.onclick, null);
+  assert.equal(oldConfigure.onclick, null);
   assert.equal(f.doc.querySelectorAll('[data-hub-panel], [data-hub-app], #timeline-switcher-v1, #meeme-combined-menu').length, 0);
   assert.equal(f.listeners.length, 0); assert.equal(f.subscriptions.size, 0);
   assert.equal(f.host.__MieMieHub, undefined);

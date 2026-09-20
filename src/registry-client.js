@@ -35,16 +35,16 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
     return base;
   }
   async function api(path, {method = 'GET', body, authenticated = false} = {}) {
-    if (disposed) throw Error('Registry 连接已关闭。');
-    if (!base) throw Error('在线扩展服务尚未配置；本地扩展仍可正常使用。开发测试可在高级设置填写服务地址。');
-    if (!/^\/api\/[A-Za-z0-9/?=&%._+~-]+$/.test(path)) throw Error('Registry API 路径无效。');
+    if (disposed) throw Error('在线服务连接已关闭。');
+    if (!base) throw Error('在线扩展服务暂未开放；本地扩展仍可正常使用。');
+    if (!/^\/api\/[A-Za-z0-9/?=&%._+~-]+$/.test(path)) throw Error('在线服务请求路径无效。');
     currentIdentity();
     if (authenticated === true && !token) throw Error('请先使用 Discord 登录。');
     const requestBase = base, requestEpoch = sessionEpoch, requestToken = authenticated ? token : '';
     const controller = new AbortController(); controllers.add(controller);
     let timer;
-    const expired = new Promise((_, reject) => { timer = setTimeout(() => {controller.abort(); reject(Error('Registry 请求超时。'));}, timeoutMs); });
-    const cancelled = new Promise((_, reject) => controller.signal.addEventListener('abort', () => reject(Error('Registry 请求已取消。')), {once: true}));
+    const expired = new Promise((_, reject) => { timer = setTimeout(() => {controller.abort(); reject(Error('在线服务请求超时，请稍后重试。'));}, timeoutMs); });
+    const cancelled = new Promise((_, reject) => controller.signal.addEventListener('abort', () => reject(Error('在线服务请求已取消。')), {once: true}));
     try {
       return await Promise.race([expired, cancelled, (async () => {
         const headers = {Accept: 'application/json'};
@@ -53,25 +53,25 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
         const response = await request(requestBase + path, {method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: controller.signal, credentials: 'omit', mode: 'cors', redirect: 'error', referrerPolicy: 'no-referrer'});
         if (disposed || controller.signal.aborted || base !== requestBase || sessionEpoch !== requestEpoch) throw Error('登录状态已改变，请重试。');
         if (response.status === 401 && requestToken) clearSession();
-        if (Number(response.headers?.get('content-length')) > 2 * 1024 * 1024 || !response.body?.getReader) throw Error('Registry 响应过大或不可读取。');
+        if (Number(response.headers?.get('content-length')) > 2 * 1024 * 1024 || !response.body?.getReader) throw Error('在线服务响应过大或不可读取。');
         const reader = response.body.getReader(), chunks = []; let size = 0;
         const cancelBody = () => {void reader.cancel().catch(() => {});}; controller.signal.addEventListener('abort', cancelBody, {once: true});
-        try {for (;;) {const {done,value} = await reader.read(); if (done) break; size += value.byteLength; if (size > 2 * 1024 * 1024) throw Error('Registry 响应过大。'); chunks.push(value);}}
+        try {for (;;) {const {done,value} = await reader.read(); if (done) break; size += value.byteLength; if (size > 2 * 1024 * 1024) throw Error('在线服务响应过大。'); chunks.push(value);}}
         finally {controller.signal.removeEventListener('abort', cancelBody); void reader.cancel().catch(() => {});}
         const data = new Uint8Array(size); let offset = 0; for (const chunk of chunks) {data.set(chunk,offset); offset += chunk.byteLength;}
         const text = new TextDecoder('utf-8', {fatal:true}).decode(data);
-        let result; try {result = JSON.parse(text);} catch (_) {throw Error('Registry 返回格式异常。');}
-        if (!response.ok) throw Error(typeof result.error?.message === 'string' ? result.error.message.slice(0, 300) : typeof result.error === 'string' ? result.error.slice(0, 300) : 'Registry 请求失败（' + response.status + '）。');
+        let result; try {result = JSON.parse(text);} catch (_) {throw Error('在线服务返回格式异常。');}
+        if (!response.ok) throw Error(typeof result.error?.message === 'string' ? result.error.message.slice(0, 300) : typeof result.error === 'string' ? result.error.slice(0, 300) : '在线服务请求失败（' + response.status + '）。');
         currentIdentity();
         if (disposed || controller.signal.aborted || base !== requestBase || sessionEpoch !== requestEpoch) throw Error('登录状态已改变，请重试。');
         return result;
       })()]);
-    } catch (error) {throw Error(error?.message || 'Registry 网络连接失败。');}
+    } catch (error) {throw Error(error instanceof TypeError ? '在线服务暂时无法连接，请稍后重试。' : error?.message || '在线服务暂时无法连接，请稍后重试。');}
     finally {clearTimeout(timer); controllers.delete(controller);}
   }
   function login() {
     if (loginOperation) return loginOperation;
-    if (!base || disposed) return Promise.reject(Error('在线投稿服务尚未配置；开发测试可在高级设置填写服务地址。'));
+    if (!base || disposed) return Promise.reject(Error('在线投稿服务暂未开放，请稍后重试。'));
     // Open synchronously inside the click gesture; navigate only after state/PKCE preparation.
     const popup = host.open('about:blank', 'miemie-registry-login', 'popup,width=520,height=720');
     if (!popup) return Promise.reject(Error('登录窗口被浏览器阻止，请允许此页面弹出窗口。'));
@@ -88,7 +88,7 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
         const started = await api('/api/auth/start', {method: 'POST', body: {codeChallenge: challenge, returnOrigin: host.location.origin}});
         assertLogin();
         const auth = new URL(started.authorizationUrl);
-        if (auth.origin !== expectedOrigin || auth.pathname !== '/api/auth/authorize' || auth.username || auth.password || auth.searchParams.get('requestId') !== started.requestId || typeof started.requestId !== 'string') throw Error('Registry 返回的 Discord 登录地址无效。');
+        if (auth.origin !== expectedOrigin || auth.pathname !== '/api/auth/authorize' || auth.username || auth.password || auth.searchParams.get('requestId') !== started.requestId || typeof started.requestId !== 'string') throw Error('Discord 登录地址校验失败。');
         const result = await new Promise((resolve, reject) => {
           let exchanging = false;
           cancelLogin = () => reject(Error('登录已取消。'));

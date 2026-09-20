@@ -163,7 +163,7 @@ try {
     await u.h.__MieMieHub.open();u.click('[data-hub-app="miemie.polisher"]');await until(()=>u.q('#meeme-translation section')?.hidden===false,'updated Launcher UI');assert.equal(u.q('[data-key]').value,'fixture-not-real-api-key');assert.equal(u.q('[data-pre-text]').value,'Fixture pre prompt');assert.equal(u.vars.meeme_translation_v1.backups.length,1);
   });
   await check('Registry offline leaves real installed package, Hello, timeline and local settings usable',async()=>{
-    await u.center('discover');const url=u.q('[aria-label="Registry 服务地址"]');url.value='https://registry-fixture.invalid';u.registryOffline();await u.action('registry:configure');await until(()=>u.q('[data-hub-panel="extension-center"]').textContent.includes('扩展目录无法连接'),'offline Catalog message');
+    await u.h.__MieMieHub.open();u.click('[data-hub-app="settings"]');await tick();u.q('[data-hub-developer-settings]').open=true;const url=u.q('[aria-label="Registry 服务地址"]');url.value='https://registry-fixture.invalid';u.registryOffline();await u.action('registry:configure');await u.center('discover');await until(()=>u.q('[data-hub-panel="extension-center"]').textContent.includes('扩展目录无法连接'),'offline Catalog message');
     assert.ok(u.h.__timelineSwitcherV1);assert.equal(u.h.__MieMieHub.extensions.get('miemie.polisher').enabled,true);assert.equal((await u.h.__MieMieHub.extensions.open('miemie.hello')).ok,true);await u.center('installed');assert.ok(u.q('[data-extension-id="miemie.polisher"]'));
   });
   await check('upgraded Polisher restores one standalone launcher when only Hub stops',async()=>{
@@ -180,7 +180,7 @@ try {
   await u.close();activeFixture=null;
   const failed=activeFixture=await fixture({cors:true});
   await check('real center displays CORS/readability failure without partial script installation',async()=>{
-    await failed.center();failed.q('[aria-label="GitHub Repository URL"]').value=repoURL;await failed.action('github:preview');await until(()=>failed.q('[data-hub-panel="extension-center"]').textContent.includes('Registry 连接设置'),'actionable CORS relay setup error');assert.equal(failed.installed(),undefined);assert.equal(failed.writes.length,0);assert.ok(failed.h.__timelineSwitcherV1);assert.equal((await failed.h.__MieMieHub.extensions.open('miemie.hello')).ok,true);
+    await failed.center();failed.q('[aria-label="GitHub Repository URL"]').value=repoURL;await failed.action('github:preview');await until(()=>failed.q('[data-hub-panel="extension-center"]').textContent.includes('安全下载服务暂不可用'),'safe download service error');assert.equal(failed.installed(),undefined);assert.equal(failed.writes.length,0);assert.ok(failed.h.__timelineSwitcherV1);assert.equal((await failed.h.__MieMieHub.extensions.open('miemie.hello')).ok,true);
   });
   await failed.close();activeFixture=null;
   const bad=activeFixture=await fixture({corrupt:true});
