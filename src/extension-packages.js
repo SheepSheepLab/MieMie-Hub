@@ -1,4 +1,5 @@
 import {compareSemVer} from './hub-update-check.js';
+import {registryBaseURL} from './registry-client.js';
 
 // Downloaded scripts are never evaluated by this module. Only the host starts
 // a fully verified package after a synchronous, content-only tree mutation.
@@ -130,7 +131,7 @@ export async function validateExtensionPackage(bytes, metadata, crypto = globalT
 }
 
 export function createExtensionPackageManager({getScriptTrees, updateScriptTreesWith, fetch: request = (...args) => globalThis.fetch(...args),
-  crypto = globalThis.crypto, randomUUID = () => crypto.randomUUID(), onChange = () => {}, backup, metadataTimeoutMs = 15000, assetTimeoutMs = 60000} = {}) {
+  crypto = globalThis.crypto, randomUUID = () => crypto.randomUUID(), onChange = () => {}, backup, getRegistryBaseURL = () => '', metadataTimeoutMs = 15000, assetTimeoutMs = 60000} = {}) {
   let disposed = false, busy = false;
   const controllers = new Set(), legacyContents = new Set(), listeners = new Set();
   const notify = () => {try {onChange();} catch {} for (const listener of listeners) {try {listener();} catch {}}};
@@ -179,12 +180,28 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
     try {return await Promise.race([Promise.resolve().then(() => action(controller.signal)), cancelled]);}
     finally {clearTimeout(timer); outerSignal?.removeEventListener('abort', propagate); controllers.delete(controller);}
   }
-  async function publicBytes(url, {limit, size, binary = false, signal}) {
-    let response;
+  async function publicBytes(url, {limit, size, binary = false, signal, relayContext}) {
+    let response, relayBase = '', relayURL = '';
     try {response = await request(url, {method: 'GET', headers: {Accept: binary ? 'application/octet-stream' : 'application/vnd.github+json'}, mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', redirect: binary ? 'follow' : 'error', cache: 'no-store', signal});}
-    catch {signal.throwIfAborted(); throw extensionPackageError('download', '无法读取作者 GitHub 文件：网络或浏览器 CORS 限制；未安装扩展。');}
-    if (!response?.ok || ['opaque', 'opaqueredirect'].includes(response.type)) throw extensionPackageError('http', 'GitHub 请求失败' + (response?.status ? '（HTTP ' + response.status + '）' : '') + '。');
-    if (binary) {
+    catch {
+      signal.throwIfAborted();
+      if (!binary || !relayContext) throw extensionPackageError('download', '无法读取作者 GitHub Release 信息，请检查网络后重试；未安装扩展。');
+      // GitHub's final Release CDN may omit CORS headers. The configured Registry
+      // can transport only Manifest-verified assets, not arbitrary URLs. Never
+      // send Tavern cookies, Registry sessions or GitHub credentials to it.
+      relayBase = registryBaseURL(getRegistryBaseURL());
+      if (!relayBase) throw extensionPackageError('download', '作者 GitHub 附件被浏览器跨域限制拦截。请在“Registry 连接设置”配置 Registry 0.1.1 或以上版本以安全转发；无需 Discord 登录。未安装扩展。');
+      relayURL = relayBase + '/api/packages/github/asset';
+      try {response = await request(relayURL, {method: 'POST', headers: {Accept: 'application/octet-stream', 'Content-Type': 'application/json'},
+        body: JSON.stringify(relayContext), mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', cache: 'no-store', signal});}
+      catch {signal.throwIfAborted(); throw extensionPackageError('relay', '无法连接 Registry 安全下载通道，请检查服务地址与 CORS Origin 配置；未安装扩展。');}
+      if (registryBaseURL(getRegistryBaseURL()) !== relayBase) throw extensionPackageError('cancelled', 'Registry 地址已改变，请重新预览项目。');
+    }
+    if (!response?.ok || ['opaque', 'opaqueredirect'].includes(response.type)) throw extensionPackageError(relayBase ? 'relay' : 'http',
+      (relayBase ? 'Registry 安全转发失败，请确认服务为 0.1.1 或以上版本并允许当前酒馆 Origin' : 'GitHub 请求失败') + (response?.status ? '（HTTP ' + response.status + '）' : '') + '；未安装扩展。');
+    if (relayBase) {
+      if (response.url !== relayURL || response.redirected) throw extensionPackageError('redirect', 'Registry 下载响应地址发生变化，已拒绝安装。');
+    } else if (binary) {
       let final; try {final = new URL(response.url);} catch {}
       if (!final || final.protocol !== 'https:' || final.username || final.password || final.port || !['api.github.com', 'github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'].includes(final.hostname)) throw extensionPackageError('redirect', '附件跳转到不受支持的地址。');
     }
@@ -196,6 +213,7 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
     try {for (;;) {signal.throwIfAborted(); const {done, value} = await reader.read(); signal.throwIfAborted(); if (done) break;
       total += value.byteLength; if (total > limit || (size !== undefined && total > size)) throw extensionPackageError('size', '附件超过允许大小。'); chunks.push(value);}}
     finally {signal.removeEventListener('abort', cancel); void reader.cancel().catch(() => {});}
+    if (relayBase && registryBaseURL(getRegistryBaseURL()) !== relayBase) throw extensionPackageError('cancelled', 'Registry 地址已改变，请重新预览项目。');
     if (!total || (size !== undefined && total !== size)) throw extensionPackageError('size', '附件大小与 Release 不一致。');
     const bytes = new Uint8Array(total); let offset = 0; for (const chunk of chunks) {bytes.set(chunk, offset); offset += chunk.byteLength;} return bytes;
   }
@@ -207,9 +225,10 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
     if (!Number.isSafeInteger(item.id) || item.id <= 0 || item.state !== 'uploaded' || !Number.isSafeInteger(item.size) || item.size < 1 || item.size > limit
       || !/^sha256:[a-f0-9]{64}$(?![\s\S])/.test(item.digest || '') || item.url !== repo.api + '/releases/assets/' + item.id
       || item.browser_download_url !== repo.url + '/releases/download/' + release.tag_name + '/' + name) throw extensionPackageError('asset', 'Release Asset ID、地址、大小或 digest 无效。');
-    return {id: item.id, name, size: item.size, sha256: item.digest.slice(7), url: item.url};
+    return {id: item.id, name, size: item.size, sha256: item.digest.slice(7), url: item.url, repository: repo.url, releaseId: release.id};
   }
-  async function download(item, limit, signal) {return deadline(async signal => {const bytes = await publicBytes(item.url, {signal, limit, size: item.size, binary: true});
+  async function download(item, limit, signal) {return deadline(async signal => {const bytes = await publicBytes(item.url, {signal, limit, size: item.size, binary: true,
+      relayContext: {repository: item.repository, releaseId: item.releaseId, assetId: item.id}});
     if (await extensionHash(bytes, crypto) !== item.sha256) throw extensionPackageError('hash', 'GitHub Asset digest 校验失败。'); signal.throwIfAborted(); return bytes;}, limit === extensionMetadataLimit ? metadataTimeoutMs : assetTimeoutMs, signal);}
   async function releaseById(repo, id, signal) {
     if (!Number.isSafeInteger(id) || id < 1) throw extensionPackageError('release', 'Release ID 无效。');

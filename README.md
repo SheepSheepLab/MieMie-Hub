@@ -1,6 +1,6 @@
 # MieMie Hub · 咩咩Hub
 
-当前版本 **0.3.0**（开发测试 Pre-release）。轻量 Core 保留时间线、Extension Runtime 与 Hub 自更新，新增 Extension Ecosystem MVP。基础构建和测试不依赖 Registry 或 Polisher 源码。
+当前版本 **0.3.1**（开发测试 Pre-release）。轻量 Core 保留时间线、Extension Runtime 与 Hub 自更新，新增 Extension Ecosystem MVP。基础构建和测试不依赖 Registry 或 Polisher 源码。
 
 ## 扩展中心
 
@@ -22,7 +22,7 @@ Extension 安装和更新先验证 Release/Asset、Manifest、产品身份、版
 
 物理卸载会删除目标脚本条目及其 data，先导出恢复 JSON 并确认实际保存；不清空 localStorage、酒馆变量、Polisher 历史设置或其他脚本。请保存编辑并停止正在生成的任务后更新。Hash 校验不能保证作者代码安全，软件并未运行在完整沙盒里。
 
-GitHub 下载使用正常 CORS，不带 Token、聊天、密钥或宿主凭据。浏览器无法读取、超时或校验失败时拒绝写入，不开启 Proxy、不使用公共代理或 no-cors。真实酒馆 CORS 和 OAuth 仍需人工黄金路径验收。
+GitHub Extension 下载首先直连作者 Release；浏览器因 CORS 无法读取附件时，使用用户已配置的 Registry 0.1.1+ 受限字节转发。转发无需 Discord 登录，不携带 Token、聊天、密钥或宿主凭据。Registry 必须先验证作者仓库、Release 与 Manifest，只能转发匹配的两个附件；Hub 再独立校验 digest／SHA-256／身份。Registry 不持久托管软件文件。没有配置服务、服务不可达、超时或校验失败时拒绝写入，不开启宿主 Proxy、不使用公共代理或 no-cors。详见 [浏览器下载修复与复测](docs/DOWNLOAD-TRANSPORT.md)。这次不修改 Hub 自更新的独立下载流程。
 
 Hub 自更新继续使用设置页独立流程，仅更新自己；[既有自更新说明](docs/SELF-UPDATE.md) 中的安装实例定位、仅 content 写入、新 iframe 交接与保存读回确认保持有效。旧 alpha.4 没有更新代码，首次仍需手动引导。
 
@@ -39,8 +39,8 @@ npm test
 输出：
 
 ```text
-build/MieMie-Hub-0.3.0.json
-build/咩咩Hub-0.3.0.json
+build/MieMie-Hub-0.3.1.json
+build/咩咩Hub-0.3.1.json
 build/MieMie-Hub-update.json
 build/miemie-hub.js
 ```

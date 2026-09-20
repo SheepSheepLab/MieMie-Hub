@@ -267,3 +267,97 @@ test('update exports old content/data after verification and never writes when b
   await assert.rejects(rejected.manager.update(ID), /facility/); assert.equal(rejected.writes(), 0); assert.equal(rejected.read()[0].content, before.content);
   const invalid = setup(t, fixture(), {bytes: encode('invalid')}); await assert.rejects(invalid.manager.update(ID)); assert.equal(invalid.backups.length, 0); assert.equal(invalid.writes(), 0);
 });
+
+
+const RELAY = 'https://registry.example';
+function relaySetup(t, options = {}) {
+  const f = options.fixture || fixture(); let sys;
+  const relayCalls = [];
+  sys = setup(t, f, {trees: options.trees || [other()], manager: {getRegistryBaseURL: () => RELAY, ...options.manager},
+    fetch: async (url, init) => {
+      if (url.startsWith(API + '/releases/assets/')) throw new TypeError('Failed to fetch: browser CORS');
+      if (url === RELAY + '/api/packages/github/asset') {
+        relayCalls.push({url, init});
+        const body = JSON.parse(init.body);
+        assert.deepEqual(Object.keys(body).sort(), ['assetId', 'releaseId', 'repository']);
+        assert.equal(body.repository, REPO); assert.equal(body.releaseId, 201);
+        assert.ok([301,302].includes(body.assetId));
+        assert.equal(init.credentials, 'omit'); assert.equal(init.redirect, 'error'); assert.equal(init.mode, 'cors');
+        assert.equal(init.referrerPolicy, 'no-referrer'); assert.equal(init.headers.Authorization, undefined); assert.equal(init.headers.Cookie, undefined);
+        const bytes = body.assetId === 302 ? f.metadataBytes : f.bytes;
+        return options.reply ? options.reply(bytes, body, url, init) : response(bytes, url);
+      }
+      return sys.baseRequest(url, init);
+    }});
+  return {...sys, relayCalls, fixture: f};
+}
+
+test('CORS fallback transports only locked author Release assets with no credentials and installs verified bytes', async t => {
+  const sys = relaySetup(t);
+  const candidate = await sys.manager.inspect(REPO);
+  assert.equal(candidate.repoUrl, REPO); assert.equal(candidate.installable, true);
+  await sys.manager.install(candidate);
+  assert.equal(sys.writes(), 1); assert.equal(sys.read()[0].content, other().content);
+  assert.ok(sys.relayCalls.some(c => JSON.parse(c.init.body).assetId === 302));
+  assert.ok(sys.relayCalls.some(c => JSON.parse(c.init.body).assetId === 301));
+});
+
+test('CORS relay update preserves installed instance, user data and unrelated scripts', async t => {
+  const old = script(); const sys = relaySetup(t, {trees: [folder([old]), other()]});
+  await sys.manager.update(ID);
+  assert.equal(sys.read()[0].scripts[0].id, old.id);
+  assert.deepEqual(sys.read()[0].scripts[0].data, old.data); assert.deepEqual(sys.read()[1], other());
+});
+
+test('relay tampering of either metadata or package is rejected by original GitHub digest before writing', async t => {
+  for (const corrupted of [301,302]) {
+    const sys = relaySetup(t, {reply(bytes, body, url) {const changed = new Uint8Array(bytes); if (body.assetId === corrupted) changed[0] ^= 1; return response(changed, url);}});
+    await assert.rejects((async () => {const candidate = await sys.manager.inspect(REPO); await sys.manager.install(candidate);})(), code('hash'));
+    assert.equal(sys.writes(), 0);
+  }
+});
+
+test('relay failure, opaque response and redirect never downgrade verification or install', async t => {
+  const replies = [
+    () => {throw new TypeError('unreachable');},
+    (bytes, body, url) => response(encode({error: 'not supported'}), url, 404),
+    (bytes, body, url) => response(bytes, 'https://untrusted.invalid/file'),
+    (bytes, body, url) => {const r = response(bytes, url); Object.defineProperty(r, 'type', {value: 'opaque'}); return r;},
+  ];
+  for (const reply of replies) {const sys = relaySetup(t, {reply}); await assert.rejects(sys.manager.inspect(REPO)); assert.equal(sys.writes(), 0);}
+});
+
+test('missing Registry gives actionable CORS setup message without guessing a proxy', async t => {
+  const sys = relaySetup(t, {manager: {getRegistryBaseURL: () => ''}});
+  await assert.rejects(sys.manager.inspect(REPO), error => error.code === 'download' && error.message.includes('Registry 连接设置') && error.message.includes('无需 Discord 登录'));
+  assert.equal(sys.relayCalls.length, 0); assert.equal(sys.writes(), 0);
+});
+
+test('invalid Registry address is rejected without requests and mid-download address changes abort', async t => {
+  for (const base of ['http://remote.example', 'https://user:password@registry.example', 'https://registry.example/arbitrary']) {
+    const sys = relaySetup(t, {manager: {getRegistryBaseURL: () => base}});
+    await assert.rejects(sys.manager.inspect(REPO)); assert.equal(sys.relayCalls.length, 0);
+  }
+  let base = RELAY;
+  const sys = relaySetup(t, {manager: {getRegistryBaseURL: () => base}, reply(bytes, body, url) {base = 'https://other.example'; return response(bytes, url);}});
+  await assert.rejects(sys.manager.inspect(REPO), code('cancelled')); assert.equal(sys.writes(), 0);
+});
+
+test('relay timeout and teardown cancel pending byte transfers with no late installation', async t => {
+  const hung = relaySetup(t, {reply: () => new Promise(() => {}), manager: {metadataTimeoutMs: 10}});
+  await assert.rejects(hung.manager.inspect(REPO), code('timeout')); assert.equal(hung.writes(), 0);
+  let started;
+  const begin = new Promise(resolve => {started = resolve;});
+  const sys = relaySetup(t, {reply: () => {started(); return new Promise(() => {});}});
+  const task = sys.manager.inspect(REPO); await begin; sys.manager.dispose();
+  await assert.rejects(task, code('cancelled')); assert.equal(sys.writes(), 0); assert.equal(sys.relayCalls[0].init.signal.aborted, true);
+});
+
+test('direct successful downloads do not contact Registry and HTTP or digest failures are not rescued by relay', async t => {
+  let reads = 0;
+  const sys = setup(t, fixture(), {manager: {getRegistryBaseURL() {reads++; return RELAY;}}});
+  await sys.manager.inspect(REPO); assert.equal(reads, 0);
+  let rejected;
+  rejected = setup(t, fixture(), {manager: {getRegistryBaseURL() {reads++; return RELAY;}}, fetch: async (url, init) => url.includes('/releases/assets/') ? response(encode('forbidden'), url, 403) : rejected.baseRequest(url, init)});
+  await assert.rejects(rejected.manager.inspect(REPO), code('http')); assert.equal(reads, 0); assert.equal(rejected.writes(), 0);
+});

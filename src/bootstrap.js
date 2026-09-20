@@ -77,6 +77,7 @@ const packageManager = createExtensionPackageManager({
   getScriptTrees: typeof getScriptTrees === 'function' ? getScriptTrees : undefined,
   updateScriptTreesWith: typeof updateScriptTreesWith === 'function' ? updateScriptTreesWith : undefined,
   fetch: (...args) => window.fetch(...args), crypto: window.crypto,
+  getRegistryBaseURL: () => registryClient.getBase(),
   storage: {getItem: key => h.localStorage.getItem(key), setItem: (key,value) => h.localStorage.setItem(key,value)},
   onChange() {hubUI?.refresh();},
   async backup(script, context) {

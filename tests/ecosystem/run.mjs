@@ -175,7 +175,7 @@ try {
   await u.close();activeFixture=null;
   const failed=activeFixture=await fixture({cors:true});
   await check('real center displays CORS/readability failure without partial script installation',async()=>{
-    await failed.center();await failed.action('github:preview');await until(()=>failed.q('[data-hub-panel="extension-center"]').textContent.includes('CORS'),'safe CORS error');assert.equal(failed.installed(),undefined);assert.equal(failed.writes.length,0);assert.ok(failed.h.__timelineSwitcherV1);assert.equal((await failed.h.__MieMieHub.extensions.open('miemie.hello')).ok,true);
+    await failed.center();await failed.action('github:preview');await until(()=>failed.q('[data-hub-panel="extension-center"]').textContent.includes('Registry 连接设置'),'actionable CORS relay setup error');assert.equal(failed.installed(),undefined);assert.equal(failed.writes.length,0);assert.ok(failed.h.__timelineSwitcherV1);assert.equal((await failed.h.__MieMieHub.extensions.open('miemie.hello')).ok,true);
   });
   await failed.close();activeFixture=null;
   const bad=activeFixture=await fixture({corrupt:true});
