@@ -120,16 +120,16 @@ test('settings uses the actual package and built Core version, with an honest in
   assert.equal(f.releaseRequests.length, 0);
 });
 
-for (const [version, state, label] of [[pkg.version, 'current', '✓ 已是最新版'], ['0.2.1', 'available', '● 发现新版本'], ['0.2.0-alpha.3', 'ahead', '当前版本高于已发布版本']]) {
-  test('settings shows remote version and ' + state + ' without an update action', async t => {
-    const f = await fixture(t, async () => ({ok: true, json: async () => [{tag_name: 'v' + version, draft: false, prerelease: true}]}));
+for (const [version, state, label] of [[pkg.version, 'current', '✓ 已是最新版'], ['0.3.0', 'available', '● 发现新版本'], ['0.2.0', 'ahead', '当前版本高于已发布版本']]) {
+  test('settings shows remote version and ' + state + ', offering update only for a newer release', async t => {
+    const f = await fixture(t, async () => ({ok: true, json: async () => [{id: 123, tag_name: 'v' + version, draft: false, prerelease: true}]}));
     await f.launch('settings'); await f.click('[data-hub-action="check-updates"]');
     const status = f.query('[data-hub-update-status]');
     assert.equal(status.dataset.hubUpdateStatus, state); assert.equal(status.textContent, label);
     assert.equal(status.getAttribute('role'), 'status');
     assert.equal(f.query('[data-hub-latest-version]').textContent, version);
     assert.equal(f.query('[data-hub-latest-version]').parentElement.hidden, false);
-    assert.equal(f.query('[data-hub-action="update"]'), null);
+    assert.equal(f.query('[data-hub-action="update"]').hidden, state !== 'available');
     assert.equal(f.query('[data-hub-action="check-updates"]').disabled, false);
     await f.click('[data-hub-panel="settings"] .mm-return'); await f.launch('settings');
     assert.equal(f.query('[data-hub-update-status]'), status); assert.equal(status.textContent, label);

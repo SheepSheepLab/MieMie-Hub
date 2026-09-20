@@ -1,8 +1,8 @@
 # MieMie Hub · 咩咩Hub
 
-轻量 Hub Core，当前版本 **0.2.0-alpha.4**（Pre-release）。项目独立维护主悬浮球、Hub UI、内置时间线、Extension Runtime 和 Hello Mie；润色业务由独立的 MieMie Polisher 提供。
+轻量 Hub Core，当前版本 **0.2.1**（GitHub Pre-release）。项目独立维护主悬浮球、Hub UI、内置时间线、Extension Runtime 和 Hello Mie；润色业务由独立的 MieMie Polisher 提供。
 
-本版将「设置 → 检查更新」接入公开的 GitHub Release 版本查询，并采用 SheepSheep 提供的 Hub 主图标与时间线图标修正版，保留现有主悬浮球、Core 入口及 Panel。项目不需要 Polisher 目录、旧工具箱 JSON 或混合开发项目即可构建和运行基础测试。
+本版加入第一代 Hub 自更新：查询官方 Release，下载并校验发布文件，仅替换当前全局 Hub 脚本的代码，由新版接续确认保存。下载受浏览器 CORS 与宿主能力限制；无法安全读取、校验或定位当前实例时明确失败，不绕过检查。项目不需要 Polisher 目录、旧工具箱 JSON 或混合开发项目即可构建和运行基础测试。
 
 ## 开发
 
@@ -14,57 +14,68 @@ npm run build
 npm test
 ```
 
-`npm test` 会先构建本项目。构建仅使用 Node 内置模块；锁定的开发依赖 `jsdom` 用于 Core 面板 DOM 测试及单独执行的组合测试，不进入运行产物。`package-lock.json` 应提交，`node_modules/`、`build/`、`test-results/` 不提交。
+`npm test` 会先构建本项目。构建仅使用 Node 内置模块；锁定的开发依赖 `jsdom` 用于 Core 面板 DOM 测试及组合测试，不进入运行产物。`package-lock.json` 应提交，`node_modules/`、`build/`、`test-results/` 不提交。
 
-生成 `build/咩咩Hub-0.2.0-alpha.4.json`（导入酒馆助手）及 `build/miemie-hub.js`（检查用）。Hub 版本由本项目 `package.json` 管理，与 Polisher 版本独立。构建注入 `HUB_VERSION`，同时用于运行中的 Hub 版本与设置页显示，无额外版本常量。本地产物暂保留中文文件名；GitHub Release 附件使用 ASCII 名称 `MieMie-Hub-<版本>.json`，仅调整文件名，不改变内容。
+构建生成：
+
+```text
+build/咩咩Hub-0.2.1.json
+build/MieMie-Hub-0.2.1.json
+build/MieMie-Hub-update.json
+build/miemie-hub.js
+```
+
+中英文文件名的 Hub JSON 字节完全一致；GitHub Release 分发 ASCII 名称的 JSON 与机器更新元数据。JavaScript 文件用于检查。版本只来自本项目 `package.json`，构建注入运行代码、身份标记、设置页版本及更新元数据；Hub 与 Polisher 独立维护版本。新的官方版本必须使用无前导零的纯 `MAJOR.MINOR.PATCH`，见 [版本规范](docs/VERSIONING.md)。
 
 ## 目录职责
 
 ```text
 assets/                       Hub 与时间线样式、图片、HTML
 src/                          Core、Runtime、Shell、UI、内置时间线
-src/hub-update-check.js        Hub 公开版本查询、SemVer 比较、超时及取消
+src/hub-update-check.js        公开版本查询、SemVer 比较、超时及取消
+src/hub-self-update.js         下载、校验、更新交接与持久保存确认
+src/hub-script-host.js         正式脚本 API 适配、实例定位、仅 content 写入
 extensions/hello-mie/          内置生命周期测试扩展及 Manifest
 packaging/script-template.json 酒馆助手导出元数据
-tools/build.mjs               只构建 Hub
-tests/*.test.mjs               Runtime、Core 面板与时间线兼容测试
+tools/build.mjs               Hub 构建、身份标记与机器更新元数据
+tests/*.test.mjs               Runtime、面板、版本、宿主及自更新测试
 tests/fixtures/                本项目负责部分的旧版只读测试基线
-tests/integration/             固定 JSON 产物的组合测试、宿主模拟和锁定信息
-docs/                         Extension API、测试说明
+tests/integration/             固定 JSON 产物组合测试、宿主模拟和锁定信息
+docs/                         Extension API、版本、自更新及测试说明
 ```
 
-## 使用
+## 使用与更新
 
-停用旧工具箱或旧版本 Hub 后刷新，再导入本项目生成的 Hub JSON。只启用 Hub 即可使用时间线与 Hello Mie。需要润色时，另外导入 MieMie Polisher 提供的 Extension JSON；本项目不打包润色源码或图标。
+只启用 Hub 即可使用时间线与 Hello Mie。需要润色时，另外导入 MieMie Polisher 的 Extension JSON；本项目不打包润色源码或图标。扩展管理中的卸载仅撤销 Runtime 注册与实例，不删除助手脚本条目。时间线、主球位置与扩展偏好继续沿用原数据键。
 
-扩展管理中的卸载仅撤销 Runtime 注册与实例，不删除酒馆助手脚本条目。已载入的本地扩展源可供重新注册。时间线、主球位置与扩展偏好继续沿用原数据键。
+旧版 `0.2.0-alpha.4` 没有自更新代码，首次仍需手动升级到 `0.2.1`。只保留一个 Hub 脚本候选；保留旧条目恢复材料，不清除用户存储、世界书或 Polisher 数据。若旧 Hub 条目有自定义 `data`，优先在原条目中替换新版 `content`。详见 [首次升级和恢复](docs/SELF-UPDATE.md)。
 
-「扩展中心」与「设置」由 Core 直接打开自己的 Panel，不注册到 Extension Runtime，不使用 Manifest。原时间线与扩展管理入口保留，Extension Launcher 仍由扩展声明的可选能力决定。
+「扩展中心」与「设置」属于 Core Panel，不注册到 Extension Runtime。时间线、扩展管理及扩展提供的可选 Launcher 保持原有职责。扩展中心仍显示准备中说明，没有发现、安装或更新服务。
 
-- 扩展中心目前显示准备中说明，没有发现、安装或更新服务。
-- 设置显示当前 Hub 版本；只在点击「检查更新」时查询 `SheepSheepLab/MieMie-Hub` 的公开 Release。无需 GitHub 登录或 Token，也不查询 Polisher 或其他 Extension。
-- 支持尚未检查、检查中、已是最新版、发现新版本、当前版本高于已发布版本、检查失败。同一脚本实例内保留结果，重新载入后恢复尚未检查。发现新版本只显示版本信息，不提供更新按钮。
+设置页在点击「检查更新」后查询 `SheepSheepLab/MieMie-Hub` 的公开 Release，不要求 GitHub 登录或 Token。查询使用包含 Pre-release 的 [Release 列表 API](https://docs.github.com/en/rest/releases/releases#list-releases)，忽略 Draft 与无效 Tag，分页后选择最高有效 SemVer；保留历史预发布版本的比较兼容，不使用 `/releases/latest`。检查总超时为 15 秒，重复调用合并，teardown 取消请求。
 
-请求固定为 `GET https://api.github.com/repos/SheepSheepLab/MieMie-Hub/releases?per_page=100&page=1`，必要时递增页码。使用包含 Pre-release 的 [Release 列表 API](https://docs.github.com/en/rest/releases/releases#list-releases)，不使用 `/releases/latest`。最多读取 10 页；如果第 10 页仍满 100 项，按未能完成检查处理，不用不完整的列表宣称已是最新版。
+发现新的纯三段式版本后可点击「更新」。第一代仅支持酒馆助手全局脚本，包括受支持的全局文件夹；通过当前 iframe 的 `getScriptId()` 精确定位安装实例。更新只替换 `content`，保留实例 ID、用户名称、`data`、启用状态、顺序、文件夹及其他脚本。脚本列表名称可能继续含旧版本后缀，实际版本以新版 Hub 设置页为准。
 
-忽略 Draft、无效 Tag 和无效记录，在所有读取完成的页中选择最高有效 [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html)。允许单个小写 `v` 前缀，逐段比较主／次／补丁与预发布标识，忽略构建元数据的优先级。数字标识使用十进制长度及位序比较，避免大整数精度损失；拒绝不合法的前导零。预发布通道暂不另行区分。
+更新会重新加载 Hub，并可能中断 Extension 请求和未保存编辑，请先停止生成并保存操作。写入前请求浏览器下载旧脚本恢复文件；**请求下载不等于文件已经永久保存**。新版启动后从本标签 sessionStorage 接手确认，并通过本地宿主接口读回保存内容；只有版本、实例、代码和持久保存都匹配，才显示已确认完成。
 
-每次检查总超时为 15 秒，包含分页与读取 JSON。检查中禁用按钮并合并重复调用；失败后可重试。Hub teardown 会 abort 并结束等待，迟到响应不能更新已销毁面板。请求使用脚本 iframe 的 fetch，明确省略凭据和 Referrer，拒绝重定向；不使用酒馆请求头，不读取或发送聊天、设置、密钥，也不经过 Polisher 的宿主 fetch Hook。只读取 Release 元数据，不请求附件或源码包。
+GitHub 请求不带酒馆凭据或用户数据；下载失败、CORS 阻止、hash 不符或宿主状态不明时不降级为未校验安装。不使用公共代理、`no-cors`、Token 或自动开启宿主 Proxy。第一代没有 Loader／A/B 自动回滚；hash 验证也不代表代码绝对安全。完整边界见 [自更新说明](docs/SELF-UPDATE.md)。
 
-本版本没有 Catalog、在线下载、安装包管理、在线更新、Pinned 或蜂窝 UI。
+本版本不包含 Catalog、Extension 在线更新、Package Manager、Pinned 或蜂窝 UI。
 
 ## 开发扩展与组合验证
 
 - [Extension API v1](docs/EXTENSION-API.md)
+- [版本规范](docs/VERSIONING.md)
+- [自更新、保存确认与恢复](docs/SELF-UPDATE.md)
 - [测试、固定版本产物与限制](docs/TESTING.md)
 
-基础测试不使用 Polisher。组合测试需显式提供已构建的独立 JSON，校验其版本及 SHA-256 后才运行。例如：
+基础测试不使用 Polisher。组合测试显式接收独立构建的 Polisher **1.0.1** JSON，并按 `tests/integration/artifacts.lock.json` 检查双方版本及 SHA-256：
 
 ```sh
-npm run test:integration -- --polisher /absolute/path/咩咩润色工具-Extension-1.0.1-hub.2.json
+npm run test:integration -- --polisher /absolute/path/咩咩润色工具-Extension-1.0.1.json
 ```
 
-JSON 可以从任何目录取得，不需要另一项目的源码，也不会自动下载。
+JSON 可以来自任意目录，无需另一项目源码，不自动下载。自动测试不等同于真实酒馆更新验收。
 
 ## 授权与来源
 

@@ -1,4 +1,4 @@
-export function createHubUI(host, shell, assets, runtime, localSources, hubVersion) {
+export function createHubUI(host, shell, assets, runtime, localSources, hubVersion, selfUpdater) {
   const doc = host.document, orb = shell.orb, icons = assets.icons;
   const timeline = host.__timelineSwitcherV1;
   const tp = timeline.root.querySelector('.ts-panel');
@@ -60,25 +60,52 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   const updateError = doc.createElement('p'); updateError.className = 'mm-hub-note'; updateError.dataset.hubUpdateError = '';
   const updateLabels = {unchecked: '尚未检查', checking: '正在检查…', current: '✓ 已是最新版',
     available: '● 发现新版本', ahead: '当前版本高于已发布版本', failed: '检查更新失败'};
-  function renderUpdateState(updateState) {
+  const installationLabels = {preparing: '正在准备更新…', downloading: '正在下载…', verifying: '正在校验…',
+    installing: '正在安装…', 'awaiting-reload': '等待新版确认…', confirming: '新版已加载，正在确认保存…',
+    completed: '✓ 更新完成，已确认保存', unconfirmed: '更新保存状态待确认', failed: '更新失败'};
+  let updateState = {status: 'unchecked', latestVersion: null, error: ''};
+  let installation = {status: 'idle', error: ''}, showInstallation = false;
+  function renderUpdateState(next) {updateState = next; renderUpdatePanel();}
+  function renderUpdatePanel() {
     if (disposed) return;
-    updateStatus.dataset.hubUpdateStatus = updateState.status;
-    updateStatus.textContent = updateLabels[updateState.status];
-    latestVersion.textContent = updateState.latestVersion || '';
-    latestVersion.parentElement.hidden = !updateState.latestVersion;
-    updateError.textContent = updateState.error; updateError.hidden = !updateState.error;
-    checkUpdateButton.disabled = updateState.status === 'checking';
+    const installing = showInstallation && installation.status !== 'idle';
+    const displayed = installing ? installation : updateState;
+    updateStatus.dataset.hubUpdateStatus = displayed.status;
+    updateStatus.textContent = (installing ? installationLabels : updateLabels)[displayed.status] || '更新状态待确认';
+    latestVersion.textContent = updateState.latestVersion || installation.targetVersion || '';
+    latestVersion.parentElement.hidden = !latestVersion.textContent;
+    updateError.textContent = displayed.error || ''; updateError.hidden = !displayed.error;
+    const busy = !!selfUpdater?.isBusy();
+    checkUpdateButton.disabled = updateState.status === 'checking' || busy;
+    installButton.hidden = updateState.status !== 'available';
+    installButton.disabled = busy || updateState.status === 'checking' || installation.status === 'unconfirmed';
+    confirmButton.hidden = installation.status !== 'unconfirmed';
+    confirmButton.disabled = busy;
+    backupNote.hidden = !installation.backupRequested;
     versionCard.setAttribute('aria-busy', String(checkUpdateButton.disabled));
   }
   function checkHubUpdate() {
-    if (disposed) return;
+    if (disposed || selfUpdater?.isBusy()) return;
+    showInstallation = false;
     void updateChecker.check();
   }
   const checkUpdateButton = doc.createElement('button'); checkUpdateButton.type = 'button'; checkUpdateButton.className = 'mm-system-action';
   checkUpdateButton.dataset.hubAction = 'check-updates'; checkUpdateButton.textContent = '检查更新'; checkUpdateButton.onclick = checkHubUpdate;
   // Use the helper iframe's fetch, keeping this request separate from host / Extension hooks.
   const updateChecker = createHubUpdateChecker({currentVersion: hubVersion, onChange: renderUpdateState});
-  versionCard.append(versionTitle, versionDetails, updateError, checkUpdateButton); settings.body.appendChild(versionCard);
+  const installButton = doc.createElement('button'); installButton.type = 'button'; installButton.className = 'mm-system-action';
+  installButton.dataset.hubAction = 'update'; installButton.textContent = '更新';
+  installButton.onclick = () => {if (!disposed && updateState.status === 'available') void selfUpdater?.start(updateState.targetRelease);};
+  const confirmButton = doc.createElement('button'); confirmButton.type = 'button'; confirmButton.className = 'mm-system-action';
+  confirmButton.dataset.hubAction = 'confirm-update'; confirmButton.textContent = '重新确认保存';
+  confirmButton.onclick = () => {if (!disposed) void selfUpdater?.resume();};
+  const actions = doc.createElement('div'); actions.className = 'mm-system-actions'; actions.append(checkUpdateButton, installButton, confirmButton);
+  const updateNote = doc.createElement('p'); updateNote.className = 'mm-hub-note';
+  updateNote.textContent = '自动更新仅支持全局脚本。更新会重新加载 Hub 并中断扩展任务，请先停止生成并保存编辑。下载或校验失败时不会安装。';
+  const backupNote = doc.createElement('p'); backupNote.className = 'mm-hub-note'; backupNote.dataset.hubBackupNote = '';
+  backupNote.textContent = '已请求浏览器下载旧 Hub 恢复文件，请确认文件已保存。若新版无法启动，可在酒馆助手中恢复原条目的 content。';
+  versionCard.append(versionTitle, versionDetails, updateError, actions, updateNote, backupNote); settings.body.appendChild(versionCard);
+  const unsubscribeUpdate = selfUpdater?.subscribe(next => {installation = next; showInstallation = next.status !== 'idle'; renderUpdatePanel();});
   renderUpdateState(updateChecker.getState());
 
   function place() {
@@ -262,8 +289,10 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
       if (disposed) return;
       disposed = true; ++serial; cancelAnimations(); doc.removeEventListener('keydown', key, true);
       updateChecker.dispose();
+      unsubscribeUpdate?.(); selfUpdater?.dispose();
       host.visualViewport?.removeEventListener('resize', place); host.visualViewport?.removeEventListener('scroll', place);
       checkUpdateButton.onclick = null;
+      installButton.onclick = null; confirmButton.onclick = null;
       root.remove(); manager.panel.remove(); message.panel.remove(); center.panel.remove(); settings.panel.remove();
     },
   };

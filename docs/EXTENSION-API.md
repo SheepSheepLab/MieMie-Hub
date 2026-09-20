@@ -1,6 +1,6 @@
 # MieMie Hub Extension API v1
 
-适用已验证的 Hub 0.2.0-alpha.2。这里只记录现有接口，不增加 Runtime、包管理或权限机制。
+适用于 MieMie Hub Extension API v1。这里只记录现有接口，不增加 Runtime、包管理或权限机制。
 
 ## 三个独立概念
 

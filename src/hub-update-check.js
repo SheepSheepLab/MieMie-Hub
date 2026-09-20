@@ -44,7 +44,8 @@ export function selectLatestRelease(releases) {
   for (const release of releases) {
     if (!release || release.draft !== false) continue;
     const version = parseSemVer(release.tag_name);
-    if (version && (!latest || compareSemVer(version, latest) > 0)) latest = version;
+    if (version && (!latest || compareSemVer(version, latest) > 0)) latest = {...version,
+      releaseId: Number.isSafeInteger(release.id) && release.id > 0 ? release.id : null, tag: release.tag_name};
   }
   return latest;
 }
@@ -77,7 +78,8 @@ export function createHubUpdateChecker({currentVersion, fetch: request = (...arg
       if (releases.length < RELEASE_PAGE_SIZE) {
         if (!latest) throw failure('no-release', '未找到有效的 Hub Release，请稍后重试。');
         const order = compareSemVer(current, latest);
-        return {status: order < 0 ? 'available' : order > 0 ? 'ahead' : 'current', latestVersion: latest.version, error: ''};
+        return {status: order < 0 ? 'available' : order > 0 ? 'ahead' : 'current', latestVersion: latest.version, error: '',
+          targetRelease: latest.releaseId ? {releaseId: latest.releaseId, version: latest.version, tag: latest.tag} : null};
       }
     }
     // Never claim to be current after examining only part of the release list.

@@ -27,3 +27,6 @@
 #meeme-combined-menu .mm-small small{max-width:100px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
 #meeme-combined-menu .mm-extension{border-color:#a792dc}
 @media(max-height:400px){#timeline-switcher-v1 .mm-hub-header{min-height:55px;padding:6px 12px}#timeline-switcher-v1 .mm-hub-header img{width:36px;height:36px}#timeline-switcher-v1 .mm-hub-body{padding:10px 12px}}
+/* Core update controls share the existing settings panel and button style. */
+#timeline-switcher-v1 .mm-system-actions{display:flex;flex-wrap:wrap;gap:10px}
+#timeline-switcher-v1 .mm-system-action[hidden]{display:none}

@@ -46,10 +46,37 @@ function provide(manifest, factory) {
     }};
   } catch (error) { return {ok: false, error: error.message}; }
 }
+// Capture the iframe-bound API, never derive an installed ID from the package.
+const hubScriptHost = createHubScriptHost({currentVersion: HUB_VERSION,
+  getScriptId: typeof getScriptId === 'function' ? getScriptId : undefined,
+  getScriptTrees: typeof getScriptTrees === 'function' ? getScriptTrees : undefined,
+  updateScriptTreesWith: typeof updateScriptTreesWith === 'function' ? updateScriptTreesWith : undefined,
+});
+const hubSelfUpdater = createHubSelfUpdater({currentVersion: HUB_VERSION, host: hubScriptHost,
+  storage: {getItem: key => h.sessionStorage.getItem(key), setItem: (key, value) => h.sessionStorage.setItem(key, value), removeItem: key => h.sessionStorage.removeItem(key)},
+  backup(script, version) {
+    // A recovery download is not a guarantee that the browser saved the file.
+    // Its object URL lives briefly in the parent so our own iframe reload does
+    // not revoke it before the browser has started reading the backup.
+    const blob = new h.Blob([JSON.stringify(script, null, 2) + '\n'], {type: 'application/json'});
+    const url = h.URL.createObjectURL(blob), link = h.document.createElement('a');
+    link.href = url; link.download = 'MieMie-Hub-backup-' + version + '-' + Date.now() + '.json';
+    link.hidden = true; h.document.body.appendChild(link);
+    try {link.click();}
+    finally {link.remove(); h.setTimeout(() => h.URL.revokeObjectURL(url), 60000);}
+  },
+  readSavedContent: createHubSavedScriptReader({fetch: (...args) => window.fetch(...args), origin: h.location.origin,
+    getRequestHeaders: () => {
+      const context = h.SillyTavern?.getContext?.();
+      if (typeof context?.getRequestHeaders !== 'function') throw Error('宿主保存确认接口不可用。');
+      return context.getRequestHeaders();
+    },
+  }),
+});
 hubUI = createHubUI(h, hubShell, HUB_ASSETS, extensionRuntime, {
   list: () => [...sources.values()].map(s => JSON.parse(JSON.stringify(s.manifest))),
   register: registerSource,
-}, HUB_VERSION);
+}, HUB_VERSION, hubSelfUpdater);
 // Keep the previous Hub bridge for callers; no polishing implementation lives here.
 const combinedUI = {open: hubUI.open, toggle: hubUI.toggle, back: hubUI.back};
 h.__meemeCombinedUI = combinedUI;
@@ -66,9 +93,13 @@ const publicHub = Object.freeze({
 });
 h.__MieMieHub = publicHub;
 h.dispatchEvent(new h.CustomEvent('miemie:hub-ready', {detail: publicHub}));
+// UI, Shell, built-in timeline and runtime have been constructed. Only a pending
+// local handoff triggers persistence readback; ordinary startup never phones home.
+void Promise.resolve(publicHub.ready).then(() => {if (!hubDisposed) return hubSelfUpdater.resume();});
 function cleanupHub() {
   if (hubDisposed) return;
   hubDisposed = true;
+  hubSelfUpdater.dispose();
   // dispose() revokes every extension synchronously before its first await.
   void extensionRuntime.dispose();
   sources.clear(); hubUI.dispose(); hubShell.dispose();

@@ -2,11 +2,14 @@ import {readFile, writeFile, mkdir} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import vm from 'node:vm';
+import {createHash} from 'node:crypto';
 
 const project = fileURLToPath(new URL('../', import.meta.url));
 const read = file => readFile(path.join(project, file), 'utf8');
 const data = JSON.parse(await read('packaging/script-template.json'));
 const pkg = JSON.parse(await read('package.json'));
+if (typeof pkg.version !== 'string' || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$(?![\s\S])/.test(pkg.version)) throw Error('MieMie 官方版本必须使用纯 MAJOR.MINOR.PATCH。');
+const identity = {schemaVersion: 1, productId: 'miemie.hub', version: pkg.version, scriptId: data.id};
 const icons = {};
 for (const [name, file] of Object.entries({home: 'hub', timeline: 'timeline'})) icons[name] = 'data:image/png;base64,' + (await readFile(path.join(project, 'assets/' + file + '.png'))).toString('base64');
 const assets = {
@@ -21,13 +24,14 @@ const assets = {
 };
 const manifest = JSON.parse(await read('extensions/hello-mie/manifest.json'));
 const functions = [];
-for (const file of ['src/extension-runtime.js', 'src/hub-root.js', 'src/hub-update-check.js', 'src/hub-ui.js', 'extensions/hello-mie/hello-mie.js']) {
-  let source = (await read(file)).replace(/^export /gm, '');
+for (const file of ['src/extension-runtime.js', 'src/hub-root.js', 'src/hub-update-check.js', 'src/hub-script-host.js', 'src/hub-self-update.js', 'src/hub-ui.js', 'extensions/hello-mie/hello-mie.js']) {
+  let source = (await read(file)).replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
   if (file === 'src/hub-ui.js') source = source.replace('/* LEGACY_ANIMATIONS */', await read('src/legacy-animations.inc.js'));
   functions.push(source);
 }
 const content = [
-  '// 咩咩Hub ' + pkg.version + ' · Hub Release 版本检查 / 基于咩咩工具箱 1.0.1',
+  '// MieMie-Hub-Build: ' + JSON.stringify(identity),
+  '// 咩咩Hub ' + pkg.version + ' · Hub 自更新 / 基于咩咩工具箱 1.0.1',
   '(() => {',
   "'use strict';",
   'const h=window.parent;',
@@ -44,9 +48,17 @@ const content = [
 ].join('\n');
 new vm.Script(content, {filename: 'miemie-hub.js'});
 data.name = '咩咩Hub ' + pkg.version;
-data.info = '内置时间线、扩展管理、设置、扩展中心入口及 Hello Mie；翻译／润色请另行导入独立扩展脚本。停用旧版并刷新后启用；原有设置沿用。设置可查询公开 GitHub Release（含预发布）并比较 Hub 版本；不下载或安装更新。扩展中心正在准备中。';
+data.info = '内置时间线、扩展管理、设置、扩展中心入口及 Hello Mie；润色请另行导入独立扩展。首次从旧版本升级需手动导入并停用旧 Hub。设置可查询官方 GitHub Release；全局脚本支持校验后就地更新自身。浏览器 CORS 或宿主校验失败时拒绝安装；请保留更新前请求下载的恢复文件。扩展中心正在准备中。';
 data.content = content;
 await mkdir(path.join(project, 'build'), {recursive: true});
 await writeFile(path.join(project, 'build/miemie-hub.js'), content);
-await writeFile(path.join(project, 'build/咩咩Hub-' + pkg.version + '.json'), JSON.stringify(data, null, 2) + '\n');
+const bytes = Buffer.from(JSON.stringify(data, null, 2) + '\n');
+const assetName = 'MieMie-Hub-' + pkg.version + '.json';
+await writeFile(path.join(project, 'build/咩咩Hub-' + pkg.version + '.json'), bytes);
+await writeFile(path.join(project, 'build', assetName), bytes);
+const hash = value => createHash('sha256').update(value).digest('hex');
+const update = {schemaVersion: 1, productId: identity.productId, version: pkg.version, tag: 'v' + pkg.version,
+  format: 'tavern-helper-script', scriptId: data.id,
+  asset: {name: assetName, size: bytes.length, sha256: hash(bytes)}, contentSha256: hash(Buffer.from(content))};
+await writeFile(path.join(project, 'build/MieMie-Hub-update.json'), JSON.stringify(update, null, 2) + '\n');
 console.log('Built ' + data.name + ' · ' + Buffer.byteLength(content) + ' bytes');

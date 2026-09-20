@@ -267,6 +267,42 @@ async function runTests() {
       assert(saveCount >= 3, '润色保存未调用');
     });
     await runPolisherChecks(check);
+    await check('仅重载 Hub iframe 时，原 Polisher 脚本自动重连且设置、密钥、备份和世界书完整保留', async () => {
+      const oldHub = window.__MieMieHub, sourceFrame = polisherFrame, sourceWindow = polisherFrame.contentWindow;
+      const oldPolisherPanel = window.__meemeTranslation01.panel, oldFetch = window.fetch;
+      const eventCounts = () => JSON.stringify([...events].map(([name, handlers]) => [name, handlers.size]).sort());
+      const liveCounts = eventCounts();
+      const before = {
+        variables: JSON.stringify(variables), worldbook: JSON.stringify(worldbook), chat: JSON.stringify(ctx.chat),
+        preferences: localStorage.getItem('miemie_hub_extensions_v1'),
+        dock: localStorage.getItem('meeme_timeline_dock_v1'), key: localStorage.getItem('meeme_translation_key_v1'),
+        backups: JSON.stringify(variables.meeme_translation_v1.backups),
+      };
+      assert(oldHub.extensions.get('miemie.polisher')?.enabled && sourceFrame.isConnected, '测试前润色未启用或源 iframe 缺失');
+      await removeFrame(frame); frame = null;
+      assert(polisherFrame === sourceFrame && sourceFrame.isConnected && sourceFrame.contentWindow === sourceWindow, '错误地重载了 Polisher 源 iframe');
+      assert(!window.__MieMieHub && !window.__meemeTranslation01 && !document.querySelector('#meeme-translation'), '旧 Hub 停止后残留润色 UI 或实例');
+      assert(!document.querySelector('[data-hub-app="miemie.polisher"]') && window.fetch === fixtureFetch, '旧 Hub 停止后残留入口或润色 Hook');
+      assert([...events.values()].every(handlers => handlers.size === 0) && activeTimers.size === 0, '旧 Hub 停止后残留宿主监听或轮询');
+      assert([...oldPolisherPanel.querySelectorAll('*')].every(el => !el.onclick && !el.oninput && !el.onchange && !el.onkeydown), '旧润色节点残留事件回调');
+      assert(localStorage.getItem('miemie_hub_extensions_v1') === before.preferences, 'Hub teardown 改写了扩展启用偏好');
+      frame = await loadFrame('hub');
+      await until(() => window.__MieMieHub && window.__MieMieHub !== oldHub, '新 Hub 实例载入');
+      await window.__MieMieHub.ready;
+      await until(() => window.__MieMieHub.extensions.get('miemie.polisher')?.enabled, '保留的 Polisher 源自动重新提供并启用');
+      assert(polisherFrame === sourceFrame && sourceFrame.contentWindow === sourceWindow && sourceFrame.isConnected, '新 Hub 通过重载 Polisher 假装重连');
+      assert(window.fetch !== fixtureFetch && window.fetch !== oldFetch, '新 Hub 没有创建独立的新润色 Hook');
+      assert(eventCounts() === liveCounts, '重连后监听数量变化或重复注册');
+      assert(document.querySelectorAll('#meeme-translation').length === 1 && document.querySelectorAll('[data-hub-app="miemie.polisher"]').length === 1, '重连后润色 UI 或 Launcher 重复');
+      await menu(); click('[data-hub-app="miemie.polisher"]');
+      await until(() => !document.querySelector('#meeme-translation section').hidden, '从新 Hub Launcher 打开原 Polisher');
+      assert(window.__meemeTranslation01.panel !== oldPolisherPanel, '重连错误地复用了已清理的面板');
+      assert(JSON.stringify(variables) === before.variables, 'Hub 单独重载改变了时间线或 Polisher 配置/提示词');
+      assert(JSON.stringify(variables.meeme_translation_v1.backups) === before.backups, 'Hub 单独重载改变了润色备份');
+      assert(JSON.stringify(worldbook) === before.worldbook && JSON.stringify(ctx.chat) === before.chat, 'Hub 单独重载改变了世界书或聊天');
+      assert(localStorage.getItem('miemie_hub_extensions_v1') === before.preferences, '重连改变了注册/启用偏好');
+      assert(localStorage.getItem('meeme_timeline_dock_v1') === before.dock && localStorage.getItem('meeme_translation_key_v1') === before.key, '重连改变了悬浮球位置或 API Key');
+    });
     await check('脚本停用清理事件、轮询、DOM 和 fetch 包装；状态可恢复', async () => {
       await unmount();
       assert([...events.values()].every(set => set.size === 0), '残留宿主事件监听');
