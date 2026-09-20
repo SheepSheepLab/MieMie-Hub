@@ -112,6 +112,7 @@ test('settings uses the actual package and built Core version, with an honest in
   await f.launch('settings');
   assert.equal(f.query('[data-hub-panel="settings"]').hidden, false);
   assert.equal(f.query('[data-hub-version]').textContent, pkg.version);
+  assert.equal(f.query('[data-hub-update-test]').textContent, '自动更新功能测试版本');
   assert.equal(f.query('[data-hub-version]').textContent, f.host.__MieMieHub.version);
   assert.equal(artifact.name, '咩咩Hub ' + pkg.version);
   assert.equal(f.query('[data-hub-update-status]').dataset.hubUpdateStatus, 'unchecked');

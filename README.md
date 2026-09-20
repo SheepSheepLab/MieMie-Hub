@@ -1,8 +1,10 @@
 # MieMie Hub · 咩咩Hub
 
-轻量 Hub Core，当前版本 **0.2.1**（GitHub Pre-release）。项目独立维护主悬浮球、Hub UI、内置时间线、Extension Runtime 和 Hello Mie；润色业务由独立的 MieMie Polisher 提供。
+轻量 Hub Core，当前版本 **0.2.2**（GitHub Pre-release）。项目独立维护主悬浮球、Hub UI、内置时间线、Extension Runtime 和 Hello Mie；润色业务由独立的 MieMie Polisher 提供。
 
-本版加入第一代 Hub 自更新：查询官方 Release，下载并校验发布文件，仅替换当前全局 Hub 脚本的代码，由新版接续确认保存。下载受浏览器 CORS 与宿主能力限制；无法安全读取、校验或定位当前实例时明确失败，不绕过检查。项目不需要 Polisher 目录、旧工具箱 JSON 或混合开发项目即可构建和运行基础测试。
+0.2.2 仅在设置页增加“自动更新功能测试版本”文字，作为 0.2.1 的真实更新目标；更新实现和数据结构保持不变。
+
+0.2.1 加入第一代 Hub 自更新：查询官方 Release，下载并校验发布文件，仅替换当前全局 Hub 脚本的代码，由新版接续确认保存。下载受浏览器 CORS 与宿主能力限制；无法安全读取、校验或定位当前实例时明确失败，不绕过检查。项目不需要 Polisher 目录、旧工具箱 JSON 或混合开发项目即可构建和运行基础测试。
 
 ## 开发
 
@@ -19,8 +21,8 @@ npm test
 构建生成：
 
 ```text
-build/咩咩Hub-0.2.1.json
-build/MieMie-Hub-0.2.1.json
+build/咩咩Hub-0.2.2.json
+build/MieMie-Hub-0.2.2.json
 build/MieMie-Hub-update.json
 build/miemie-hub.js
 ```

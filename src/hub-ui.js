@@ -49,6 +49,8 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
 
   const versionCard = doc.createElement('div'); versionCard.className = 'mm-system-card';
   const versionTitle = doc.createElement('h2'); versionTitle.textContent = 'Hub 版本';
+  const updateTestNote = doc.createElement('p'); updateTestNote.className = 'mm-hub-note';
+  updateTestNote.dataset.hubUpdateTest = ''; updateTestNote.textContent = '自动更新功能测试版本';
   const versionDetails = doc.createElement('dl'); versionDetails.className = 'mm-setting-list';
   function settingRow(label) {
     const row = doc.createElement('div'), term = doc.createElement('dt'), value = doc.createElement('dd');
@@ -104,7 +106,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   updateNote.textContent = '自动更新仅支持全局脚本。更新会重新加载 Hub 并中断扩展任务，请先停止生成并保存编辑。下载或校验失败时不会安装。';
   const backupNote = doc.createElement('p'); backupNote.className = 'mm-hub-note'; backupNote.dataset.hubBackupNote = '';
   backupNote.textContent = '已请求浏览器下载旧 Hub 恢复文件，请确认文件已保存。若新版无法启动，可在酒馆助手中恢复原条目的 content。';
-  versionCard.append(versionTitle, versionDetails, updateError, actions, updateNote, backupNote); settings.body.appendChild(versionCard);
+  versionCard.append(versionTitle, updateTestNote, versionDetails, updateError, actions, updateNote, backupNote); settings.body.appendChild(versionCard);
   const unsubscribeUpdate = selfUpdater?.subscribe(next => {installation = next; showInstallation = next.status !== 'idle'; renderUpdatePanel();});
   renderUpdateState(updateChecker.getState());
 
