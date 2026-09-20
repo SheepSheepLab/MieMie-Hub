@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "miemie.hello",
+  "name": "Hello Mie",
+  "version": "0.1.0",
+  "description": "用于验证注册、启用、停用与清理的本地测试扩展。",
+  "entry": "hello-mie.js",
+  "contributes": {
+    "launcher": {
+      "title": "Hello Mie",
+      "icon": "🐑"
+    }
+  }
+}
