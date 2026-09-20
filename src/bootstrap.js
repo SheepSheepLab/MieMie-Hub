@@ -109,7 +109,7 @@ packageUI.install = candidate => {
   if (!/^[a-z0-9][a-z0-9._-]{1,79}$/.test(candidate?.id || '')) return Promise.reject(Error('Extension ID 无效。'));
   return withPackagePreference(candidate.id, true, () => packageManager.install(candidate));
 };
-const registryClient = createRegistryClient({host: h, fetch: (...args) => window.fetch(...args), crypto: window.crypto});
+const registryClient = createRegistryClient({host: h, defaultBaseURL: HUB_DEFAULT_REGISTRY_URL, fetch: (...args) => window.fetch(...args), crypto: window.crypto});
 hubUI = createHubUI(h, hubShell, HUB_ASSETS, extensionRuntime, {
   list: () => [...sources.values()].map(s => JSON.parse(JSON.stringify(s.manifest))),
   register: registerSource,

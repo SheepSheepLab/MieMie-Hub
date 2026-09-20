@@ -126,7 +126,7 @@ try {
     await f.center('mine');assert.match(f.q('[data-hub-panel="extension-center"]').textContent,/使用 Discord 登录/);await f.center('discover');assert.equal(f.installed(),undefined);
   });
   await check('author GitHub preview downloads verified package and installs real Polisher artifact without manual import',async()=>{
-    await f.action('github:preview');await until(()=>f.q('[data-action="package:install"]'),'package preview');await f.action('package:install');
+    f.q('[aria-label="GitHub Repository URL"]').value=repoURL;await f.action('github:preview');await until(()=>f.q('[data-action="package:install"]'),'package preview');await f.action('package:install');
     await until(()=>f.h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'automatic package registration');await f.drain();
     assert.equal(f.installed().content,polisherArtifact.content);assert.notEqual(f.installed().id,polisherArtifact.id);assert.equal(f.h.__MieMiePolisherSource.mode,'hub');assert.ok(f.q('[data-extension-id="miemie.polisher"]'));
     assert.ok(f.calls.some(x=>x.url===repoAPI+'/releases/assets/'+assetId));assert.ok(f.calls.every(x=>x.url.startsWith(repoAPI)));assert.equal(f.writes.length,1);assert.deepEqual(f.trees()[0],f.other);
@@ -146,7 +146,7 @@ try {
     assert.equal(f.backups.length,0);assert.equal(f.h.__MieMieHub.extensions.get('miemie.polisher'),null);assert.deepEqual(f.trees()[0],f.other);assert.equal(JSON.stringify(f.vars),data);assert.equal(f.h.localStorage.getItem('meeme_translation_key_v1'),key);assert.ok(f.h.__timelineSwitcherV1);
   });
   await check('uninstalled Polisher can be reinstalled through the real center without an uninstall backup',async()=>{
-    await f.center();await f.action('github:preview');await until(()=>f.q('[data-action="package:install"]'),'reinstall preview');await f.action('package:install');
+    await f.center();f.q('[aria-label="GitHub Repository URL"]').value=repoURL;await f.action('github:preview');await until(()=>f.q('[data-action="package:install"]'),'reinstall preview');await f.action('package:install');
     await until(()=>f.h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'reinstalled active');await f.drain();
     assert.equal(f.installed().content,polisherArtifact.content);assert.equal(f.backups.length,0);assert.deepEqual(f.trees()[0],f.other);
   });
@@ -163,7 +163,7 @@ try {
     await u.h.__MieMieHub.open();u.click('[data-hub-app="miemie.polisher"]');await until(()=>u.q('#meeme-translation section')?.hidden===false,'updated Launcher UI');assert.equal(u.q('[data-key]').value,'fixture-not-real-api-key');assert.equal(u.q('[data-pre-text]').value,'Fixture pre prompt');assert.equal(u.vars.meeme_translation_v1.backups.length,1);
   });
   await check('Registry offline leaves real installed package, Hello, timeline and local settings usable',async()=>{
-    await u.center('discover');const url=u.q('[aria-label="Registry 服务地址"]');url.value='https://registry-fixture.invalid';u.registryOffline();await u.action('registry:configure');await until(()=>u.q('[data-hub-panel="extension-center"]').textContent.includes('Catalog 无法连接'),'offline Catalog message');
+    await u.center('discover');const url=u.q('[aria-label="Registry 服务地址"]');url.value='https://registry-fixture.invalid';u.registryOffline();await u.action('registry:configure');await until(()=>u.q('[data-hub-panel="extension-center"]').textContent.includes('扩展目录无法连接'),'offline Catalog message');
     assert.ok(u.h.__timelineSwitcherV1);assert.equal(u.h.__MieMieHub.extensions.get('miemie.polisher').enabled,true);assert.equal((await u.h.__MieMieHub.extensions.open('miemie.hello')).ok,true);await u.center('installed');assert.ok(u.q('[data-extension-id="miemie.polisher"]'));
   });
   await check('upgraded Polisher restores one standalone launcher when only Hub stops',async()=>{
@@ -180,12 +180,12 @@ try {
   await u.close();activeFixture=null;
   const failed=activeFixture=await fixture({cors:true});
   await check('real center displays CORS/readability failure without partial script installation',async()=>{
-    await failed.center();await failed.action('github:preview');await until(()=>failed.q('[data-hub-panel="extension-center"]').textContent.includes('Registry 连接设置'),'actionable CORS relay setup error');assert.equal(failed.installed(),undefined);assert.equal(failed.writes.length,0);assert.ok(failed.h.__timelineSwitcherV1);assert.equal((await failed.h.__MieMieHub.extensions.open('miemie.hello')).ok,true);
+    await failed.center();failed.q('[aria-label="GitHub Repository URL"]').value=repoURL;await failed.action('github:preview');await until(()=>failed.q('[data-hub-panel="extension-center"]').textContent.includes('Registry 连接设置'),'actionable CORS relay setup error');assert.equal(failed.installed(),undefined);assert.equal(failed.writes.length,0);assert.ok(failed.h.__timelineSwitcherV1);assert.equal((await failed.h.__MieMieHub.extensions.open('miemie.hello')).ok,true);
   });
   await failed.close();activeFixture=null;
   const bad=activeFixture=await fixture({corrupt:true});
   await check('corrupt package bytes fail integrity verification after UI install click without writing any host script',async()=>{
-    await bad.center();await bad.action('github:preview');await until(()=>bad.q('[data-action="package:install"]'),'corrupt package preview');await bad.action('package:install');
+    await bad.center();bad.q('[aria-label="GitHub Repository URL"]').value=repoURL;await bad.action('github:preview');await until(()=>bad.q('[data-action="package:install"]'),'corrupt package preview');await bad.action('package:install');
     await until(()=>bad.q('[data-hub-panel="extension-center"]').textContent.includes('digest 校验失败'),'integrity error');assert.equal(bad.installed(),undefined);assert.equal(bad.writes.length,0);assert.equal(bad.backups.length,0);assert.equal(bad.h.__MieMieHub.extensions.get('miemie.polisher'),null);assert.deepEqual(bad.trees()[0],bad.other);
   });
   await bad.close();activeFixture=null;

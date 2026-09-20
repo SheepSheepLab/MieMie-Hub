@@ -103,7 +103,7 @@ test('Core system launchers coexist with existing entries without registering Ex
   assert.equal(panel.hidden, false); assert.equal(panel.inert, false);
   assert.equal(f.query('[data-hub-app="extensions"]'), null);
   for (const tab of ['discover', 'installed', 'mine']) assert.ok(f.query('[data-center-tab="' + tab + '"]'));
-  assert.match(panel.textContent, /尚未配置 Registry/);
+  assert.match(panel.textContent, /在线扩展服务尚未连接/);
   await f.click('[data-center-tab="installed"]');
   assert.equal(f.doc.querySelectorAll('[data-extension-id]').length, 1);
 });

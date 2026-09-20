@@ -14,13 +14,19 @@ Hub 0.3.2、Polisher 1.1.0、Registry 0.1.2 独立安装依赖、构建、测试
 
 扩展中心三个分页：发现永远是普通用户视角；已安装管理本机实例；我的才提供登录、投稿和管理。Author是作品作者文本；Submitter是Discord OAuth确认的投稿者，不等于经过认证的作者。
 
-Registry仅使用Discord `identify`，内部以不可变Snowflake绑定所有权，重新登录同步Display Name/Username/Avatar。公开资料不返回用户ID、邮箱、OAuth Token、管理员名单。即使Display Name同名也不能管理别人的投稿。
+Registry仅使用Discord `identify guilds`（不读取消息），内部以不可变Snowflake绑定所有权，重新登录同步Display Name/Username/Avatar。公开资料不返回用户ID、邮箱、OAuth Token、Guild 列表或管理员名单。即使Display Name同名也不能管理别人的投稿。
 
-OAuth使用popup。Registry先设置第一方HttpOnly state cookie，再转Discord；回调将短期一次性桥接code发给精确来源窗口，Hub核对origin/source/requestId，并用内存verifier交换不透明Registry Session。OAuth Token永远留在服务器且不持久保存。Hub Session只在内存，换Registry、注销或Hub重载后需重新登录。
+OAuth使用popup。Registry先设置第一方HttpOnly state cookie，再转Discord；回调将短期一次性桥接code发给精确来源窗口，Hub核对origin/source/requestId，并用内存verifier交换不透明Registry Session。OAuth Token永远留在服务器且不持久保存。Hub Session只在内存，换Registry、注销或Hub重载后需重新登录。会话过期或退出时立即清除已显示的受限目录，旧请求不能将私有卡片重新放回页面。发现使用可选的 Registry Session，由服务器过滤权限；浏览器不自行判断 Guild Membership。
 
-投稿成功默认上架，不代表安全审核、作者认证或官方推荐。投稿者只能编辑自己的信息，不能改变owner。更改来源时服务器重新验证，不沿用旧仓库版本/hash。管理员通过环境变量DiscordID白名单登录，不存在另一套账号密码。
+目录只来自用户主动投稿；读取 GitHub Manifest 不会自动创建记录，官方 Polisher 也必须走同一条登录、预填、确认投稿路径。投稿成功默认上架，不代表安全审核、作者认证或官方推荐。投稿者只能编辑自己的信息，不能改变owner。更改来源时服务器重新验证，不沿用旧仓库版本/hash。管理员通过环境变量DiscordID白名单登录，不存在另一套账号密码。
 
 下架是owner_status=unlisted，不物理删记录；管理员moderation另行记录hidden/unlisted和原因。管理员恢复不会替用户撤销主动下架。封禁阻止继续投稿/编辑/重新上架，后台有审计记录。
+
+## 服务器限定可见
+
+投稿默认 `visibility=public`。选择 `discord_guild` 时，Discord 来源使用原帖链接，GitHub 来源另外填写 `visibilitySourceUrl`（Discord 社区帖子/消息链接）。服务端解析不可变 Guild ID 并确认投稿者本人也是成员，不接受客户端直接传 Guild ID。修改原帖、来源或可见范围会重新校验；Hub 不保存服务器列表。
+
+未登录、非成员或无法确认成员资格时，服务端不返回受限作品；列表、详情、搜索、分页计数使用相同权限过滤。作者/投稿者严格分开，成员限定不是作者认证或代码安全审核。Catalog ACL 只限制目录信息，不会让一个公开 GitHub Repository 变成私有仓库。
 
 ## Registry离线与下架边界
 
@@ -40,4 +46,4 @@ GitHub API 与 Release 是权威来源。Extension 附件直连被 CORS 拦截�
 
 Registry需要Node24+。在Registry目录`npm ci`后`npm start`可以读取空Catalog；没有Discord凭据时登录清楚返回未配置，不提供假登录后门。按Registry部署文档在本机.env配置Client ID/Secret、准确Callback URL、随机SESSION_SECRET、CORS_ORIGINS、数据库路径。
 
-Hub扩展中心的Registry连接设置输入服务根地址（生产HTTPS，本机可HTTP），该地址是公开服务地址，不是Secret。Registry服务端CORS必须明确列出Tavern实际origin（含协议/端口）。不要把Client Secret、管理员ID名单、数据库或Session复制到Hub脚本。没有真实凭据的自动测试仅用明确Development Fixture/Test Adapter。
+正式构建可设置公开的 `MIEMIE_DEFAULT_REGISTRY_URL=https://实际官方服务域名`，当前没有生产域名则保持空值，不虚构地址。Hub「高级 / 开发者设置」可覆盖服务根地址（生产HTTPS，本机可HTTP），留空保存恢复构建默认值，该地址是公开服务地址，不是Secret。Registry服务端CORS必须明确列出Tavern实际origin（含协议/端口）。不要把Client Secret、管理员ID名单、数据库或Session复制到Hub脚本。没有真实凭据的自动测试仅用明确Development Fixture/Test Adapter。

@@ -6,13 +6,13 @@
 
 首页保留一个「扩展中心」入口，内部为 **发现 / 已安装 / 我的**。发现页始终是普通用户视角，编辑和上下架只在「我的」。Registry 未配置或离线时，Core、时间线和本地扩展照常运行。
 
-- **发现**：从自行配置的 Registry 获取上架目录，分页、搜索及来源筛选。作者与 Discord 投稿者分别展示；机器兼容性不等于官方审核。
+- **发现**：从在线服务获取当前身份有权看到的主动投稿，分页、搜索及来源筛选；未登录只展示公开项目。作者与 Discord 投稿者分别展示；机器兼容性不等于官方审核。
 - **GitHub**：文件始终来自作者自己的公开 Repository / Release。符合 [Package v1](docs/EXTENSION-PACKAGE.md) 才能安装；普通 GitHub 项目仍可跳转获取。也可直接输入作者仓库预览安装兼容性。
 - **Discord**：仅展示原帖入口，不缓存临时 CDN 附件或自动安装。
 - **已安装**：打开、启停、检查更新、更新，以及确认后物理卸载已识别的全局 Package。未识别为 Package 的运行扩展明确标为「Runtime 注销」，不会冒称已删除助手条目。
-- **我的**：Discord OAuth、公开资料、投稿、编辑、上下架。Registry 登录会话仅留在当前 Hub 内存；重载后需重新登录。管理员身份由 Registry 环境变量白名单判断。
+- **我的**：Discord OAuth、公开资料、投稿、编辑、上下架，以及服务器成员限定可见。Registry 登录会话仅留在当前 Hub 内存；重载后需重新登录。管理员身份由 Registry 环境变量白名单判断。
 
-Registry 首次需要部署或本地运行，再在扩展中心「Registry 连接设置」填写服务根地址。没有内置生产地址或 OAuth Secret。配置见 [生态使用与安全边界](docs/ECOSYSTEM.md) 及 [Registry 部署说明](https://github.com/SheepSheepLab/MieMie-Registry/blob/main/docs/DEPLOYMENT.md)。
+普通用户在「我的」使用 Discord 登录，不需要 MieMie 账号。发布构建可通过 `MIEMIE_DEFAULT_REGISTRY_URL` 内置公开的 HTTPS 服务根地址；当前尚无正式域名，默认值为空，开发者可在「高级 / 开发者设置」覆盖服务根地址。留空保存会恢复构建默认值。OAuth Secret 始终只在服务器。配置见 [生态使用与安全边界](docs/ECOSYSTEM.md) 及 [Registry 部署说明](https://github.com/SheepSheepLab/MieMie-Registry/blob/main/docs/DEPLOYMENT.md)。
 
 ## 安装、更新与数据
 

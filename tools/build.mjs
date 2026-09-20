@@ -10,6 +10,14 @@ const data = JSON.parse(await read('packaging/script-template.json'));
 const pkg = JSON.parse(await read('package.json'));
 if (typeof pkg.version !== 'string' || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$(?![\s\S])/.test(pkg.version)) throw Error('MieMie 官方版本必须使用纯 MAJOR.MINOR.PATCH。');
 const identity = {schemaVersion: 1, productId: 'miemie.hub', version: pkg.version, scriptId: data.id};
+// The official deployment can provide a public root URL at build time. No production
+// address is invented for development; secrets never belong in this setting.
+let defaultRegistry = '';
+if (process.env.MIEMIE_DEFAULT_REGISTRY_URL) {
+  const url = new URL(process.env.MIEMIE_DEFAULT_REGISTRY_URL);
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw Error('默认 Registry 必须为不含凭据的 HTTPS 服务根地址。');
+  defaultRegistry = url.origin;
+}
 const icons = {};
 for (const [name, file] of Object.entries({home: 'hub', timeline: 'timeline'})) icons[name] = 'data:image/png;base64,' + (await readFile(path.join(project, 'assets/' + file + '.png'))).toString('base64');
 const assets = {
@@ -38,6 +46,7 @@ const content = [
   'if(h.__MieMieHub){h.__MieMieHub.open();return;}',
   "if(h.__meemeCombinedUI||h.__timelineSwitcherV1||(h.__meemeTranslation01&&!h.__MieMiePolisherSource)){h.alert('请先停用旧咩咩工具箱或独立时间线／润色脚本并刷新，再启用咩咩Hub。原有设置会沿用。');return;}",
   'const HUB_VERSION=' + JSON.stringify(pkg.version) + ';',
+  'const HUB_DEFAULT_REGISTRY_URL=' + JSON.stringify(defaultRegistry) + ';',
   'const HUB_ASSETS=' + JSON.stringify(assets) + ';',
   'const HELLO_MANIFEST=' + JSON.stringify(manifest) + ';',
   ...functions,
@@ -48,7 +57,7 @@ const content = [
 ].join('\n');
 new vm.Script(content, {filename: 'miemie-hub.js'});
 data.name = '咩咩Hub ' + pkg.version;
-data.info = '内置时间线、扩展管理、设置、扩展中心入口及 Hello Mie；润色请另行导入独立扩展。首次从旧版本升级需手动导入并停用旧 Hub。设置可查询官方 GitHub Release；全局脚本支持校验后就地更新自身。浏览器 CORS 或宿主校验失败时拒绝安装；请保留更新前请求下载的恢复文件。扩展中心支持 Catalog、Discord 投稿管理和作者 GitHub Package 安装更新；Registry 地址需要配置。';
+data.info = '内置时间线、扩展管理、设置、扩展中心入口及 Hello Mie；润色请另行导入独立扩展。首次从旧版本升级需手动导入并停用旧 Hub。设置可查询官方 GitHub Release；全局脚本支持校验后就地更新自身。浏览器 CORS 或宿主校验失败时拒绝安装；请保留更新前请求下载的恢复文件。扩展中心支持 Catalog、Discord 投稿管理和作者 GitHub Package 安装更新；在线服务地址可由构建预设，开发测试可在高级设置覆盖。';
 data.content = content;
 await mkdir(path.join(project, 'build'), {recursive: true});
 await writeFile(path.join(project, 'build/miemie-hub.js'), content);

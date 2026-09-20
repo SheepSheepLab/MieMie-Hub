@@ -59,6 +59,8 @@ test('Hub ASCII distribution bytes, update metadata and embedded identity agree 
     schemaVersion: 1, productId: 'miemie.hub', version: pkg.version, scriptId,
   });
   assert.ok(script.content.includes('const HUB_VERSION=' + JSON.stringify(pkg.version) + ';'));
+  const expectedRegistry = process.env.MIEMIE_DEFAULT_REGISTRY_URL ? new URL(process.env.MIEMIE_DEFAULT_REGISTRY_URL).origin : '';
+  assert.ok(script.content.includes('const HUB_DEFAULT_REGISTRY_URL=' + JSON.stringify(expectedRegistry) + ';'));
 });
 
 test('Hub build embeds each official icon without changing any PNG bytes', async () => {
@@ -71,4 +73,17 @@ test('Hub build embeds each official icon without changing any PNG bytes', async
     assert.ok(assets.icons[key].startsWith('data:image/png;base64,'));
     assert.deepEqual(Buffer.from(assets.icons[key].slice('data:image/png;base64,'.length), 'base64'), await read('assets/' + file + '.png'));
   }
+});
+
+test('build-time default Registry rejects credentials and non-root URLs before reading assets', async () => {
+  const project = await mkdtemp(path.join(tmpdir(), 'miemie-hub-registry-config-'));
+  try {
+    await mkdir(path.join(project, 'tools')); await mkdir(path.join(project, 'packaging'));
+    await copyFile(new URL('../tools/build.mjs', import.meta.url), path.join(project, 'tools/build.mjs'));
+    await copyFile(new URL('../packaging/script-template.json', import.meta.url), path.join(project, 'packaging/script-template.json'));
+    await writeFile(path.join(project, 'package.json'), JSON.stringify({version:'1.0.0'}));
+    for (const url of ['https://secret@registry.example','https://registry.example/api','https://registry.example?token=test','http://remote.example']) {
+      await assert.rejects(run(process.execPath,[path.join(project,'tools/build.mjs')],{env:{...process.env,MIEMIE_DEFAULT_REGISTRY_URL:url}}),error=>{assert.match(error.stderr,/默认 Registry 必须/);assert.doesNotMatch(error.stderr,/ENOENT/);return true;});
+    }
+  } finally {await rm(project,{recursive:true,force:true});}
 });
