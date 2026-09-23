@@ -1,6 +1,6 @@
 # MieMie Hub · 咩咩Hub
 
-咩咩Hub 是咩咩（MieMie）开源软件与社区生态的官方项目。生态由 SheepSheep 发起和创建（Founder / 创始人）；SheepSheepLab 是官方 GitHub 开发、维护与发布组织／命名空间，官方项目主要通过该组织维护和发布，并欢迎社区贡献者共同参与。
+咩咩Hub 是咩咩（MieMie）开源软件与社区生态的官方项目。生态由 SheepSheep 发起和创建（Founder / 创始人）；SheepSheepLab 是官方 GitHub 开发、维护与发布命名空间，官方项目主要通过该命名空间维护和发布，并欢迎社区贡献者共同参与。
 
 当前版本 **0.4.3**（开发测试 Pre-release）。轻量 Core 保留时间线、Extension Runtime 与 Hub 自更新，新增 Extension Ecosystem MVP。基础构建和测试不依赖 Registry 或 Polisher 源码。
 
@@ -83,7 +83,7 @@ Copyright © 2026 SheepSheep。社区贡献者（Community Contributors）保留
 
 该授权包括本项目的 JavaScript、CSS、HTML、软件配置、构建脚本、测试及历史代码测试基线。`LICENSE` 是[GNU 官方 GPLv3 完整文本](https://www.gnu.org/licenses/gpl-3.0.txt)的原样副本；“or later”的选择由本声明及包元数据明确，不修改许可证正文。
 
-“咩咩”与“MieMie”分别为地位同级的中文、英文官方品牌；中文语境优先写“咩咩 / MieMie”，英文、GitHub 与技术语境优先写“MieMie / 咩咩”，书写顺序不表示主次。官方品牌身份、Logo、角色形象及指定角色 Icon 不因软件代码采用 GPL 而自动获得同等授权。当前 Reserved Assets 仅为 `assets/hub.png` 和 `assets/timeline.png`，目录中的软件代码仍适用 GPL。第三方修改版及商业 Fork 请查看 [BRAND.md](BRAND.md) 与 [ASSETS-LICENSE.md](ASSETS-LICENSE.md)：可使用自己的品牌和视觉资产按 GPL 收费分发代码；新素材政策允许免费原样转载含保留素材的官方包，默认不授权收费转售该含图包，且不追溯撤销历史授权。
+“咩咩”与“MieMie”分别为地位同级的中文、英文官方品牌；中文语境优先写“咩咩 / MieMie”，英文、GitHub 与技术语境优先写“MieMie / 咩咩”，书写顺序不表示主次。官方品牌身份、Logo、角色形象及指定角色 Icon 不因软件代码采用 GPL 而自动获得同等授权。当前 Reserved Assets 仅为 `assets/hub.png` 和 `assets/timeline.png`，目录中的软件代码仍适用 GPL。第三方修改版及商业 Fork 请查看 [BRAND.md](BRAND.md) 与 [ASSETS-LICENSE.md](ASSETS-LICENSE.md)：可使用自己的品牌和视觉资产按 GPL 收费分发代码；新素材政策允许免费原样转载含保留素材的官方包，默认不授权收费转售该含图包，历史版本按其发布时适用的许可处理。
 
 - [品牌身份与正常引用规则](BRAND.md)
 - [指定 PNG 的来源与素材使用范围](ASSETS-LICENSE.md)
