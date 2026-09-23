@@ -7,7 +7,7 @@ export function registryBaseURL(value) {
   return url.origin;
 }
 
-export function createRegistryClient({host, fetch: request = globalThis.fetch, crypto = globalThis.crypto, timeoutMs = 15000, loginTimeoutMs = 180000, defaultBaseURL = '', now = Date.now, onChange = () => {}} = {}) {
+export function createRegistryClient({host, fetch: request = globalThis.fetch, crypto = globalThis.crypto, timeoutMs = 15000, loginTimeoutMs = 300000, loginPollMs = 3000, defaultBaseURL = '', now = Date.now, onChange = () => {}} = {}) {
   const defaultBase = registryBaseURL(defaultBaseURL);
   let base = defaultBase, token = '', identity = null, disposed = false, loginOperation = null, cancelLogin = null, sessionEpoch = 0, loginEpoch = 0, sessionTimer;
   const controllers = new Set(), listeners = new Set();
@@ -78,7 +78,7 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
     const expectedOrigin = base, expectedLogin = ++loginEpoch;
     const assertLogin = () => {if (disposed || base !== expectedOrigin || loginEpoch !== expectedLogin) throw Error('登录上下文已改变。');};
     loginOperation = (async () => {
-      let listener, timer, closePoll;
+      let listener, timer, closePoll, pollTimer, focusListener, stopped = false;
       try {
         const bytes = crypto.getRandomValues(new Uint8Array(32));
         const encode = data => host.btoa(String.fromCharCode(...data)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
@@ -89,27 +89,53 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
         assertLogin();
         const auth = new URL(started.authorizationUrl);
         if (auth.origin !== expectedOrigin || auth.pathname !== '/api/auth/authorize' || auth.username || auth.password || auth.searchParams.get('requestId') !== started.requestId || typeof started.requestId !== 'string') throw Error('Discord 登录地址校验失败。');
+        const polling = started.handoff === 'poll-v1';
         const result = await new Promise((resolve, reject) => {
           let exchanging = false;
-          cancelLogin = () => reject(Error('登录已取消。'));
-          timer = setTimeout(() => reject(Error('Discord 登录超时，请重新登录。')), loginTimeoutMs);
-          closePoll = setInterval(() => {if (popup.closed && !exchanging) reject(Error('登录窗口已关闭。'));}, 500);
+          const finish = (error, value) => {if (stopped) return; stopped = true; clearTimeout(pollTimer); error ? reject(error) : resolve(value);};
+          cancelLogin = () => finish(Error('登录已取消。'));
+          timer = setTimeout(() => finish(Error('Discord 登录超时，请重新登录。')), loginTimeoutMs);
+          // COOP may report a detached WindowProxy as closed while consent continues.
+          // poll-v1 deliberately does not interpret popup.closed as OAuth cancellation.
+          if (!polling) closePoll = setInterval(() => {if (popup.closed && !exchanging) finish(Error('登录窗口已关闭。'));}, 500);
+          const poll = async () => {
+            if (stopped || exchanging) return;
+            clearTimeout(pollTimer); exchanging = true;
+            try {
+              assertLogin();
+              const value = await api('/api/auth/complete', {method: 'POST', body: {requestId: started.requestId, codeVerifier: verifier}});
+              if (stopped) return;
+              assertLogin();
+              if (value.status !== 'pending') finish(null, value);
+            } catch (error) {finish(error);}
+            finally {exchanging = false; if (!stopped) pollTimer = setTimeout(poll, loginPollMs);}
+          };
           listener = async event => {
-            if (event.origin !== expectedOrigin || event.source !== popup || event.data?.type !== 'miemie-registry-auth' || event.data.requestId !== started.requestId || exchanging) return;
-            if (typeof event.data.code !== 'string' || event.data.code.length > 512) return;
+            if (event.origin !== expectedOrigin || event.source !== popup || event.data?.type !== 'miemie-registry-auth' || event.data.requestId !== started.requestId || stopped) return;
+            if (polling) {void poll(); return;}
+            if (typeof event.data.code !== 'string' || event.data.code.length > 512 || exchanging) return;
             exchanging = true;
-            try {resolve(await api('/api/auth/exchange', {method: 'POST', body: {code: event.data.code, codeVerifier: verifier, requestId: started.requestId}}));}
-            catch (error) {reject(error);}
+            try {finish(null, await api('/api/auth/exchange', {method: 'POST', body: {code: event.data.code, codeVerifier: verifier, requestId: started.requestId}}));}
+            catch (error) {finish(error);}
           };
           host.addEventListener('message', listener);
+          if (polling) {focusListener = () => {void poll();}; host.addEventListener('focus', focusListener);}
           popup.location.href = auth.href;
+          if (polling) void poll();
         });
         assertLogin();
         if (typeof result.token !== 'string' || !result.token || result.token.length > 1024) throw Error('登录响应异常。');
         const nextIdentity = acceptIdentity(result);
-        token = result.token; identity = nextIdentity; ++sessionEpoch; watchExpiry(); notify(); return identity;
+        token = result.token; ++sessionEpoch;
+        // Verify the origin-bound session against the real current-user endpoint
+        // before publishing the signed-in UI. No third-party cookie is required.
+        try {
+          const current = await api('/api/me', {authenticated: true}); assertLogin();
+          identity = acceptIdentity({...current, expiresAt: nextIdentity.expiresAt});
+          watchExpiry(); notify(); return identity;
+        } catch (error) {if (loginEpoch === expectedLogin) clearSession(); throw error;}
       } finally {
-        clearTimeout(timer); clearInterval(closePoll); if (listener) host.removeEventListener('message', listener);
+        stopped = true; clearTimeout(timer); clearTimeout(pollTimer); clearInterval(closePoll); if (focusListener) host.removeEventListener('focus', focusListener); if (listener) host.removeEventListener('message', listener);
         cancelLogin = null; try {popup.close();} catch (_) {}
       }
     })().finally(() => {loginOperation = null;});

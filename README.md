@@ -1,6 +1,6 @@
 # MieMie Hub · 咩咩Hub
 
-当前版本 **0.4.1**（开发测试 Pre-release）。轻量 Core 保留时间线、Extension Runtime 与 Hub 自更新，新增 Extension Ecosystem MVP。基础构建和测试不依赖 Registry 或 Polisher 源码。
+当前版本 **0.4.2**（开发测试 Pre-release）。轻量 Core 保留时间线、Extension Runtime 与 Hub 自更新，新增 Extension Ecosystem MVP。基础构建和测试不依赖 Registry 或 Polisher 源码。
 
 ## 扩展中心
 
@@ -47,8 +47,8 @@ MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL="$OFFICIAL_REGISTRY_HTT
 输出：
 
 ```text
-build/MieMie-Hub-0.4.1.json
-build/咩咩Hub-0.4.1.json
+build/MieMie-Hub-0.4.2.json
+build/咩咩Hub-0.4.2.json
 build/MieMie-Hub-update.json
 build/miemie-hub.js
 ```
@@ -90,3 +90,7 @@ MieMie / 咩咩官方品牌身份，以及指定角色美术资产，**不因软
 按 SheepSheep 的来源确认，原咩咩工具箱和本项目的需求、功能设计及架构决策由 SheepSheep 提出，代码主要由 Codex 按这些需求生成、修改和迭代；当前没有其他需列出的共同版权人。当前审计未识别出复制或改写自第三方项目的产品代码。第三方开发依赖保持其原有授权，不被重新声明为 SheepSheep 的代码。
 
 对外分发时应随附 `LICENSE`、上述品牌／素材说明及适用的第三方声明，并按 GPL 提供对应版本源码和构建材料。当前构建不会把这些文件嵌入酒馆助手 JSON；单独一个 JSON 不能替代完整的授权说明与源码提供安排。
+
+### 0.4.2 Discord 登录修复
+
+登录结果使用绑定原 Origin 和 PKCE 的一次性交接，不依赖弹窗消息或第三方 Cookie；收到 Registry 会话后验证当前用户并刷新「我的」。原消息交接保持旧服务兼容。生产发布构建使用 `MIEMIE_BUILD_MODE=production` 和真实 `MIEMIE_DEFAULT_REGISTRY_URL`。关闭 Hub/重载后需重新登录；不要复制任何 Token。

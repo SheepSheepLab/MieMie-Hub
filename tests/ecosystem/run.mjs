@@ -68,6 +68,8 @@ async function fixture({legacy=false,cors=false,corrupt=false}={}) {
       if(url===repoAPI+'/releases/assets/'+metadataId){if(cors)throw TypeError('Development Fixture CORS failure');return response(metaBytes,url);}
       if(url===repoAPI+'/releases/assets/'+assetId){const bytes=Buffer.from(polisherBytes);if(corrupt)bytes[bytes.length-2]^=1;return response(bytes,url);}
     }
+    if(url==='https://registry.sheepsheeplab.com/api/catalog?page=1&pageSize=12&q=&source=')return response({items:[],hasMore:false},url);
+    if(url==='https://registry.sheepsheeplab.com/api/packages/github/asset')throw TypeError('Development Fixture Registry offline');
     if(url==='https://registry-fixture.invalid/api/catalog?page=1&pageSize=12&q=&source=') {
       if(registryOffline)throw TypeError('Development Fixture Registry offline');
       return response({items:[{id:'fixture-catalog-polisher',name:'Development Fixture · Polisher reference',author:'SheepSheep',description:'Test Data pointing to the official package fixture',sourceType:'github',sourceUrl:repoURL,submitter:{displayName:'Development Fixture submitter'},github:{compatibility:'installable',manifest:metadata.manifest}}],hasMore:false},url);
@@ -129,7 +131,7 @@ try {
     f.q('[aria-label="GitHub Repository URL"]').value=repoURL;await f.action('github:preview');await until(()=>f.q('[data-action="package:install"]'),'package preview');await f.action('package:install');
     await until(()=>f.h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'automatic package registration');await f.drain();
     assert.equal(f.installed().content,polisherArtifact.content);assert.notEqual(f.installed().id,polisherArtifact.id);assert.equal(f.h.__MieMiePolisherSource.mode,'hub');assert.ok(f.q('[data-extension-id="miemie.polisher"]'));
-    assert.ok(f.calls.some(x=>x.url===repoAPI+'/releases/assets/'+assetId));assert.ok(f.calls.every(x=>x.url.startsWith(repoAPI)));assert.equal(f.writes.length,1);assert.deepEqual(f.trees()[0],f.other);
+    assert.ok(f.calls.some(x=>x.url===repoAPI+'/releases/assets/'+assetId));assert.ok(f.calls.every(x=>x.url.startsWith(repoAPI)||x.url==='https://registry.sheepsheeplab.com/api/catalog?page=1&pageSize=12&q=&source='));assert.equal(f.writes.length,1);assert.deepEqual(f.trees()[0],f.other);
   });
   await check('installed real artifact opens through Hub Launcher and physical enable/disable follows helper iframe lifetime',async()=>{
     await f.h.__MieMieHub.open();f.click('[data-hub-app="miemie.polisher"]');await until(()=>f.q('#meeme-translation section')?.hidden===false,'Launcher open');
@@ -180,7 +182,7 @@ try {
   await u.close();activeFixture=null;
   const failed=activeFixture=await fixture({cors:true});
   await check('real center displays CORS/readability failure without partial script installation',async()=>{
-    await failed.center();failed.q('[aria-label="GitHub Repository URL"]').value=repoURL;await failed.action('github:preview');await until(()=>failed.q('[data-hub-panel="extension-center"]').textContent.includes('安全下载服务暂不可用'),'safe download service error');assert.equal(failed.installed(),undefined);assert.equal(failed.writes.length,0);assert.ok(failed.h.__timelineSwitcherV1);assert.equal((await failed.h.__MieMieHub.extensions.open('miemie.hello')).ok,true);
+    await failed.center();failed.q('[aria-label="GitHub Repository URL"]').value=repoURL;await failed.action('github:preview');await until(()=>failed.q('[data-hub-panel="extension-center"]').textContent.match(/安全下载服务暂(?:不可用|时无法连接)/),'safe download service error');assert.equal(failed.installed(),undefined);assert.equal(failed.writes.length,0);assert.ok(failed.h.__timelineSwitcherV1);assert.equal((await failed.h.__MieMieHub.extensions.open('miemie.hello')).ok,true);
   });
   await failed.close();activeFixture=null;
   const bad=activeFixture=await fixture({corrupt:true});

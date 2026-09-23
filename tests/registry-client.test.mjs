@@ -7,10 +7,11 @@ const tick=()=>new Promise(r=>setImmediate(r));
 function fixture(handler,{exchange={},clientOptions={}}={}){
  const host=new EventTarget();host.location={origin:'https://tavern.example'};host.btoa=x=>Buffer.from(x,'binary').toString('base64');
  const popup={closed:false,location:{href:''},close(){this.closed=true;}};host.open=()=>{popup.closed=false;popup.location.href='';return popup;};
- const requests=[];let challenge;
+ const requests=[];let challenge, loggedIn=false;
  const client=createRegistryClient({host,crypto:webcrypto,timeoutMs:30,loginTimeoutMs:1000,fetch:async(url,init)=>{requests.push({url,init});
   if(url.endsWith('/api/auth/start')){challenge=JSON.parse(init.body).codeChallenge;return json({requestId:'request',authorizationUrl:'https://registry.example/api/auth/authorize?requestId=request'});}
-  if(url.endsWith('/api/auth/exchange')){const body=JSON.parse(init.body);assert.equal(Buffer.from(await webcrypto.subtle.digest('SHA-256',new TextEncoder().encode(body.codeVerifier))).toString('base64url'),challenge);return json({token:'test-opaque-registry-session',profile:{displayName:'Development Fixture',avatarUrl:null},isAdmin:false,...exchange});}
+  if(url.endsWith('/api/auth/exchange')){const body=JSON.parse(init.body);assert.equal(Buffer.from(await webcrypto.subtle.digest('SHA-256',new TextEncoder().encode(body.codeVerifier))).toString('base64url'),challenge);loggedIn=true;return json({token:'test-opaque-registry-session',profile:{displayName:'Development Fixture',avatarUrl:null},isAdmin:false,...exchange});}
+  if(url.endsWith('/api/me')&&loggedIn){loggedIn=false;return json({profile:exchange.profile||{displayName:'Development Fixture',avatarUrl:null},isAdmin:false});}
   return handler?handler(url,init):json({ok:true});
  },...clientOptions});client.setBase('https://registry.example');
  function message(overrides={}){const event=new Event('message');Object.assign(event,{origin:'https://registry.example',source:popup,data:{type:'miemie-registry-auth',requestId:'request',code:'bridge-code'},...overrides});host.dispatchEvent(event);}
@@ -62,4 +63,29 @@ test('logout during initial PKCE preparation cannot complete a stale login',asyn
 test('default Registry URL is public build configuration and can be overridden without a login',()=>{
  const client=createRegistryClient({defaultBaseURL:'https://registry.example'});assert.equal(client.getBase(),'https://registry.example');assert.equal(client.getDefaultBase(),'https://registry.example');client.setBase('http://127.0.0.1:8787');assert.equal(client.getBase(),'http://127.0.0.1:8787');client.dispose();
  const empty=createRegistryClient();assert.equal(empty.getBase(),'');empty.dispose();assert.throws(()=>createRegistryClient({defaultBaseURL:'https://secret@registry.example'}));
+});
+
+function pollingFixture({readyAfter=2,timeout=300,complete,me}={}) {
+ const host=new EventTarget();host.location={origin:'http://127.0.0.1:8000'};host.btoa=x=>Buffer.from(x,'binary').toString('base64');
+ const popup={closed:true,location:{href:''},close(){}};host.open=()=>popup;
+ const requests=[],changes=[];let count=0,challenge;
+ const client=createRegistryClient({host,crypto:webcrypto,loginPollMs:5,loginTimeoutMs:timeout,timeoutMs:200,onChange:x=>changes.push(x),fetch:async(url,init)=>{
+  requests.push({url,init});assert.equal(init.credentials,'omit');assert.equal(init.mode,'cors');
+  if(url.endsWith('/start')){challenge=JSON.parse(init.body).codeChallenge;return json({requestId:'r'.repeat(43),authorizationUrl:'https://registry.example/api/auth/authorize?requestId='+'r'.repeat(43),handoff:'poll-v1'});}
+  if(url.endsWith('/complete')){const body=JSON.parse(init.body);assert.equal(Buffer.from(await webcrypto.subtle.digest('SHA-256',new TextEncoder().encode(body.codeVerifier))).toString('base64url'),challenge);assert.equal(init.headers.Authorization,undefined);if(complete)return complete();return ++count<readyAfter?json({status:'pending'},202):json({token:'fixture-session',profile:{displayName:'Old'},expiresAt:new Date(Date.now()+60000).toISOString()});}
+  if(url.endsWith('/me')){assert.equal(init.headers.Authorization,'Bearer fixture-session');return me?me():json({profile:{displayName:'Current Fixture',avatarUrl:'/api/avatars/fixture'}});}
+  return json({ok:true});
+ }});client.setBase('https://registry.example');return {host,client,requests,changes};
+}
+test('detached popup with no message completes via PKCE polling, me, and UI subscription',async()=>{
+ const f=pollingFixture();try{const pending=f.client.login();assert.equal(pending,f.client.login());const identity=await pending;assert.equal(identity.profile.displayName,'Current Fixture');assert.equal(f.changes.at(-1),identity);assert.equal(f.requests.filter(x=>x.url.endsWith('/complete')).length,2);const n=f.requests.length;f.host.dispatchEvent(new Event('focus'));await new Promise(r=>setTimeout(r,20));assert.equal(f.requests.length,n);}finally{f.client.dispose();}
+});
+test('poll timeout and teardown stop future requests without resurrecting identity',async()=>{
+ const f=pollingFixture({readyAfter:10000,timeout:30});await assert.rejects(f.client.login(),/超时/);const n=f.requests.length;await new Promise(r=>setTimeout(r,20));assert.equal(f.requests.length,n);assert.equal(f.client.getIdentity(),null);f.client.dispose();
+ const g=pollingFixture({readyAfter:10000});const pending=g.client.login();await new Promise(r=>setTimeout(r,15));g.client.dispose();await assert.rejects(pending,/取消/);assert.equal(g.client.getIdentity(),null);
+});
+test('logout or Registry switch cancels polling and late result; failed me never publishes identity',async()=>{
+ let finish;const f=pollingFixture({complete:()=>new Promise(r=>finish=r)});const pending=f.client.login();while(!finish)await tick();await f.client.logout();await assert.rejects(pending,/取消/);finish(json({token:'late',profile:{displayName:'Late'}}));await tick();assert.equal(f.client.getIdentity(),null);f.client.dispose();
+ const g=pollingFixture({readyAfter:10000});const changed=g.client.login();await new Promise(r=>setTimeout(r,10));g.client.setBase('https://other.example');await assert.rejects(changed,/取消/);assert.equal(g.client.getIdentity(),null);g.client.dispose();
+ const h=pollingFixture({readyAfter:1,me:()=>json({error:'expired'},401)});await assert.rejects(h.client.login(),/expired/);assert.equal(h.client.getIdentity(),null);assert.ok(h.changes.every(x=>x===null));h.client.dispose();
 });
