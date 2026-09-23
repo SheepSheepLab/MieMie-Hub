@@ -1,5 +1,7 @@
 # MieMie Hub · 咩咩Hub
 
+咩咩Hub 是咩咩（MieMie）开源软件与社区生态的官方项目。生态由 SheepSheep 发起和创建（Founder / 创始人）；SheepSheepLab 是官方 GitHub 开发、维护与发布组织／命名空间，官方项目主要通过该组织维护和发布，并欢迎社区贡献者共同参与。
+
 当前版本 **0.4.3**（开发测试 Pre-release）。轻量 Core 保留时间线、Extension Runtime 与 Hub 自更新，新增 Extension Ecosystem MVP。基础构建和测试不依赖 Registry 或 Polisher 源码。
 
 ## 扩展中心
@@ -75,19 +77,19 @@ npm run test:integration -- --polisher /path/to/MieMie-Polisher-Extension-1.1.0.
 
 ## 授权与来源
 
-Copyright © 2026 SheepSheep。
+Copyright © 2026 SheepSheep。社区贡献者（Community Contributors）保留各自的贡献者身份；除另有说明，贡献内容的版权归相应贡献者所有。
 
 本项目的软件代码采用 **GNU General Public License v3.0 or later**（SPDX：`GPL-3.0-or-later`）。你可以按照 GNU 通用公共许可证第 3 版，或自行选择自由软件基金会发布的任何后续版本，使用、研究、修改、再分发及商业使用软件。软件不提供任何担保，具体权利与义务见 [LICENSE](LICENSE)。
 
 该授权包括本项目的 JavaScript、CSS、HTML、软件配置、构建脚本、测试及历史代码测试基线。`LICENSE` 是[GNU 官方 GPLv3 完整文本](https://www.gnu.org/licenses/gpl-3.0.txt)的原样副本；“or later”的选择由本声明及包元数据明确，不修改许可证正文。
 
-MieMie / 咩咩分别为地位相同的英文、中文官方品牌；官方品牌身份、Logo、角色形象及指定角色 Icon 不因软件代码采用 GPL 而自动获得同等授权。当前 Reserved Assets 仅为 `assets/hub.png` 和 `assets/timeline.png`，目录中的软件代码仍适用 GPL。第三方修改版及商业 Fork 请查看 [BRAND.md](BRAND.md) 与 [ASSETS-LICENSE.md](ASSETS-LICENSE.md)：可使用自己的品牌和视觉资产按 GPL 收费分发代码；新素材政策允许免费原样转载含保留素材的官方包，默认不授权收费转售该含图包，且不追溯撤销历史授权。
+“咩咩”与“MieMie”分别为地位同级的中文、英文官方品牌；中文语境优先写“咩咩 / MieMie”，英文、GitHub 与技术语境优先写“MieMie / 咩咩”，书写顺序不表示主次。官方品牌身份、Logo、角色形象及指定角色 Icon 不因软件代码采用 GPL 而自动获得同等授权。当前 Reserved Assets 仅为 `assets/hub.png` 和 `assets/timeline.png`，目录中的软件代码仍适用 GPL。第三方修改版及商业 Fork 请查看 [BRAND.md](BRAND.md) 与 [ASSETS-LICENSE.md](ASSETS-LICENSE.md)：可使用自己的品牌和视觉资产按 GPL 收费分发代码；新素材政策允许免费原样转载含保留素材的官方包，默认不授权收费转售该含图包，且不追溯撤销历史授权。
 
 - [品牌身份与正常引用规则](BRAND.md)
 - [指定 PNG 的来源与素材使用范围](ASSETS-LICENSE.md)
 - [第三方依赖及其原有许可证](THIRD_PARTY_NOTICES.md)
 
-按 SheepSheep 的来源确认，原咩咩工具箱和本项目的需求、功能设计及架构决策由 SheepSheep 提出，代码主要由 Codex 按这些需求生成、修改和迭代；当前没有其他需列出的共同版权人。当前审计未识别出复制或改写自第三方项目的产品代码。第三方开发依赖保持其原有授权，不被重新声明为 SheepSheep 的代码。
+按既有来源记录，原咩咩工具箱及本项目初始创建阶段的需求、功能设计与架构决策由 SheepSheep 提出，初始代码主要由 Codex 按这些需求生成、修改和迭代。此记录说明初始创建来源，不将后续社区贡献归为 SheepSheep 的独占作品。当前审计未识别出复制或改写自第三方项目的产品代码。第三方开发依赖保持其原有授权，不被重新声明为 SheepSheep 的代码。
 
 对外分发时应随附 `LICENSE`、上述品牌／素材说明及适用的第三方声明，并按 GPL 提供对应版本源码和构建材料。当前构建不会把这些文件嵌入酒馆助手 JSON；单独一个 JSON 不能替代完整的授权说明与源码提供安排。
 
