@@ -42,7 +42,7 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
   }
   async function operate(fn) {
     if (busy) return; busy = true;
-    try {const result = await fn(); if (result?.ok === false) throw Error(result.error || '操作失败。'); report('操作完成；脚本保存与运行状态请在酒馆助手中确认。');}
+    try {const result = await fn(); if (result?.ok === false) throw Error(result.error || '操作失败。'); report(result?.action === 'updated' && result.persistence === 'confirmed' ? ('更新完成：已重新读取宿主脚本并确认服务器保存。' + (result.runtimeConfirmed ? '新版运行已确认。' : '此扩展未运行，启用后加载新版。')) : '操作完成；脚本保存与运行状态请在酒馆助手中确认。');}
     finally {busy = false; if (!disposed) {refreshLaunchers(); await renderInstalled();}}
   }
   async function renderInstalled() {
@@ -61,11 +61,20 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
       const card = el('article', undefined, 'mm-extension-card'); card.dataset.extensionId = id;
       const title = el('div', undefined, 'mm-extension-title'); title.append(el('strong', manifest.name || installed?.name || id));
       const enabled = installed ? installed.enabled : local.enabled;
-      title.append(el('small', (installed?.version || manifest.version || '') + ' · ' + (enabled ? '已启用' : '已停用'))); card.append(title);
+      title.append(el('small', (installed ? (installed.version || '保存版本待确认') : (manifest.version || '')) + ' · ' + (enabled ? '已启用' : '已停用'))); card.append(title);
       card.append(el('p', manifest.description || id, 'mm-hub-note'));
+      if (installed) card.append(el('p', '酒馆脚本名称：' + installed.name + '（更新保留原名；版本以已保存内容为准）', 'mm-hub-note'));
       card.append(el('p', 'Launcher：' + (local?.launcherAvailable ? '可用' : '未提供或未启用') + ' · 固定功能尚未加入', 'mm-hub-note'));
       for (const error of [local?.error, local?.launcherError]) if (error) card.append(el('p', error, 'mm-extension-error'));
       const candidate = candidates.get(id); if (candidate) card.append(el('p', '最新版本：' + candidate.version, 'mm-hub-note'));
+      if (installed?.persistenceError) card.append(el('p', installed.persistenceError, 'mm-extension-error'));
+      if (installed && local && installed.version !== local.manifest.version) {
+        card.append(el('p', '已保存版本：' + (installed.version || '待确认') + ' · 实际运行版本：' + local.manifest.version + '。尚未完成新版运行确认。', 'mm-extension-error'));
+        if (installed.version && !installed.persistenceError && installed.version === installed.memoryVersion) {
+          card.append(el('p', '如需重新加载，请先停止生成并保存编辑；刷新会中断当前任务。', 'mm-hub-note'));
+          action(card, '刷新页面加载已保存版本', () => host.location.reload(), id + ':reload-page');
+        }
+      }
       const actions = el('div', undefined, 'mm-extension-actions'); card.append(actions);
       if (local?.launcherAvailable) action(actions, '打开', () => runtime.open(id), id + ':open', local.busy);
       action(actions, enabled ? '停用' : '启用', () => operate(async () => {

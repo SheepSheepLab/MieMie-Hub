@@ -54,3 +54,24 @@ test('logout immediately removes restricted cards and stale authorized Catalog c
 test('session expiry removes an open private form and restores the Discord login action',async t=>{
  const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}}});await f.center.activate('mine');await f.click('编辑');assert.ok(f.body.querySelector('[data-submission-form]'));f.registry.setIdentity(null);assert.equal(f.body.querySelector('[data-submission-form]'),null);assert.match(f.body.textContent,/使用 Discord 登录后/);assert.equal(f.body.querySelector('button[data-action="registry:login"]').textContent,'使用 Discord 登录');
 });
+
+test('installed UI shows persisted version and preserved name; failed update cannot claim success', async t=>{
+ const f=fixture(t);let saved='1.0.0';
+ f.packages.listInstalled=async()=>[{id:'fixture.background',name:'Original Name 0.9.0',version:saved,memoryVersion:'1.0.1',enabled:true,repoUrl:'https://github.com/example/extension',persistenceError:'服务器仍保存旧内容'}];
+ f.packages.check=async()=>({available:true,version:'1.0.1'});
+ f.packages.update=async()=>{throw Error('保存尚未确认');};
+ await f.center.activate('installed');await f.click('检查更新');await f.click('更新');
+ assert.match(f.body.querySelector('[role="status"]').textContent,/保存尚未确认/);
+ assert.doesNotMatch(f.body.querySelector('[role="status"]').textContent,/更新完成/);
+ assert.match(f.body.querySelector('article small').textContent,/1.0.0/);
+ assert.match(f.body.textContent,/Original Name 0.9.0（更新保留原名/);
+ assert.equal(f.body.querySelector('[data-action="fixture.background:reload-page"]'),null);
+ saved=null;await f.center.activate('installed');assert.match(f.body.querySelector('article small').textContent,/保存版本待确认/);
+});
+test('confirmed package update reports durable success and separately labels a stale runtime',async t=>{
+ const f=fixture(t);f.packages.listInstalled=async()=>[{id:'fixture.background',name:'Fixture 1.0.0',version:'1.0.1',memoryVersion:'1.0.1',enabled:true,repoUrl:'https://github.com/example/extension'}];
+ f.packages.check=async()=>({available:true,version:'1.0.2'});
+ f.packages.update=async()=>({action:'updated',persistence:'confirmed',runtimeConfirmed:false});
+ await f.center.activate('installed');assert.match(f.body.textContent,/已保存版本：1.0.1 · 实际运行版本：1.0.0/);assert.ok(f.body.querySelector('[data-action="fixture.background:reload-page"]'));assert.match(f.body.textContent,/停止生成并保存编辑/);
+ await f.click('检查更新');await f.click('更新');assert.match(f.body.querySelector('[role="status"]').textContent,/确认服务器保存/);assert.doesNotMatch(f.body.querySelector('[role="status"]').textContent,/新版运行已确认/);
+});

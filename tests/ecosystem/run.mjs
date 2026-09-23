@@ -21,13 +21,18 @@ const pkg = JSON.parse(await readFile(path.join(project,'package.json')));
 const hubBytes=await readFile(path.join(project,'build/MieMie-Hub-'+pkg.version+'.json'));
 const polisherBytes=await readFile(flags.get('--polisher')), metaBytes=await readFile(flags.get('--metadata')), legacyBytes=await readFile(flags.get('--legacy-polisher'));
 const hubArtifact=JSON.parse(hubBytes), polisherArtifact=JSON.parse(polisherBytes), metadata=JSON.parse(metaBytes), legacyArtifact=JSON.parse(legacyBytes);
-assert.equal(metadata.version,'1.1.0');assert.equal(metadata.productId,'miemie.polisher');assert.equal(metadata.asset.sha256,sha(polisherBytes));assert.equal(metadata.asset.size,polisherBytes.length);assert.equal(metadata.contentSha256,sha(polisherArtifact.content));assert.equal(polisherArtifact.id,metadata.scriptId);
+assert.match(metadata.version,/^\d+\.\d+\.\d+$/);assert.equal(metadata.productId,'miemie.polisher');assert.equal(metadata.asset.sha256,sha(polisherBytes));assert.equal(metadata.asset.size,polisherBytes.length);assert.equal(metadata.contentSha256,sha(polisherArtifact.content));assert.equal(polisherArtifact.id,metadata.scriptId);
 assert.equal(metadata.tag,'v'+metadata.version);assert.equal(metadata.manifest.version,metadata.version);assert.equal(metadata.manifest.id,metadata.productId);assert.equal(metadata.manifest.repository,'https://github.com/SheepSheepLab/MieMie-Polisher');
 const identity=JSON.parse(polisherArtifact.content.split('\n')[0].replace('// MieMie-Extension-Build: ',''));assert.equal(identity.productId,metadata.productId);assert.equal(identity.version,metadata.version);assert.equal(identity.repository,metadata.manifest.repository);assert.equal(identity.scriptId,metadata.scriptId);
-assert.equal(sha(legacyBytes),'6bab205ab77804c2128c031e0e615295e8661ae978d58700a16da4b8958d4fbc','legacy artifact must be exact published 1.0.1 bytes');
-assert.equal(sha(legacyArtifact.content),'ec6266a8cb4038dadf20c357ef1acb9b7d8239036467c8d13e6ec98ed3a000f4');
+const legacyHashes = {
+  '6bab205ab77804c2128c031e0e615295e8661ae978d58700a16da4b8958d4fbc':'1.0.1',
+  '6041b413629366ad8fe5d6667fe35e005224eabc4ddaae33f1824d489b8f0f84':'1.1.0',
+};
+const legacyVersion = legacyHashes[sha(legacyBytes)];
+assert.ok(legacyVersion,'legacy artifact must be exact published bytes');
+assert.notEqual(metadata.version,legacyVersion);
 const hubIdentity=JSON.parse(hubArtifact.content.split('\n')[0].replace('// MieMie-Hub-Build: ',''));assert.equal(hubIdentity.version,pkg.version);assert.equal(hubIdentity.productId,'miemie.hub');
-const artifacts={hub:{version:pkg.version,sha256:sha(hubBytes)},polisher:{version:metadata.version,sha256:sha(polisherBytes)},metadata:{sha256:sha(metaBytes)},legacyPolisher:{version:'1.0.1',sha256:sha(legacyBytes)}};
+const artifacts={hub:{version:pkg.version,sha256:sha(hubBytes)},polisher:{version:metadata.version,sha256:sha(polisherBytes)},metadata:{sha256:sha(metaBytes)},legacyPolisher:{version:legacyVersion,sha256:sha(legacyBytes)}};
 const repoAPI='https://api.github.com/repos/SheepSheepLab/MieMie-Polisher', repoURL=metadata.manifest.repository;
 const releaseId=71001, assetId=71002, metadataId=71003;
 const asset=(id,name,bytes)=>({id,name,state:'uploaded',size:bytes.length,digest:'sha256:'+sha(bytes),url:repoAPI+'/releases/assets/'+id,browser_download_url:repoURL+'/releases/download/'+metadata.tag+'/'+name});
@@ -131,7 +136,7 @@ try {
     f.q('[aria-label="GitHub Repository URL"]').value=repoURL;await f.action('github:preview');await until(()=>f.q('[data-action="package:install"]'),'package preview');await f.action('package:install');
     await until(()=>f.h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'automatic package registration');await f.drain();
     assert.equal(f.installed().content,polisherArtifact.content);assert.notEqual(f.installed().id,polisherArtifact.id);assert.equal(f.h.__MieMiePolisherSource.mode,'hub');assert.ok(f.q('[data-extension-id="miemie.polisher"]'));
-    assert.ok(f.calls.some(x=>x.url===repoAPI+'/releases/assets/'+assetId));assert.ok(f.calls.every(x=>x.url.startsWith(repoAPI)||x.url==='https://registry.sheepsheeplab.com/api/catalog?page=1&pageSize=12&q=&source='));assert.equal(f.writes.length,1);assert.deepEqual(f.trees()[0],f.other);
+    assert.ok(f.calls.some(x=>x.url===repoAPI+'/releases/assets/'+assetId));assert.ok(f.calls.every(x=>x.url===f.h.location.origin+'/api/settings/get'||x.url.startsWith(repoAPI)||x.url==='https://registry.sheepsheeplab.com/api/catalog?page=1&pageSize=12&q=&source='));assert.equal(f.writes.length,1);assert.deepEqual(f.trees()[0],f.other);
   });
   await check('installed real artifact opens through Hub Launcher and physical enable/disable follows helper iframe lifetime',async()=>{
     await f.h.__MieMieHub.open();f.click('[data-hub-app="miemie.polisher"]');await until(()=>f.q('#meeme-translation section')?.hidden===false,'Launcher open');
@@ -139,7 +144,7 @@ try {
     await f.center('installed');await f.action('miemie.polisher:toggle');await until(()=>f.h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'physical reenable');await f.drain();assert.equal(f.installed().enabled,true);assert.equal(f.d.querySelectorAll('#meeme-translation').length,1);
   });
   await check('installed version comparison reports the same author version without offering an update',async()=>{
-    await f.center('installed');await f.action('miemie.polisher:check');await until(()=>f.q('[data-extension-id="miemie.polisher"]').textContent.includes('最新版本：1.1.0'),'same version result');
+    await f.center('installed');await f.action('miemie.polisher:check');await until(()=>f.q('[data-extension-id="miemie.polisher"]').textContent.includes('最新版本：'+metadata.version),'same version result');
     assert.equal(f.q('[data-action="miemie.polisher:update"]'),null);assert.equal(f.installed().content,polisherArtifact.content);
   });
   await check('physical uninstall creates no backup and removes only target script; saved business data survives',async()=>{
@@ -154,15 +159,18 @@ try {
   });
   await f.close();activeFixture=null;
   const u=activeFixture=await fixture({legacy:true});
-  await check('published legacy 1.0.1 is identified by verified content despite custom installed ID, folder and rename',async()=>{
-    await u.center('installed');await until(()=>u.q('[data-action="miemie.polisher:check"]'),'legacy managed');assert.match(u.q('[data-extension-id="miemie.polisher"]').textContent,/1\.0\.1/);assert.equal(u.installed().id,u.actualLegacyId);
+  await check('published baseline is identified by verified content despite custom installed ID, folder and rename',async()=>{
+    await u.center('installed');await until(()=>u.q('[data-action="miemie.polisher:check"]'),'legacy managed');assert.ok(u.q('[data-extension-id="miemie.polisher"]').textContent.includes(legacyVersion));assert.equal(u.installed().id,u.actualLegacyId);
   });
-  await check('legacy 1.0.1 updates from author Release to real 1.1.0 retaining instance metadata and external data',async()=>{
+  await check('published baseline updates from author Release retaining instance metadata and external data',async()=>{
     const before=clone(u.installed()),vars=JSON.stringify(u.vars),key=u.h.localStorage.getItem('meeme_translation_key_v1'),worldbook=JSON.stringify(u.worldbook);
     await u.action('miemie.polisher:check');await until(()=>u.q('[data-action="miemie.polisher:update"]'),'newer package');await u.action('miemie.polisher:update');
     await until(()=>u.h.__MieMieHub.extensions.get('miemie.polisher')?.manifest.version===metadata.version&&u.h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'upgraded iframe activation');await u.drain();
     assert.deepEqual(u.installed(),{...before,content:polisherArtifact.content});assert.deepEqual(JSON.parse(await u.backups.at(-1).blob.text()),before);assert.equal(JSON.stringify(u.vars),vars);assert.equal(u.h.localStorage.getItem('meeme_translation_key_v1'),key);assert.equal(JSON.stringify(u.worldbook),worldbook);assert.deepEqual(u.trees()[0],u.other);assert.equal(u.h.__fixtureOtherStarts,1);
     await u.h.__MieMieHub.open();u.click('[data-hub-app="miemie.polisher"]');await until(()=>u.q('#meeme-translation section')?.hidden===false,'updated Launcher UI');assert.equal(u.q('[data-key]').value,'fixture-not-real-api-key');assert.equal(u.q('[data-pre-text]').value,'Fixture pre prompt');assert.equal(u.vars.meeme_translation_v1.backups.length,1);
+    const artLine=polisherArtifact.content.split('\n').find(line=>line.startsWith('const POLISHER_ASSETS='));const expectedIcon=JSON.parse(artLine.slice('const POLISHER_ASSETS='.length,-1)).icon;
+    assert.equal(u.q('[data-hub-app="miemie.polisher"] img').src,expectedIcon);assert.equal(u.q('#meeme-translation [data-tool-icon]').src,expectedIcon);
+    await until(()=>u.q('[data-hub-panel="extension-center"]').textContent.includes('已重新读取宿主脚本'),'durable update confirmation');
   });
   await check('Registry offline leaves real installed package, Hello, timeline and local settings usable',async()=>{
     await u.h.__MieMieHub.open();u.click('[data-hub-app="settings"]');await tick();u.q('[data-hub-developer-settings]').open=true;const url=u.q('[aria-label="Registry 服务地址"]');url.value='https://registry-fixture.invalid';u.registryOffline();await u.action('registry:configure');await u.center('discover');await until(()=>u.q('[data-hub-panel="extension-center"]').textContent.includes('扩展目录无法连接'),'offline Catalog message');

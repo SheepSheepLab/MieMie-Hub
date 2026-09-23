@@ -1,6 +1,6 @@
 # MieMie Hub · 咩咩Hub
 
-当前版本 **0.4.2**（开发测试 Pre-release）。轻量 Core 保留时间线、Extension Runtime 与 Hub 自更新，新增 Extension Ecosystem MVP。基础构建和测试不依赖 Registry 或 Polisher 源码。
+当前版本 **0.4.3**（开发测试 Pre-release）。轻量 Core 保留时间线、Extension Runtime 与 Hub 自更新，新增 Extension Ecosystem MVP。基础构建和测试不依赖 Registry 或 Polisher 源码。
 
 ## 扩展中心
 
@@ -47,8 +47,8 @@ MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL="$OFFICIAL_REGISTRY_HTT
 输出：
 
 ```text
-build/MieMie-Hub-0.4.2.json
-build/咩咩Hub-0.4.2.json
+build/MieMie-Hub-0.4.3.json
+build/咩咩Hub-0.4.3.json
 build/MieMie-Hub-update.json
 build/miemie-hub.js
 ```

@@ -52,6 +52,13 @@ const hubScriptHost = createHubScriptHost({currentVersion: HUB_VERSION,
   getScriptTrees: typeof getScriptTrees === 'function' ? getScriptTrees : undefined,
   updateScriptTreesWith: typeof updateScriptTreesWith === 'function' ? updateScriptTreesWith : undefined,
 });
+const readSavedExtensionContent = createHubSavedScriptReader({fetch: (...args) => window.fetch(...args), origin: h.location.origin,
+    getRequestHeaders: () => {
+      const context = h.SillyTavern?.getContext?.();
+      if (typeof context?.getRequestHeaders !== 'function') throw Error('宿主保存确认接口不可用。');
+      return context.getRequestHeaders();
+    },
+  });
 const hubSelfUpdater = createHubSelfUpdater({currentVersion: HUB_VERSION, host: hubScriptHost,
   storage: {getItem: key => h.sessionStorage.getItem(key), setItem: (key, value) => h.sessionStorage.setItem(key, value), removeItem: key => h.sessionStorage.removeItem(key)},
   backup(script, version) {
@@ -65,15 +72,11 @@ const hubSelfUpdater = createHubSelfUpdater({currentVersion: HUB_VERSION, host: 
     try {link.click();}
     finally {link.remove(); h.setTimeout(() => h.URL.revokeObjectURL(url), 60000);}
   },
-  readSavedContent: createHubSavedScriptReader({fetch: (...args) => window.fetch(...args), origin: h.location.origin,
-    getRequestHeaders: () => {
-      const context = h.SillyTavern?.getContext?.();
-      if (typeof context?.getRequestHeaders !== 'function') throw Error('宿主保存确认接口不可用。');
-      return context.getRequestHeaders();
-    },
-  }),
+  readSavedContent: readSavedExtensionContent,
 });
 const packageManager = createExtensionPackageManager({
+  readSavedContent: readSavedExtensionContent,
+  getRunningVersion: id => { const record = extensionRuntime.get(id); return record?.enabled ? record.manifest.version : null; },
   getScriptTrees: typeof getScriptTrees === 'function' ? getScriptTrees : undefined,
   updateScriptTreesWith: typeof updateScriptTreesWith === 'function' ? updateScriptTreesWith : undefined,
   fetch: (...args) => window.fetch(...args), crypto: window.crypto,

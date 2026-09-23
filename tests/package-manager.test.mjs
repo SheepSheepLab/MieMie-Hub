@@ -44,7 +44,9 @@ function setup(t, f = fixture(), options = {}) {
     if (url === API + '/releases/assets/301') {options.beforeDownload?.(); return response(options.bytes || f.bytes, options.redirect || url);}
     throw Error('Unexpected URL');
   };
-  const manager = createExtensionPackageManager({getScriptTrees: () => clone(trees), updateScriptTreesWith(updater, scope) {
+  const find = (list,id) => list.flatMap(x => x.type === 'folder' ? find(x.scripts,id) : x.id === id ? [x] : []);
+  const manager = createExtensionPackageManager({readSavedContent: async id => find(trees,id)[0]?.content || null,
+    persistenceTimeoutMs: 100, confirmationIntervalMs: 2, getScriptTrees: () => clone(trees), updateScriptTreesWith(updater, scope) {
     assert.deepEqual(scope, {type: 'global'}); options.beforeWrite?.(trees);
     const result = updater(clone(trees)); assert.equal(typeof result?.then, 'undefined'); trees = result; writes++; return clone(trees);
   }, fetch: options.fetch || baseRequest, crypto: webcrypto, randomUUID: () => 'fresh-instance', backup: options.noBackup ? undefined : async value => {backups.push(value);},
@@ -393,4 +395,40 @@ test('Registry upstream failure is distinguished from Origin or service-version 
   const sys = relaySetup(t, {reply: (bytes, body, url) => response(encode({error: {code: 'github_unavailable', message: 'private upstream information'}}), url, 502)});
   await assert.rejects(sys.manager.inspect(REPO), e => e.code === 'github_unavailable' && !e.message.includes('Origin') && !e.message.includes('private') && e.message.includes('作者 GitHub'));
   assert.equal(sys.writes(), 0);
+});
+
+test('write return alone cannot claim success when authoritative host readback stays old', async t => {
+  const old = [script(), other()];
+  const sys = setup(t, fixture(), {manager:{updateScriptTreesWith: updater => updater(clone(old))}});
+  await assert.rejects(sys.manager.update(ID), code('host-write'));
+  assert.equal((await sys.manager.listInstalled())[0].version, '1.0.1');
+});
+test('server save failure leaves displayed version old, not the newer memory version', async t => {
+  const sys = setup(t, fixture(), {manager:{readSavedContent: async () => content('1.0.1'), persistenceTimeoutMs:30}});
+  await assert.rejects(sys.manager.update(ID), code('persistence'));
+  const installed = (await sys.manager.listInstalled())[0];
+  assert.equal(installed.version,'1.0.1'); assert.equal(installed.memoryVersion,'1.0.2'); assert.ok(installed.persistenceError);
+});
+test('delayed durable save and runtime activation must both finish before update resolves', async t => {
+  let reads=0, running='1.0.1', sys;
+  sys=setup(t,fixture(),{manager:{readSavedContent:async()=>{reads++; if(reads<4)return content('1.0.1'); if(reads>=6)running='1.0.2';return sys.read()[0].content;},getRunningVersion:()=>running}});
+  const result=await sys.manager.update(ID);assert.ok(reads>=6);assert.equal(result.persistence,'confirmed');assert.equal(result.version,'1.0.2');assert.equal(sys.writes(),1);
+});
+test('unchanged old runtime is not update success even if content is saved', async t => {
+  const sys=setup(t,fixture(),{manager:{getRunningVersion:()=> '1.0.1',persistenceTimeoutMs:30}});
+  await assert.rejects(sys.manager.update(ID),code('persistence'));
+});
+test('missing persistence reader blocks write before backup or mutation', async t => {
+  const sys=setup(t,fixture(),{manager:{readSavedContent:undefined}});
+  await assert.rejects(sys.manager.update(ID),code('persistence'));assert.equal(sys.writes(),0);assert.equal(sys.backups.length,0);
+});
+test('teardown cancels persistence readback and cannot report success', async t => {
+  let n=0;const sys=setup(t,fixture(),{manager:{readSavedContent:async()=>{if(++n===1)return content();return new Promise(()=>{});}}});
+  const job=sys.manager.update(ID);while(n<2)await new Promise(r=>setTimeout(r,1));sys.manager.dispose();await assert.rejects(job,code('cancelled'));
+});
+
+test('same version with different saved content still reports a persistence mismatch',async t=>{
+ const sys=setup(t,fixture(),{manager:{readSavedContent:async()=>content('1.0.1')+'\n// different saved content'}});
+ const row=(await sys.manager.listInstalled())[0];assert.equal(row.version,'1.0.1');assert.ok(row.persistenceError);
+ await assert.rejects(sys.manager.update(ID),code('persistence'));assert.equal(sys.writes(),0);
 });
