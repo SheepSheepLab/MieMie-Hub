@@ -2,7 +2,7 @@
 
 咩咩Hub 是咩咩（MieMie）开源软件与社区生态的官方项目。生态由 SheepSheep 发起和创建（Founder / 创始人）；SheepSheepLab 是官方 GitHub 开发、维护与发布命名空间，官方项目主要通过该命名空间维护和发布，并欢迎社区贡献者共同参与。
 
-当前版本 **0.4.3**（开发测试 Pre-release）。轻量 Core 保留时间线、Extension Runtime 与 Hub 自更新，新增 Extension Ecosystem MVP。基础构建和测试不依赖 Registry 或 Polisher 源码。
+当前版本 **0.5.0**（开发测试 Pre-release）。轻量 Core 保留时间线、Extension Runtime 与 Hub 自更新，新增 Extension Ecosystem MVP。基础构建和测试不依赖 Registry 或 Polisher 源码。
 
 ## 扩展中心
 
@@ -12,9 +12,9 @@
 - **GitHub**：文件始终来自作者自己的公开 Repository / Release。符合 [Package v1](docs/EXTENSION-PACKAGE.md) 才能安装；普通 GitHub 项目仍可跳转获取。也可直接输入作者仓库预览安装兼容性。
 - **Discord**：仅展示原帖入口，不缓存临时 CDN 附件或自动安装。
 - **已安装**：打开、启停、检查更新、更新，以及确认后物理卸载已识别的全局 Package。未识别为 Package 的运行扩展明确标为「Runtime 注销」，不会冒称已删除助手条目。
-- **我的**：Discord OAuth、公开资料、投稿、编辑、上下架，以及服务器成员限定可见。Registry 登录会话仅留在当前 Hub 内存；重载后需重新登录。管理员身份由 Registry 环境变量白名单判断。
+- **我的**：Discord OAuth、公开资料、投稿、编辑、上下架，以及服务器成员限定可见。Registry 登录会话仅留在当前 Hub 内存；重载后需重新登录。Official 身份来自服务端可信角色；治理后台独立于 Hub。
 
-普通用户打开「发现」直接使用构建内置的官方服务，在「我的」使用 Discord 登录，不需要 MieMie 账号或任何服务配置。扩展中心不提供 Registry 地址输入。自定义连接仅位于「设置 → 高级 / 开发者选项」，默认折叠；留空保存恢复构建默认值。当前开发版尚无正式公网服务，默认离线，不伪造生产地址。OAuth Secret、管理员 ID 名单始终只在服务器。配置见 [生态使用与安全边界](docs/ECOSYSTEM.md) 及 [Registry 部署说明](https://github.com/SheepSheepLab/MieMie-Registry/blob/main/docs/DEPLOYMENT.md)。
+普通用户打开「发现」直接使用构建内置的官方服务，在「我的」使用 Discord 登录，不需要 MieMie 账号或任何服务配置。扩展中心不提供 Registry 地址输入。自定义连接仅位于「设置 → 高级 / 开发者选项」，默认折叠；留空保存恢复构建默认值。官方生产构建内置 https://registry.sheepsheeplab.com；普通开发构建可离线。OAuth Secret、管理员 ID 名单始终只在服务器。配置见 [生态使用与安全边界](docs/ECOSYSTEM.md) 及 [Registry 部署说明](https://github.com/SheepSheepLab/MieMie-Registry/blob/main/docs/DEPLOYMENT.md)。
 
 ## 安装、更新与数据
 
@@ -96,3 +96,7 @@ Copyright © 2026 SheepSheep。社区贡献者（Community Contributors）保留
 ### 0.4.2 Discord 登录修复
 
 登录结果使用绑定原 Origin 和 PKCE 的一次性交接，不依赖弹窗消息或第三方 Cookie；收到 Registry 会话后验证当前用户并刷新「我的」。原消息交接保持旧服务兼容。生产发布构建使用 `MIEMIE_BUILD_MODE=production` 和真实 `MIEMIE_DEFAULT_REGISTRY_URL`。关闭 Hub/重载后需重新登录；不要复制任何 Token。
+
+## Catalog 类型与治理
+
+发现页区分 Community / MieMie 官方、酒馆扩展 / 独立应用 / Web 工具及平台。只有 Tavern + managed_install + 有效 Package 可以进入安装；独立程序跳转作者发布页，Web 工具跳转其 HTTPS 网站，Hub 不执行 EXE/APK/DMG。投稿的 Source、Type、Distribution 与 Platforms 分开；官方角色可在本人投稿选择 Official。管理操作全部移至 Registry `/admin`，普通 Hub 不提供 Ban、角色、保护或审计操作。

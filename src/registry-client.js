@@ -23,7 +23,7 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
     const profile = {displayName: result.profile.displayName.slice(0, 100), avatarUrl: typeof result.profile.avatarUrl === 'string' ? result.profile.avatarUrl : null};
     const expiresAt = result.expiresAt ?? identity?.expiresAt;
     if (expiresAt !== undefined && (!Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= now())) throw Error('Discord 登录会话已过期，请重新登录。');
-    return {profile, isAdmin: result.isAdmin === true, canSubmit: result.canSubmit !== false, ...(expiresAt ? {expiresAt} : {})};
+    return {profile, isAdmin: result.isAdmin === true, canPublishOfficial: result.canPublishOfficial === true, canSubmit: result.canSubmit !== false, ...(expiresAt ? {expiresAt} : {})};
   }
   function watchExpiry() {
     clearTimeout(sessionTimer);

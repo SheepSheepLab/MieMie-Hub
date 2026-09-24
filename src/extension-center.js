@@ -124,12 +124,15 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
         const card=el('article',undefined,'mm-extension-card'); card.dataset.catalogId=item.id;
         icon(card,item.github?.manifest?.iconUrl||item.icon); card.append(el('strong',item.name),el('p','作者：'+item.author,'mm-hub-note'),el('p',item.description,'mm-hub-note'));
         const profile=el('p',undefined,'mm-submit-profile'); icon(profile,item.submitter?.avatarUrl);profile.append(el('span','投稿者：'+(item.submitter?.displayName||'未提供')));card.append(profile);
+        card.append(el('p',(item.classification==='official'?'MieMie 官方':'Community')+' · '+({tavern_extension:'酒馆扩展',standalone_app:'独立应用',web_tool:'Web 工具'}[item.type]||'酒馆扩展')+(item.platforms?.length?' · '+item.platforms.join(', '):''),'mm-hub-note'));
         if(item.version)card.append(el('p','Catalog 记录版本：'+item.version,'mm-hub-note'));
         card.append(el('p',item.sourceType==='github'?'来源：作者 GitHub · 文件由作者 Release 提供':'来源：Discord · 前往作者原帖获取','mm-hub-note'));
         const actions=el('div',undefined,'mm-extension-actions');card.append(actions);
-        if(item.sourceType==='github') {link(actions,'查看 GitHub',item.sourceUrl);
-          if(packages&&item.github?.compatibility==='installable'){card.append(el('p','机器安装兼容，不代表已审核安全；安装将运行作者代码。','mm-hub-note'));const knownId=item.github?.manifest?.id;if(knownId&&runtime.get(knownId))action(actions,'已安装',()=>activate('installed'));else action(actions,'安装',async()=>{const candidate=await packages.inspect(item.sourceUrl);if(!candidate.installable)throw Error(candidate.reason||'项目不再提供可安装包。');await packages.install(candidate);await activate('installed');},item.id+':install');}
-          else if(packages)action(actions,'检查安装兼容性',()=>previewInstall(item.sourceUrl,card),item.id+':preview');}
+        if(item.type==='web_tool'){link(actions,'打开网站',item.websiteUrl);link(actions,'原始来源',item.sourceUrl);}
+        else if(item.type==='standalone_app'){link(actions,'前往作者发布页',item.sourceType==='github'?item.sourceUrl.replace(/\/$/,'')+'/releases':item.sourceUrl);}
+        else if(item.sourceType==='github') {link(actions,'查看 GitHub',item.sourceUrl);
+          if(packages&&(!item.type||item.type==='tavern_extension')&&(!item.distribution||item.distribution==='managed_install')&&item.github?.compatibility==='installable'){card.append(el('p','机器安装兼容，不代表已审核安全；安装将运行作者代码。','mm-hub-note'));const knownId=item.github?.manifest?.id;if(knownId&&runtime.get(knownId))action(actions,'已安装',()=>activate('installed'));else action(actions,'安装',async()=>{const candidate=await packages.inspect(item.sourceUrl);if(!candidate.installable)throw Error(candidate.reason||'项目不再提供可安装包。');await packages.install(candidate);await activate('installed');},item.id+':install');}
+          else if(packages&&(!item.type||item.type==='tavern_extension')&&(!item.distribution||item.distribution==='managed_install'))action(actions,'检查安装兼容性',()=>previewInstall(item.sourceUrl,card),item.id+':preview');}
         else if(item.sourceType==='discord')link(actions,'前往 Discord',item.sourceUrl);
         list.append(card);
       }
@@ -141,10 +144,25 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
     const generation = ++serial;
     const form=el('form',undefined,'mm-submission-form'); form.dataset.submissionForm='';
     const fields={};
-    for(const [name,label,multiline] of [['name','脚本名称'],['author','作者'],['description','简介',true],['sourceUrl','GitHub Repository / Discord 原帖 URL'],['icon','Icon URL（可选）'],['tags','标签（逗号分隔）']]) {
-      const wrap=el('label',label),input=el(multiline?'textarea':'input'); input.name=name;input.value=name==='tags'?(item?.tags||[]).join(', '):(item?.[name]||'');input.maxLength=name==='description'?2000:name==='sourceUrl'||name==='icon'?2048:120; if(['name','author','description','sourceUrl'].includes(name))input.required=true;wrap.append(input);form.append(wrap);fields[name]=input;
+    for(const [name,label,multiline] of [['name','项目名称'],['author','作者'],['description','简介',true],['sourceUrl','GitHub Repository / Discord 原帖 URL'],['websiteUrl','Website URL（Web Tool 必填）'],['icon','Icon URL（可选）'],['tags','标签（逗号分隔）']]) {
+      const wrap=el('label',label),input=el(multiline?'textarea':'input'); input.name=name;input.value=name==='tags'?(item?.tags||[]).join(', '):(item?.[name]||'');input.maxLength=name==='description'?2000:name==='sourceUrl'||name==='icon'||name==='websiteUrl'?2048:120; if(['name','author','description','sourceUrl'].includes(name))input.required=true;wrap.append(input);form.append(wrap);fields[name]=input;
     }
     const source=el('select');source.name='sourceType';source.setAttribute('aria-label','来源');for(const value of ['github','discord']){const o=el('option',value==='github'?'GitHub':'Discord');o.value=value;source.append(o);}source.value=item?.sourceType||'github';form.prepend(source);
+    let productAnchor=source;
+    function selectField(name,label,options,value){const wrap=el('label',label),select=el('select');select.name=name;for(const [v,t]of options){const o=el('option',t);o.value=v;select.append(o);}select.value=value;wrap.append(select);form.insertBefore(wrap,productAnchor.nextSibling);productAnchor=wrap;return select;}
+    const type=selectField('type','产品类型',[['tavern_extension','酒馆扩展'],['standalone_app','独立应用'],['web_tool','Web 工具']],item?.type||'tavern_extension');
+    const distribution=selectField('distribution','分发方式',[['managed_install','Hub 安装'],['external_release','作者发布页'],['open_url','打开链接']],item?.distribution||(source.value==='github'?'managed_install':'open_url'));
+    const platformWrap=el('label','平台（逗号分隔：windows, macos, linux, android, ios, web）'),platforms=el('input');platforms.name='platforms';platforms.value=(item?.platforms||[]).join(', ');platformWrap.append(platforms);form.append(platformWrap);
+    let classification;
+    if(registry.getIdentity()?.canPublishOfficial)classification=selectField('classification','项目身份',[['community','Community'],['official','MieMie 官方']],item?.classification||'community');
+    function refreshProduct(){
+      const allowed=type.value==='standalone_app'?['external_release']:type.value==='web_tool'?['open_url']:source.value==='discord'?['open_url']:['managed_install','external_release'];
+      for(const o of distribution.options)o.disabled=!allowed.includes(o.value);
+      if(!allowed.includes(distribution.value))distribution.value=allowed[0];
+      fields.websiteUrl.required=type.value==='web_tool';fields.websiteUrl.parentElement.hidden=type.value!=='web_tool';
+      platformWrap.hidden=type.value==='tavern_extension';
+    }
+    type.onchange=refreshProduct;refreshProduct();
     const visibilityWrap=el('label','可见范围'),visibility=el('select');visibility.name='visibility';
     for(const [value,label]of [['public','所有人'],['discord_guild','仅该 Discord 服务器成员']]){const option=el('option',label);option.value=value;visibility.append(option);}
     visibility.value=item?.visibility==='discord_guild'?'discord_guild':'public';visibilityWrap.append(visibility);form.append(visibilityWrap);
@@ -155,11 +173,12 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
       guildWrap.hidden=!restricted||!github;guildSource.required=restricted&&github;
       visibilityNote.textContent=restricted ? (github?'使用社区帖子所属的 Discord 服务器作为可见范围。':'使用原帖所属的 Discord 服务器作为可见范围。')+'服务器会确认投稿者也是成员；未登录或非成员无法看到此目录记录。不会读取 Discord 消息。' : '默认对所有人可见。投稿不会自动读取 Discord 附件。';
     }
-    visibility.onchange=refreshVisibility;source.onchange=refreshVisibility;refreshVisibility();
+    visibility.onchange=refreshVisibility;source.onchange=()=>{refreshVisibility();refreshProduct();};refreshVisibility();
     action(form,'读取 GitHub 资料',async()=>{
       if(source.value!=='github')throw Error('仅 GitHub 支持预填。');const sourceUrl=fields.sourceUrl.value.trim();
       const result=await registry.api('/api/github/preview?url='+encodeURIComponent(sourceUrl),{authenticated:true});
       if(disposed||generation!==serial||source.value!=='github'||fields.sourceUrl.value.trim()!==sourceUrl)return;
+      if(type.value==='tavern_extension')distribution.value=result.compatibility==='installable'?'managed_install':'external_release';
       const m=result.manifest||result.github?.manifest;if(!m){report('未找到标准 Manifest，请手动填写。');return;}
       for(const key of ['name','author','description'])if(typeof m[key]==='string')fields[key].value=m[key];if(m.iconUrl)fields.icon.value=m.iconUrl;
       report('已预填，请确认展示信息后提交。读取仓库不会自动创建投稿。');
@@ -169,7 +188,8 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
     form.onsubmit=async event=>{
       event.preventDefault();if(save.disabled||disposed||generation!==serial)return;save.disabled=true;
       try {
-        const payload={sourceType:source.value,visibility:visibility.value};
+        const payload={sourceType:source.value,visibility:visibility.value,type:type.value,distribution:distribution.value,platforms:platforms.value.split(',').map(x=>x.trim()).filter(Boolean)};
+        if(classification)payload.classification=classification.value;
         for(const [key,input]of Object.entries(fields))payload[key]=key==='tags'?input.value.split(',').map(x=>x.trim()).filter(Boolean):input.value.trim();
         if(visibility.value==='discord_guild'&&source.value==='github')payload.visibilitySourceUrl=guildSource.value.trim();
         await registry.api('/api/submissions'+(item?'/'+encodeURIComponent(item.id):''),{method:item?'PATCH':'POST',body:payload,authenticated:true});
@@ -184,22 +204,12 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
     if(!identity){content.append(el('p','使用 Discord 登录后即可提交和管理你的扩展。','mm-hub-note'));action(content,'使用 Discord 登录',async()=>{await registry.login();if(!registry.subscribe)await activate('mine');},'registry:login');return;}
     const profile=el('div',undefined,'mm-submit-profile');icon(profile,identity.profile?.avatarUrl);profile.append(el('strong',identity.profile?.displayName||''));content.append(profile);
     if(identity.canSubmit!==false)action(content,'提交扩展',()=>submissionForm());else content.append(el('p','此 Discord 身份的投稿权限已暂停。','mm-hub-note')); action(content,'退出登录',async()=>{await registry.logout();if(!registry.subscribe)await activate('mine');},'registry:logout');
-    if(identity.isAdmin)action(content,'管理员管理',renderAdmin,'registry:admin');
     try {
       const result=await registry.api('/api/submissions',{authenticated:true});if(disposed||generation!==serial||active!=='mine')return;
       if(!Array.isArray(result.items))throw Error('我的投稿格式异常。');
       for(const item of result.items){const card=el('article',undefined,'mm-extension-card');card.append(el('strong',item.name),el('p','作者：'+item.author+' · 投稿状态：'+item.status+' · 管理状态：'+(item.moderation||'visible'),'mm-hub-note'));card.append(el('p',(item.sourceType==='discord'?'Discord':'GitHub')+' · '+(item.visibility==='discord_guild'?'仅该 Discord 服务器成员可见':'所有人可见'),'mm-hub-note'));if(identity.canSubmit!==false)action(card,'编辑',()=>submissionForm(item),item.id+':edit');if(identity.canSubmit!==false&&(!item.moderation||item.moderation==='visible'))action(card,item.status==='listed'?'下架':'重新上架',async()=>{await registry.api('/api/submissions/'+encodeURIComponent(item.id)+'/status',{method:'POST',authenticated:true,body:{status:item.status==='listed'?'unlisted':'listed'}});await activate('mine');},item.id+':status');content.append(card);}
       if(!result.items.length)content.append(el('p','你还没有投稿。','mm-hub-note'));
     }catch(error){if(disposed||generation!==serial||active!=='mine')return;report('我的投稿无法读取：'+error.message);if(!registry.getIdentity())void activate('mine');}
-  }
-  async function renderAdmin(adminPage=1) {
-    if(!registry.getIdentity()?.isAdmin)return;
-    const generation=++serial;
-    const result=await registry.api('/api/admin/submissions?page='+adminPage,{authenticated:true});if(disposed||generation!==serial||active!=='mine'||!registry.getIdentity()?.isAdmin)return;
-    content.replaceChildren(el('h3','管理员管理'));action(content,'返回我的',()=>activate('mine'));
-    for(const item of result.items||[]){const card=el('article',undefined,'mm-extension-card');card.append(el('strong',item.name),el('p','状态：'+item.status,'mm-hub-note'));const reason=el('input');reason.placeholder='管理原因';reason.maxLength=500;card.append(reason);for(const [status,label]of [['hidden','隐藏'],['unlisted','下架'],['listed','恢复']])action(card,label,async()=>{await registry.api('/api/admin/submissions/'+encodeURIComponent(item.id)+'/moderation',{method:'POST',authenticated:true,body:{action:({hidden:'hide',unlisted:'unlist',listed:'restore'})[status],reason:reason.value}});await renderAdmin(adminPage);});if(item.ownerDiscordUserId)action(card,item.submitterBanned?'解除投稿者封禁':'封禁投稿者',async()=>{await registry.api('/api/admin/identities/'+encodeURIComponent(item.ownerDiscordUserId)+'/ban',{method:'POST',authenticated:true,body:{banned:!item.submitterBanned,reason:reason.value}});await renderAdmin(adminPage);});content.append(card);}
-    const paging=el('div',undefined,'mm-extension-actions');if(adminPage>1)action(paging,'上一页',()=>renderAdmin(adminPage-1));if(result.hasMore)action(paging,'下一页',()=>renderAdmin(adminPage+1));content.append(paging);
-    const ban=el('div');const id=el('input');id.placeholder='需要管理的 Discord User ID（仅管理员）';const reason=el('input');reason.placeholder='封禁原因';ban.append(id,reason);for(const [banned,label]of [[true,'封禁投稿者'],[false,'解除封禁']])action(ban,label,async()=>{await registry.api('/api/admin/identities/'+encodeURIComponent(id.value.trim())+'/ban',{method:'POST',authenticated:true,body:{banned,reason:reason.value}});report('投稿者权限已更新。');});content.append(ban);
   }
   async function activate(tab=active) {
     if(disposed)return;active=tab;report('');for(const[id,b]of tabButtons)b.setAttribute('aria-selected',String(id===active));
