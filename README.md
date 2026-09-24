@@ -2,7 +2,7 @@
 
 咩咩Hub 是咩咩（MieMie）开源软件与社区生态的官方项目。生态由 SheepSheep 发起和创建（Founder / 创始人）；SheepSheepLab 是官方 GitHub 开发、维护与发布命名空间，官方项目主要通过该命名空间维护和发布，并欢迎社区贡献者共同参与。
 
-当前版本 **0.5.1**（开发测试 Pre-release）。轻量 Core 保留时间线、Extension Runtime 与 Hub 自更新，新增 Extension Ecosystem MVP。基础构建和测试不依赖 Registry 或 Polisher 源码。
+当前版本 **0.6.0**（开发测试 Pre-release）。Core 负责 Extension Runtime、包管理与 Hub 自更新；扩展中心和设置是固定 System Modules。时间线与 Hello Mie 为通过标准 API v1 加载的 Bundled Official Extensions，官方默认捆绑时间线、随 Hub 整体更新，时间线只在 Launcher 打开，不进入已安装列表或包管理；仅架构测试可从构建声明移除。基础构建和测试不依赖 Registry 或 Polisher 源码。
 
 ## 扩展中心
 
@@ -18,7 +18,7 @@
 
 ## 安装、更新与数据
 
-只启用 Hub 即可使用时间线与 Hello Mie。MieMie Polisher 1.1.0 可单独运行；Hub 出现后主动收纳，Hub 消失后恢复独立球。Hub 不扫描或删除第三方悬浮球。Launcher 是可选能力，后台 Extension 不需要 open()。
+只启用 Hub 即可使用时间线与 Hello Mie。MieMie Polisher 1.1.3 可单独运行；Hub 出现后主动收纳，Hub 消失后恢复独立球。Hub 不扫描或删除第三方悬浮球。Launcher 是可选能力，后台 Extension 不需要 open()。
 
 Extension 安装和更新先验证 Release/Asset、Manifest、产品身份、版本、大小和双 SHA-256，才写入酒馆助手全局脚本。更新只替换目标 content，保留实例 ID、名称、data、文件夹与其他脚本。公开包 data 必须为空。脚本 API 返回不等于服务器持久保存或作者代码已成功启动；界面明确提示保存/运行待确认。更新前请求导出旧脚本，作者代码启动失败时可手工恢复，第一版没有自动回滚。
 
@@ -49,8 +49,8 @@ MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL="$OFFICIAL_REGISTRY_HTT
 输出：
 
 ```text
-build/MieMie-Hub-0.4.3.json
-build/咩咩Hub-0.4.3.json
+build/MieMie-Hub-0.6.0.json
+build/咩咩Hub-0.6.0.json
 build/MieMie-Hub-update.json
 build/miemie-hub.js
 ```
@@ -58,6 +58,8 @@ build/miemie-hub.js
 中英文 JSON 字节一致，Release 使用 ASCII 文件名。版本来自 package.json，官方版本强制纯 x.x.x。node_modules、build、test-results 均不提交。
 
 ## 开发者资料
+
+- [四层架构、时间线迁移与无时间线测试包](docs/CORE-ARCHITECTURE.md)
 
 - [社区扩展作者指南](docs/ECOSYSTEM.md)
 - [Extension Package / Manifest v1](docs/EXTENSION-PACKAGE.md)
@@ -83,7 +85,7 @@ Copyright © 2026 SheepSheep。社区贡献者（Community Contributors）保留
 
 该授权包括本项目的 JavaScript、CSS、HTML、软件配置、构建脚本、测试及历史代码测试基线。`LICENSE` 是[GNU 官方 GPLv3 完整文本](https://www.gnu.org/licenses/gpl-3.0.txt)的原样副本；“or later”的选择由本声明及包元数据明确，不修改许可证正文。
 
-“咩咩”与“MieMie”分别为地位同级的中文、英文官方品牌；中文语境优先写“咩咩 / MieMie”，英文、GitHub 与技术语境优先写“MieMie / 咩咩”，书写顺序不表示主次。官方品牌身份、Logo、角色形象及指定角色 Icon 不因软件代码采用 GPL 而自动获得同等授权。当前 Reserved Assets 仅为 `assets/hub.png` 和 `assets/timeline.png`，目录中的软件代码仍适用 GPL。第三方修改版及商业 Fork 请查看 [BRAND.md](BRAND.md) 与 [ASSETS-LICENSE.md](ASSETS-LICENSE.md)：可使用自己的品牌和视觉资产按 GPL 收费分发代码；新素材政策允许免费原样转载含保留素材的官方包，默认不授权收费转售该含图包，历史版本按其发布时适用的许可处理。
+“咩咩”与“MieMie”分别为地位同级的中文、英文官方品牌；中文语境优先写“咩咩 / MieMie”，英文、GitHub 与技术语境优先写“MieMie / 咩咩”，书写顺序不表示主次。官方品牌身份、Logo、角色形象及指定角色 Icon 不因软件代码采用 GPL 而自动获得同等授权。当前 Reserved Assets 仅为 `assets/hub.png` 和 `extensions/timeline/icon.png`，目录中的软件代码仍适用 GPL。第三方修改版及商业 Fork 请查看 [BRAND.md](BRAND.md) 与 [ASSETS-LICENSE.md](ASSETS-LICENSE.md)：可使用自己的品牌和视觉资产按 GPL 收费分发代码；新素材政策允许免费原样转载含保留素材的官方包，默认不授权收费转售该含图包，历史版本按其发布时适用的许可处理。
 
 - [品牌身份与正常引用规则](BRAND.md)
 - [指定 PNG 的来源与素材使用范围](ASSETS-LICENSE.md)

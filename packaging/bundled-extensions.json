@@ -1,0 +1,18 @@
+[
+  {
+    "directory": "extensions/timeline",
+    "factory": "createTimelineExtension",
+    "resources": {
+      "icon": "icon.png",
+      "styles": "style.css"
+    },
+    "policy": {
+      "management": "hub"
+    }
+  },
+  {
+    "directory": "extensions/hello-mie",
+    "factory": "createHelloMie",
+    "resources": {}
+  }
+]

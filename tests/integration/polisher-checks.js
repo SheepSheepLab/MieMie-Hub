@@ -55,7 +55,7 @@ async function runPolisherChecks(check) {
     assert(window.fetch===fixtureFetch,'停用未撤销 Hook');assert((await runtime().open(id)).ok===false,'停用仍能打开');
     assert([...oldPanel.querySelectorAll('*')].every(el=>!el.onclick&&!el.oninput&&!el.onchange&&!el.onkeydown),'旧节点保留回调');
     assert(JSON.stringify(variables.meeme_translation_v1)===data&&localStorage.getItem('meeme_translation_key_v1')===key,'停用改变数据');
-    await runtime().open('miemie.hello');await menu();click('[data-hub-app="timeline"]');await until(()=>document.querySelectorAll('.ts-choice').length===2,'停用后时间线');
+    await runtime().open('miemie.hello');await menu();click('[data-hub-app="miemie.timeline"]');await until(()=>document.querySelectorAll('.ts-choice').length===2,'停用后时间线');
     for(let i=0;i<3;i++) {await runtime().enable(id);assert(eventCounts()===liveCounts,'重新启用叠加订阅');if(i<2)await runtime().disable(id);}
     assert(document.querySelectorAll('#meeme-translation').length===1&&document.querySelectorAll('[data-hub-app="miemie.polisher"]').length===1,'实例或入口重复');
     await runtime().open(id);clickP('[data-restore]');await until(()=>ctx.chat.at(-1).mes.includes('自动处理原文')&&p('[data-restore]').textContent==='查看处理结果','重新启用保留恢复能力');
@@ -102,7 +102,7 @@ async function runPolisherChecks(check) {
     __fixture.eventOn=(...args)=>{if(++calls===3)throw Error('模拟订阅失败');return originalOn(...args);};
     try{assert(!(await runtime().enable(id)).ok,'应当启用失败');}finally{__fixture.eventOn=originalOn;}
     assert(eventCounts()===offCounts&&!document.querySelector('#meeme-translation')&&window.fetch===fixtureFetch,'半初始化资源残留');
-    assert((await runtime().open('miemie.hello')).ok,'Hello 被影响');await menu();click('[data-hub-app="timeline"]');await until(()=>document.querySelectorAll('.ts-choice').length===2,'错误后时间线');
+    assert((await runtime().open('miemie.hello')).ok,'Hello 被影响');await menu();click('[data-hub-app="miemie.timeline"]');await until(()=>document.querySelectorAll('.ts-choice').length===2,'错误后时间线');
     assert((await runtime().enable(id)).ok,'错误后无法重新启用');
   });
   await check('停用及卸载状态跨页面重载保留，管理页重新注册恢复旧设置',async()=>{

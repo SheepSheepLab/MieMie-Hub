@@ -1,12 +1,24 @@
 // 咩咩时间线切换器 — Tavern Helper 4.9.3
-// 无模块导入；使用已初始化的父窗口 SillyTavern.getContext()。
-(() => {
+// Host integration and business data belong to this cooperative Extension.
+export function createTimelineExtension(extensionAPI, resources) {
+  let controller;
+  return {
+    activate() { controller = mountTimeline(extensionAPI, resources); },
+    open() { return controller.open(); },
+    deactivate() { controller?.dispose(); },
+  };
+}
+function mountTimeline(extensionAPI, resources) {
   'use strict';
   const host = window.parent, doc = host.document;
   const KEY = '__timelineSwitcherV1';
-  if (host[KEY]) { host[KEY].open(); return; }
+  if (host[KEY]) throw Error('独立时间线已运行，请停用旧时间线后再启用此扩展。');
   let disposed = false, busy = false, epoch = 0, snapshot = null, needsReload = false;
-  const root = hubShell.root, view = doc.createElement('div');
+  const root = doc.createElement('div'), view = doc.createElement('div');
+  root.id = 'miemie-timeline-extension'; root.className = 'miemie-extension-surface';
+  const style = doc.createElement('style'); style.textContent = resources.styles;
+  root.appendChild(style); doc.documentElement.appendChild(root);
+  extensionAPI.onCleanup(() => root.remove());
   view.innerHTML = "<section id=\"meeme-ts-panel\" class=\"ts-panel\" hidden aria-label=\"咩咩时间线切换器\"><header class=\"ts-row mm-tool-heading\"><div class=\"mm-tool-brand\"><img data-tool-icon=\"timeline\" alt=\"咩咩时间线\" draggable=\"false\"><div class=\"mm-tool-titles\"><strong>咩咩时间线切换器</strong><small data-timeline-card>请打开单人角色聊天</small></div></div><button type=\"button\" data-close>收起</button></header><p class=\"ts-note\">切换会修改世界书；共用这本书的聊天也会受影响。旧聊天与记忆不会清空。</p><button type=\"button\" data-refresh>刷新列表</button><div class=\"ts-status\" role=\"status\" aria-live=\"polite\"></div><div class=\"ts-status ts-note\" data-auto-status role=\"status\" aria-live=\"polite\"></div><div data-list></div></section>";
   root.appendChild(view);
   const panel = root.querySelector('.ts-panel'), status = root.querySelector('.ts-status'), list = root.querySelector('[data-list]');
@@ -362,12 +374,10 @@
   }
   autoNote(autoMessage);
 
-  // The Hub owns the orb, drag listeners and the existing dock storage key.
-  let picker=null,pickerSerial=0,panelOpen=false,closeTimer=null;
-  const orb=hubShell.orb;
+  // Extension-owned presentation. Hub supplies only the standard panel capability.
+  let picker=null,pickerSerial=0;
   function clamp(value,min,max){return Math.max(min,Math.min(max,value));}
   function viewport(){return {width:host.innerWidth,height:host.innerHeight};}
-  function placeDock(){hubShell.placeDock();}
   function closePicker(restoreFocus=false){if(!picker)return;const old=picker;picker=null;old.trigger.setAttribute('aria-expanded','false');old.popup.remove();if(restoreFocus&&old.trigger.isConnected)old.trigger.focus();}
   function upgradeSelect(select,row){
     select.hidden=true;select.tabIndex=-1;
@@ -394,22 +404,23 @@
     trigger.addEventListener('click',()=>show());
     trigger.addEventListener('keydown',event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();show(event.key==='ArrowUp');}});
   }
-  function hidePanel(){
-    panelOpen=false;closePicker();root.setAttribute('data-open','false');panel.inert=true;
-    clearTimeout(closeTimer);closeTimer=setTimeout(()=>{if(!panelOpen)panel.hidden=true;},180);
-    if(panel.contains(doc.activeElement))orb.focus();
-  }
   function open(){
-    clearTimeout(closeTimer);panelOpen=true;panel.hidden=false;panel.inert=false;placeDock();panel.getBoundingClientRect();root.setAttribute('data-open','true');refresh();
+    if(disposed)return false;
+    refresh();
+    return extensionAPI.showPanel();
   }
   function outsidePointer(event){if(picker&&!picker.popup.contains(event.target)&&!picker.trigger.contains(event.target))closePicker();}
-  function globalKey(event){if(event.key==='Escape'&&panelOpen&&!picker){hidePanel();}}
   function resized(){closePicker();}
   function panelScrolled(){closePicker();}
-  root.querySelector('[data-close]').onclick=hidePanel;
-  doc.addEventListener('pointerdown',outsidePointer,true);doc.addEventListener('keydown',globalKey);host.addEventListener('resize',resized);panel.addEventListener('scroll',panelScrolled);
-  function cleanupPresentation(){clearTimeout(closeTimer);closePicker();doc.removeEventListener('pointerdown',outsidePointer,true);doc.removeEventListener('keydown',globalKey);host.removeEventListener('resize',resized);panel.removeEventListener('scroll',panelScrolled);}
-  placeDock();
+  root.querySelector('[data-close]').hidden=true;
+  const back=doc.createElement('button');back.type='button';back.className='mm-return';back.textContent='返回';
+  back.onclick=()=>host.__MieMieHub?.open();panel.appendChild(back);
+  panel.querySelector('[data-tool-icon]').src=resources.icon;
+  panel.tabIndex=-1;
+  doc.addEventListener('pointerdown',outsidePointer,true);host.addEventListener('resize',resized);panel.addEventListener('scroll',panelScrolled);
+  const presentationObserver=new host.MutationObserver(()=>closePicker());
+  presentationObserver.observe(panel,{attributes:true,attributeFilter:['hidden','inert','style']});
+  function cleanupPresentation(){closePicker();presentationObserver.disconnect();doc.removeEventListener('pointerdown',outsidePointer,true);host.removeEventListener('resize',resized);panel.removeEventListener('scroll',panelScrolled);}
 
   root.querySelector('[data-refresh]').onclick=refresh;
   let lastKey;
@@ -418,9 +429,18 @@
     try {paintTimelineCard();const key=identity()?.key; if (key!==lastKey) {lastKey=key;epoch++;closePicker();cancelGeneration("角色或聊天已切换；等待新回复，不扫描历史消息。");snapshot=null;list.replaceChildren();if(!panel.hidden&&!busy)refresh();}}
     catch(error){snapshot=null;list.replaceChildren();status.textContent=error.message;}
   },800);
-  function cleanup(){if(disposed)return;cleanupPresentation();cancelGeneration();subscriptions.forEach(s=>s.stop());disposed=true;epoch++;clearInterval(timer);view.remove();if(host[KEY]?.root===root)delete host[KEY];}
+  function cleanup(){
+    if(disposed)return;
+    disposed=true;epoch++;cleanupPresentation();cancelGeneration();
+    subscriptions.forEach(s=>s.stop());clearInterval(timer);root.remove();
+    extensionAPI.signal.removeEventListener('abort',cleanup);
+    if(host[KEY]?.root===root)delete host[KEY];
+  }
+  extensionAPI.onCleanup(cleanup);
+  extensionAPI.signal.addEventListener('abort',cleanup,{once:true});
   installEvents();
-  host[KEY]={open,root,close:hidePanel,closePicker,dispose:cleanup};
-  window.addEventListener('pagehide',cleanup,{once:true});
-  window.addEventListener('unload',cleanup,{once:true});
-})();
+  extensionAPI.attachPanel(panel,{icon:resources.icon});
+  const controller={open,root,closePicker,dispose:cleanup};
+  host[KEY]=controller; // Compatibility bridge owned solely by the Extension.
+  return controller;
+}

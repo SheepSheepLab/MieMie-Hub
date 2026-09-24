@@ -6,9 +6,12 @@ import {JSDOM, VirtualConsole} from 'jsdom';
 
 const read = name => readFile(new URL('../' + name, import.meta.url), 'utf8');
 const pkg = JSON.parse(await read('package.json'));
-const artifact = JSON.parse(await read('build/咩咩Hub-' + pkg.version + '.json'));
-const versionParts = pkg.version.split('.').map(Number);
-const nextVersion = versionParts.slice(0, 2).join('.') + '.' + (versionParts[2] + 1);
+const artifact = JSON.parse(process.env.MIEMIE_TEST_ARTIFACT ? await readFile(process.env.MIEMIE_TEST_ARTIFACT, 'utf8') : await read('build/咩咩Hub-' + pkg.version + '.json'));
+const currentVersion = JSON.parse(artifact.content.split('\n')[0].slice('// MieMie-Hub-Build: '.length)).version;
+const targetArtifact = process.env.MIEMIE_TEST_UPDATE_TARGET ? JSON.parse(await readFile(process.env.MIEMIE_TEST_UPDATE_TARGET, 'utf8')) : null;
+const versionParts = currentVersion.split('.').map(Number);
+const nextVersion = targetArtifact ? JSON.parse(targetArtifact.content.split('\n')[0].slice('// MieMie-Hub-Build: '.length)).version : versionParts.slice(0, 2).join('.') + '.' + (versionParts[2] + 1);
+const registryBase = JSON.parse(artifact.content.split('\n').find(x => x.startsWith('const HUB_DEFAULT_REGISTRY_URL=')).slice('const HUB_DEFAULT_REGISTRY_URL='.length, -1));
 const repo = 'https://api.github.com/repos/SheepSheepLab/MieMie-Hub';
 const clone = value => structuredClone(value);
 const encode = value => new TextEncoder().encode(typeof value === 'string' ? value : JSON.stringify(value));
@@ -30,13 +33,13 @@ function updateFixture() {
   const identity = JSON.parse(artifact.content.split('\n')[0].slice('// MieMie-Hub-Build: '.length));
   identity.version = nextVersion;
   const content = artifact.content.replace(/^\/\/ MieMie-Hub-Build: [^\n]+/, '// MieMie-Hub-Build: ' + JSON.stringify(identity))
-    .replace('const HUB_VERSION=' + JSON.stringify(pkg.version) + ';', 'const HUB_VERSION=' + JSON.stringify(nextVersion) + ';');
-  const script = {...clone(artifact), name: '咩咩Hub ' + nextVersion, content};
+    .replace('const HUB_VERSION=' + JSON.stringify(currentVersion) + ';', 'const HUB_VERSION=' + JSON.stringify(nextVersion) + ';');
+  const script = targetArtifact || {...clone(artifact), name: '咩咩Hub ' + nextVersion, content};
   const bytes = encode(script);
   const metadata = {schemaVersion: 1, productId: 'miemie.hub', format: 'tavern-helper-script', scriptId: artifact.id,
     version: nextVersion, tag: 'v' + nextVersion,
     asset: {name: 'MieMie-Hub-' + nextVersion + '.json', size: bytes.byteLength, sha256: hash(bytes)},
-    contentSha256: hash(encode(content))};
+    contentSha256: hash(encode(script.content))};
   const metadataBytes = encode(metadata);
   const asset = (id, name, bytes) => ({id, name, size: bytes.byteLength, state: 'uploaded', digest: 'sha256:' + hash(bytes),
     url: repo + '/releases/assets/' + id,
@@ -124,6 +127,10 @@ async function fixture(t, mode = 'success') {
       const settings = {extension_settings: {tavern_helper: {script: {scripts: savedTrees}}}};
       return response(encode({settings: JSON.stringify(settings)}), url);
     }
+    if (mode === 'cors' && registryBase && url === registryBase + '/api/hub/releases/asset') {
+      assert.equal(init.credentials, 'omit'); assert.equal(init.headers.Authorization, undefined);
+      throw TypeError('Fixture relay offline');
+    }
     blocked.push(url); throw Error('Unexpected request');
   }
   async function mount(content) {
@@ -145,7 +152,7 @@ async function fixture(t, mode = 'success') {
         try {
           unmount(); await settle();
           cleanupListenerCount = listeners.length; cleanupSubscriptionCount = subscriptions.size;
-          assert.equal(doc.querySelectorAll('[data-hub-panel], #meeme-combined-menu, #timeline-switcher-v1').length, 0);
+          assert.equal(doc.querySelectorAll('[data-hub-panel], #meeme-combined-menu, #miemie-hub-shell, #miemie-timeline-extension, #timeline-switcher-v1').length, 0);
           reloads++; await mount(trees[0].scripts[1].content);
         } catch (error) {errors.push(error.stack);}
       }, 0);
@@ -179,7 +186,7 @@ test('built Hub UI checks, updates its renamed global instance, reloads and conf
   const f = await fixture(t);
   const oldPrefs = f.host.localStorage.getItem('miemie_hub_extensions_v1');
   await f.discover();
-  assert.equal(f.query('[data-hub-version]').textContent, pkg.version);
+  assert.equal(f.query('[data-hub-version]').textContent, currentVersion);
   assert.equal(f.query('[data-hub-latest-version]').textContent, nextVersion);
   const updateButton = f.query('[data-hub-action="update"]');
   assert.equal(updateButton.hidden, false); assert.equal(updateButton.disabled, false);
@@ -192,16 +199,18 @@ test('built Hub UI checks, updates its renamed global instance, reloads and conf
   assert.equal(f.writes(), 1); assert.equal(f.reloads(), 1); assert.equal(f.savedReads(), 2);
   const expected = clone(f.initialTrees); expected[0].scripts[1].content = f.update.script.content;
   assert.deepEqual(f.readTrees(), expected);
-  assert.equal(f.downloads.length, 1); assert.match(f.downloads[0].name, new RegExp('^MieMie-Hub-backup-' + pkg.version.replaceAll('.', '\\.') + '-\\d+\\.json$'));
+  assert.equal(f.downloads.length, 1); assert.match(f.downloads[0].name, new RegExp('^MieMie-Hub-backup-' + currentVersion.replaceAll('.', '\\.') + '-\\d+\\.json$'));
   assert.deepEqual(JSON.parse(await f.downloads[0].blob.text()), f.initialTrees[0].scripts[1]);
   assert.match(f.backupNote(), /已请求浏览器下载/); assert.match(f.backupNote(), /请确认文件已保存/);
   assert.deepEqual(f.cleanupCounts(), [0, 0]);
-  assert.equal(f.listeners.length, f.initialListenerCount);
+  if (!targetArtifact) assert.equal(f.listeners.length, f.initialListenerCount);
   for (const button of f.oldButtons()) assert.equal(button.onclick, null);
   assert.equal(f.doc.querySelectorAll('[data-hub-panel="settings"]').length, 1);
   assert.equal(f.doc.querySelectorAll('[data-hub-action="update"]').length, 1);
   assert.equal(f.host.sessionStorage.getItem('miemie_hub_update_pending_v1'), null);
-  assert.equal(f.host.localStorage.getItem('miemie_hub_extensions_v1'), oldPrefs);
+  const newPrefs = JSON.parse(f.host.localStorage.getItem('miemie_hub_extensions_v1'));
+  for (const [id, pref] of Object.entries(JSON.parse(oldPrefs).extensions)) assert.deepEqual(newPrefs.extensions[id], pref);
+  if (!targetArtifact) assert.equal(f.host.localStorage.getItem('miemie_hub_extensions_v1'), oldPrefs);
   assert.equal(f.host.localStorage.getItem('meeme_translation_key_v1'), 'test-only-not-a-real-key');
   assert.equal(f.host.localStorage.getItem('other-extension-storage'), 'test-only-preserve');
   const publicCalls = f.calls.filter(c => c.url.startsWith(repo));
@@ -219,11 +228,11 @@ test('built Hub UI reports CORS failure without backup, write or iframe reload',
   f.query('[data-hub-action="update"]').click();
   await until(() => f.query('[data-hub-update-status]').dataset.hubUpdateStatus === 'failed', 'CORS failure not displayed');
   assert.equal(f.query('[data-hub-update-status]').textContent, '更新失败');
-  assert.match(f.query('[data-hub-update-error]').textContent, /CORS/);
+  assert.match(f.query('[data-hub-update-error]').textContent, registryBase ? /安全下载服务无法连接/ : /CORS/);
   assert.equal(f.query('[data-hub-action="update"]').disabled, false);
   assert.equal(f.writes(), 0); assert.equal(f.reloads(), 0); assert.equal(f.downloads.length, 0);
   assert.deepEqual(f.readTrees(), f.initialTrees);
-  assert.equal(f.host.__MieMieHub.version, pkg.version);
+  assert.equal(f.host.__MieMieHub.version, currentVersion);
 });
 
 test('built Hub UI rejects a non-global instance before any update download', async t => {

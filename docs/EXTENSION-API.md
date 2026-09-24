@@ -68,3 +68,8 @@
 ## 版本与消费者
 
 Hub API 版本当前为 1；Hub 产品版本与扩展产品版本分别维护。MieMie Polisher 通过上述全局接口和事件协作，没有导入 Hub 的源文件。实际已验证的版本组合及产物校验值见 [测试说明](TESTING.md)。本协议不要求普通社区作品全部改成原生 MieMie Extension。
+
+
+## 随包扩展
+
+Hub 0.6.0 的时间线与 Hello Mie 使用相同 API v1 Manifest、provide 和生命周期。构建资源封装不是新的宿主权限。见 [Core 架构](CORE-ARCHITECTURE.md)。

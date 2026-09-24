@@ -1,8 +1,5 @@
 export function createHubUI(host, shell, assets, runtime, localSources, hubVersion, selfUpdater, ecosystemOptions) {
   const doc = host.document, orb = shell.orb, icons = assets.icons;
-  const timeline = host.__timelineSwitcherV1;
-  const tp = timeline.root.querySelector('.ts-panel');
-  tp.querySelector('[data-tool-icon]').src = icons.timeline;
   const extensionPanels = new Map();
   const root = doc.createElement('div'); root.id = 'meeme-combined-menu';
   const style = doc.createElement('style'); style.textContent = assets.menuStyles + '\n' + assets.hubStyles;
@@ -16,7 +13,6 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     splash.setAttribute('aria-hidden', 'true'); splash.innerHTML = '<div class="mm-splash-backdrop"></div><img alt="">';
     p.appendChild(splash); splashes.set(p, splash);
   }
-  addSplash(tp);
   function makePanel(title, subtitle) {
     const panel = doc.createElement('section'); panel.className = 'mm-hub-panel'; panel.hidden = true; panel.inert = true; panel.tabIndex = -1;
     panel.setAttribute('aria-label', title);
@@ -35,11 +31,11 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   const settings = makePanel('咩咩Hub · 设置', 'Hub 版本与更新');
   message.panel.dataset.hubPanel = 'message';
   center.panel.dataset.hubPanel = 'extension-center'; settings.panel.dataset.hubPanel = 'settings';
-  const panels = new Set([tp, manager.panel, message.panel, center.panel, settings.panel]);
+  const panels = new Set([manager.panel, message.panel, center.panel, settings.panel]);
   function panelFor(next) {
     if (next === 'extension-center') return center.panel;
     if (next === 'settings') return settings.panel;
-    return next === 'timeline' ? tp : next === 'extensions' ? manager.panel : next === 'extension' ? message.panel : extensionPanels.get(next)?.panel;
+    return next === 'extensions' ? manager.panel : next === 'extension' ? message.panel : extensionPanels.get(next)?.panel;
   }
 
   const ecosystem = createExtensionCenter({host, body: center.body, runtime, sources: localSources, ...ecosystemOptions, refreshLaunchers: renderMenu});
@@ -144,7 +140,6 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     orb.setAttribute('aria-label', state === 'closed' ? '展开咩咩Hub菜单' : '关闭咩咩Hub菜单');
   }
   function hideWindows() {
-    timeline.close();
     for (const p of panels) { p.hidden = true; p.inert = true; }
   }
   /* LEGACY_ANIMATIONS */
@@ -158,9 +153,8 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     const p = panelFor(next);
     if (p) {
       hideWindows();
-      if (next === 'timeline') timeline.open();
       p.hidden = false; p.inert = false; p.style.opacity = '1'; p.style.transform = 'none'; place(); p.scrollTop = 0;
-      const art = next === 'timeline' ? icons.timeline : extensionPanels.get(next)?.icon;
+      const art = extensionPanels.get(next)?.icon;
       const splash = art ? prepareSplash(p, art) : null;
       await animate(p, [collapsed(p), {transform: 'none', opacity: 1}], 440, 'cubic-bezier(.16,1,.3,1)');
       if (id !== serial || disposed) return;
@@ -186,13 +180,11 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     if (old) old.hidden = true;
     panel.appendChild(b);
   }
-  returnButton(tp, timeline.root.querySelector('[data-close]'));
 
   function renderMenu() {
     const focused = doc.activeElement?.dataset?.hubApp;
     for (const b of menuButtons) b.remove();
     const apps = [
-      {id: 'timeline', title: '时间线切换器', icon: '🕒', className: 'mm-time', open: () => go('timeline')},
       {id: 'extension-center', title: '扩展中心', icon: '🧩', className: 'mm-center', open: () => go('extension-center')},
       {id: 'settings', title: '设置', icon: '⚙️', className: 'mm-settings', open: () => go('settings')},
       ...runtime.list().filter(x => x.launcherAvailable).map(x => ({
@@ -218,7 +210,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   }
   doc.addEventListener('keydown', key, true);
   host.visualViewport?.addEventListener('resize', place); host.visualViewport?.addEventListener('scroll', place);
-  shell.connect({onToggle: () => go(state === 'closed' ? 'menu' : 'closed'), beforeMove: () => timeline.closePicker(), onPosition: place});
+  shell.connect({onToggle: () => go(state === 'closed' ? 'menu' : 'closed'), beforeMove: () => {}, onPosition: place});
   renderMenu(); menuVisible(false);
   return {
     open: () => go('menu'), toggle: () => go(state === 'closed' ? 'menu' : 'closed'), back: () => go('menu'),

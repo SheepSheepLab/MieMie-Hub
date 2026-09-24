@@ -154,7 +154,7 @@ async function runTests() {
     await check('扩展中心与设置作为 Core 入口共存，版本与实际 Hub 一致', async () => {
       const ids = JSON.stringify(__MieMieHub.extensions.list().map(item => item.manifest.id));
       await menu();
-      for (const id of ['timeline', 'extension-center', 'settings', 'miemie.hello', 'miemie.polisher']) {
+      for (const id of ['miemie.timeline', 'extension-center', 'settings', 'miemie.hello', 'miemie.polisher']) {
         assert(document.querySelectorAll('[data-hub-app="' + id + '"]').length === 1, '入口缺失或重复：' + id);
       }
       click('[data-hub-app="extension-center"]');
@@ -238,7 +238,7 @@ async function runTests() {
       await runtime.open('miemie.hello'); await until(() => !messagePanel().hidden, '故障后 Hello');
     });
     await check('故障后时间线仍可读取和手动切换，普通世界书条目不变', async () => {
-      await menu(); click('[data-hub-app="timeline"]');
+      await menu(); click('[data-hub-app="miemie.timeline"]');
       await until(() => document.querySelectorAll('.ts-choice').length === 2, '时间线列表');
       document.querySelectorAll('.ts-choice')[1].click();
       await until(() => !worldbook.entries[2].disable && worldbook.entries[1].disable, '切到第二章');
@@ -312,7 +312,7 @@ async function runTests() {
       await unmount();
       assert([...events.values()].every(set => set.size === 0), '残留宿主事件监听');
       assert(activeTimers.size === 0, '残留轮询');
-      assert(!document.querySelector('#timeline-switcher-v1') && !document.querySelector('#meeme-translation') && !document.querySelector('#meeme-combined-menu'), '残留 DOM');
+      assert(!document.querySelector('#miemie-hub-shell, #miemie-timeline-extension') && !document.querySelector('#meeme-translation') && !document.querySelector('#meeme-combined-menu'), '残留 DOM');
       assert(window.fetch === fixtureFetch, 'fetch 包装未恢复');
       assert(!window.__MieMieHub && !window.__timelineSwitcherV1 && !window.__meemeTranslation01 && !window.__meemeCombinedUI, '残留全局实例');
       await mount(); assert(registered().enabled, '重新载入没有恢复 Hello');

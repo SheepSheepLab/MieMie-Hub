@@ -91,3 +91,44 @@ node tests/browser-download/run.mjs --serve
 ## 生产形态回归（0.4.1）
 
 构建测试区分 development / production：生产缺地址、示例域名、本机地址、非 HTTPS 或带凭据的地址全部拒绝。普通扩展中心不含服务地址或保存配置控件；内置地址直接读取发现及进入 Discord 登录。设置页高级选项默认折叠，仅创建一次，旧覆盖偏好保留、留空恢复默认值，teardown 清理按钮处理器。真实公网部署和 Discord 授权仍需要维护者提供实际 HTTPS 地址及服务端私有凭据；测试 URL 是 Fixture，不宣称服务已上线。
+
+## 0.6.0 Core Purification 验证
+
+本轮使用 Polisher **1.1.3** 发布包，旧包 **1.1.0** 作为模拟更新起点，不修改 Polisher 源码或业务。
+
+| 检查 | 结果 | 环境 |
+| --- | --- | --- |
+| Hub 单元 / DOM / 构建边界 | 208 / 208 | Node.js + jsdom，开发构建 |
+| 正常生产产物组合 | 28 / 28 | 锁定完整 Hub / Polisher JSON；手动世界书切换、自动接续、润色业务、双模式、清理 |
+| 正常包生态安装链 | 13 / 13 | 真实构建代码，模拟 GitHub 与 Tavern Helper 树 / 保存 API |
+| 无时间线包生态安装链 | 13 / 13 | 与正常包相同链路；断言时间线 DOM、实例均不存在 |
+| 正常包 / 无时间线包 Registry 合同 | 各 12 / 12 | 临时真实 HTTP + 隔离 SQLite；Discord/GitHub 测试适配器 |
+| 无时间线包自更新 | 3 / 3 | 完整 UI → 下载校验 → 同实例写入 → 新 iframe → 保存回读；失败不写入 |
+| 已发布 0.5.1 → 正常 0.6.0 | 3 / 3 | 旧产物从发布提交重建，SHA-256 与 GitHub Release digest 相同；宿主模拟，不是用户酒馆 |
+
+7 项新增边界 / 生命周期测试包括物理删除时间线目录后构建、零随包扩展启动、标准 loader 故障隔离、世界书读请求中停用防止迟到写入、选择器关闭、反复启停和重载不重复、时间线不出现在已安装列表、固定 Launcher 与数据保留、宿主 API 缺失只影响时间线。业务区块另与原始兼容 fixture 逐字对比。
+
+新增运行入口：
+
+```sh
+# 无时间线生产包（正常包先按 PRODUCTION.md 构建）
+MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL=https://registry.sheepsheeplab.com \
+  node tools/build.mjs --bundled=miemie.hello --output-dir=build/without-timeline
+
+# 同一生态套件可显式指定无时间线包，并另存结果
+node tests/ecosystem/run.mjs --hub build/without-timeline/MieMie-Hub-0.6.0.json \
+  --polisher /path/to/MieMie-Polisher-Extension-1.1.3.json \
+  --metadata /path/to/MieMie-Extension-update.json \
+  --legacy-polisher /path/to/MieMie-Polisher-Extension-1.1.0.json \
+  --report test-results/ecosystem-without-timeline.json
+
+MIEMIE_TEST_ARTIFACT=build/without-timeline/MieMie-Hub-0.6.0.json \
+  node --test tests/self-update-ui.test.mjs
+
+# 可选：使用已校验的历史完整产物验证一次跨架构更新
+MIEMIE_TEST_ARTIFACT=/path/to/verified-MieMie-Hub-0.5.1.json \
+  MIEMIE_TEST_UPDATE_TARGET=build/MieMie-Hub-0.6.0.json \
+  node --test tests/self-update-ui.test.mjs
+```
+
+测试不声称已在真实 Safari / SillyTavern 验收 0.6.0。本机 Chromium 启动受系统沙箱限制，本轮没有新增真实浏览器通过结果。Phase A 生产 Registry 0.3.2 的 Owner/Integrity/Catalog 验证由用户 Workbench 输出确认；真实 Owner 登录由用户确认。危险角色负向测试只在隔离数据库执行，真实多账号是非阻断后续验收。

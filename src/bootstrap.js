@@ -1,6 +1,8 @@
 const HUB_STATE_KEY = 'miemie_hub_extensions_v1';
 let hubUI, hubDisposed = false, savedHubState = {version: 1, extensions: {}};
 const sources = new Map(), withdrawing = new Set();
+// Official distribution policy is separate from the standard Extension Manifest.
+const bundledPolicies = new Map(BUNDLED_EXTENSIONS.map(entry => [entry.manifest.id, Object.freeze({...entry.policy})]));
 try {
   const stored = JSON.parse(h.localStorage.getItem(HUB_STATE_KEY));
   if (stored?.version === 1 && stored.extensions && typeof stored.extensions === 'object' && !Array.isArray(stored.extensions)) savedHubState = stored;
@@ -36,7 +38,7 @@ function provide(manifest, factory) {
     if (sources.has(id) || extensionRuntime.get(id) || withdrawing.has(id)) throw Error('扩展脚本已经载入：' + id);
     const previous = savedHubState.extensions[id];
     const source = {manifest: checked, factory}; sources.set(id, source);
-    const ready = previous?.registered === false ? Promise.resolve({ok: true}) : registerSource(id, previous?.enabled !== false);
+    const ready = previous?.registered === false && bundledPolicies.get(id)?.management !== 'hub' ? Promise.resolve({ok: true}) : registerSource(id, bundledPolicies.get(id)?.management === 'hub' || previous?.enabled !== false);
     hubUI?.refresh();
     return {ok: true, ready, async release() {
       if (sources.get(id) !== source || hubDisposed) return;
@@ -111,22 +113,24 @@ async function withPackagePreference(id, enabled, action) {
 packageUI.setEnabled = (id, enabled) => withPackagePreference(id, enabled, () => packageManager.setEnabled(id, enabled));
 packageUI.install = candidate => {
   if (!/^[a-z0-9][a-z0-9._-]{1,79}$/.test(candidate?.id || '')) return Promise.reject(Error('Extension ID 无效。'));
+  if (bundledPolicies.get(candidate.id)?.management === 'hub') return Promise.reject(Error('此随包工具随 Hub 整体更新，无需单独安装。'));
   return withPackagePreference(candidate.id, true, () => packageManager.install(candidate));
 };
 const registryClient = createRegistryClient({host: h, defaultBaseURL: HUB_DEFAULT_REGISTRY_URL, fetch: (...args) => window.fetch(...args), crypto: window.crypto});
 hubUI = createHubUI(h, hubShell, HUB_ASSETS, extensionRuntime, {
   list: () => [...sources.values()].map(s => JSON.parse(JSON.stringify(s.manifest))),
   register: registerSource,
+  policy: id => bundledPolicies.get(id),
 }, HUB_VERSION, hubSelfUpdater, {packages: packageUI, registry: registryClient});
 // Keep the previous Hub bridge for callers; no polishing implementation lives here.
 const combinedUI = {open: hubUI.open, toggle: hubUI.toggle, back: hubUI.back};
 h.__meemeCombinedUI = combinedUI;
-const helloSource = provide(HELLO_MANIFEST, createHelloMie);
+const bundledReady = loadBundledExtensions(BUNDLED_EXTENSIONS, provide);
 let finishHubDisposal;
 const whenDisposed = new Promise(resolve => {finishHubDisposal = resolve;});
 const publicHub = Object.freeze({
   version: HUB_VERSION, apiVersion: 1, open: hubUI.open,
-  ready: helloSource.ready, whenDisposed,
+  ready: bundledReady, whenDisposed,
   extensions: Object.freeze({
     register: extensionRuntime.register, enable: extensionRuntime.enable,
     disable: extensionRuntime.disable, uninstall: extensionRuntime.uninstall,
@@ -136,7 +140,7 @@ const publicHub = Object.freeze({
 });
 h.__MieMieHub = publicHub;
 h.dispatchEvent(new h.CustomEvent('miemie:hub-ready', {detail: publicHub}));
-// UI, Shell, built-in timeline and runtime have been constructed. Only a pending
+// System UI, Shell and runtime have been constructed. Only a pending
 // local handoff triggers persistence readback; ordinary startup never phones home.
 void Promise.resolve(publicHub.ready).then(() => {if (!hubDisposed) return hubSelfUpdater.resume();});
 function cleanupHub() {

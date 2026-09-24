@@ -94,3 +94,8 @@ Do not enable two Hub instances simultaneously.
 Registry HTTP handler with isolated SQLite and a mocked GitHub upstream. Configure
 `MIEMIE_REGISTRY_PROJECT`, `PLAYWRIGHT_MODULE` and, if needed,
 `PLAYWRIGHT_BROWSERS_PATH`. It never changes real Tavern scripts.
+
+
+## 0.6.0 架构迁移
+
+0.5.1 可以沿用已实现的安全转发、原实例写入及保存回读流程升级到 0.6.0。正常包附带时间线与 Hello Mie；时间线业务数据不迁移也不清空。无时间线验收包与正常包同版本，需要手动恢复正常包，不能靠版本比较自动切换。旧 0.4.3 / 0.5.0 若仍受 CORS 阻断，可直接手动导入正常 0.6.0 一次。

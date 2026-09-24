@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "miemie.timeline",
+  "name": "咩咩时间线切换器",
+  "version": "1.0.0",
+  "description": "按角色世界书选择时间线，保留原有手动和自动接续设置。",
+  "author": "SheepSheep",
+  "entry": "timeline.js",
+  "contributes": {
+    "launcher": {
+      "title": "时间线切换器",
+      "icon": "🕒"
+    }
+  }
+}

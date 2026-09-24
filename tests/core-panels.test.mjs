@@ -93,11 +93,11 @@ test('Core system launchers coexist with existing entries without registering Ex
   const f = await fixture(t);
   await f.click('.ts-orb');
   assert.equal(f.query('#meeme-combined-menu').dataset.open, 'true');
-  for (const [id, label] of [['timeline', '时间线切换器'], ['extension-center', '扩展中心'], ['settings', '设置'], ['miemie.hello', 'Hello Mie']]) {
+  for (const [id, label] of [['miemie.timeline', '时间线切换器'], ['extension-center', '扩展中心'], ['settings', '设置'], ['miemie.hello', 'Hello Mie']]) {
     assert.equal(f.doc.querySelectorAll('[data-hub-app="' + id + '"]').length, 1);
     assert.equal(f.query('[data-hub-app="' + id + '"]').getAttribute('aria-label'), label);
   }
-  assert.deepEqual(Array.from(f.host.__MieMieHub.extensions.list(), item => item.manifest.id), ['miemie.hello']);
+  assert.deepEqual(Array.from(f.host.__MieMieHub.extensions.list(), item => item.manifest.id), ['miemie.timeline', 'miemie.hello']);
   await f.click('[data-hub-app="extension-center"]');
   const panel = f.query('[data-hub-panel="extension-center"]');
   assert.equal(panel.hidden, false); assert.equal(panel.inert, false);
@@ -174,7 +174,7 @@ test('Hub pagehide aborts a pending check and late results cannot touch the disp
 
 test('timeline and optional Extension launchers still work alongside Core panels', async t => {
   const f = await fixture(t);
-  await f.launch('timeline');
+  await f.launch('miemie.timeline');
   assert.equal(f.query('.ts-panel').hidden, false);
   assert.equal(f.query('[data-hub-panel="settings"]').hidden, true);
   await f.launch('miemie.hello');
@@ -240,7 +240,7 @@ test('script removal cleans up new panels and handlers, and reload creates one f
   f.unmount(); await settle();
   assert.equal(oldButton.onclick, null);
   assert.equal(oldConfigure.onclick, null);
-  assert.equal(f.doc.querySelectorAll('[data-hub-panel], [data-hub-app], #timeline-switcher-v1, #meeme-combined-menu').length, 0);
+  assert.equal(f.doc.querySelectorAll('[data-hub-panel], [data-hub-app], #miemie-hub-shell, #miemie-timeline-extension, #meeme-combined-menu').length, 0);
   assert.equal(f.listeners.length, 0); assert.equal(f.subscriptions.size, 0);
   assert.equal(f.host.__MieMieHub, undefined);
   oldButton.click(); await settle();

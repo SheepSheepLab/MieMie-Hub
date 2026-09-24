@@ -101,10 +101,11 @@ test('Hub build embeds each official icon without changing any PNG bytes', async
   const assetsLine = script.content.split('\n').find(line => line.startsWith('const HUB_ASSETS='));
   assert.ok(assetsLine?.endsWith(';'));
   const assets = JSON.parse(assetsLine.slice('const HUB_ASSETS='.length, -1));
-  for (const [key, file] of [['home', 'hub'], ['timeline', 'timeline']]) {
-    assert.ok(assets.icons[key].startsWith('data:image/png;base64,'));
-    assert.deepEqual(Buffer.from(assets.icons[key].slice('data:image/png;base64,'.length), 'base64'), await read('assets/' + file + '.png'));
-  }
+  assert.deepEqual(Object.keys(assets.icons), ['home']);
+  assert.deepEqual(Buffer.from(assets.icons.home.slice('data:image/png;base64,'.length), 'base64'), await read('assets/hub.png'));
+  const timelineIcon = 'data:image/png;base64,' + (await read('extensions/timeline/icon.png')).toString('base64');
+  assert.ok(script.content.includes(JSON.stringify(timelineIcon)), 'bundled extension embeds original PNG');
+
 });
 
 test('build-time default Registry rejects credentials and non-root URLs before reading assets', async () => {

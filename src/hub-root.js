@@ -1,12 +1,12 @@
-// The Shell owns the shared root and main orb. The legacy DOM ID and dock key
-// stay unchanged so existing styling and saved positions remain compatible.
+// The Shell owns its root and main orb. Retain the legacy dock storage key
+// for existing Hub positions; it contains no Extension business state.
 export function createHubRoot(host, assets) {
   const doc = host.document;
   const root = doc.createElement('div');
-  root.id = 'timeline-switcher-v1';
+  root.id = 'miemie-hub-shell';
   root.dataset.owner = 'miemie-hub-shell';
   const style = doc.createElement('style');
-  style.textContent = assets.timelineStyles;
+  style.textContent = assets.shellStyles;
   root.appendChild(style);
   root.insertAdjacentHTML('beforeend', assets.orbHTML);
   const orb = root.querySelector('.ts-orb');

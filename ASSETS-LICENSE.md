@@ -11,7 +11,7 @@ Copyright © 2026 SheepSheep（以适用法律实际认可的权利范围为限�
 | 文件 | 当前用途 | 授权状态 |
 | --- | --- | --- |
 | [assets/hub.png](assets/hub.png) | 咩咩角色／Hub 主入口图标 | 不采用 GPL；适用本素材说明 |
-| [assets/timeline.png](assets/timeline.png) | 咩咩角色／时间线图标 | 不采用 GPL；适用本素材说明 |
+| [extensions/timeline/icon.png](extensions/timeline/icon.png) | 咩咩角色／时间线图标 | 不采用 GPL；适用本素材说明 |
 
 SheepSheep 已确认：这些图片均使用 ChatGPT / OpenAI 图像生成功能为咩咩（MieMie）项目生成。早期由其他 AI 生图服务生成的旧版原型不在当前项目中，也不随当前软件分发；不能将其作为本清单图片的来源。此来源记录不将 OpenAI / ChatGPT 列为共同版权人，也不保证生成素材在所有司法辖区均享有排他著作权。
 

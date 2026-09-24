@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const read = name => readFile(new URL('../' + name, import.meta.url), 'utf8');
 const version = JSON.parse(await read('package.json')).version;
 const built = JSON.parse(await read('build/咩咩Hub-' + version + '.json'));
-const timeline = await read('src/timeline-builtin.js');
+const timeline = await read('extensions/timeline/timeline.js');
 
 test('Core contains no Polisher business implementation, assets or settings', () => {
   for (const value of ['meeme_translation_v1', 'meeme_translation_key_v1', 'mountPolisherTool', 'requestMessages(', 'POLISHER_ASSETS']) {
@@ -15,7 +15,7 @@ test('Core contains no Polisher business implementation, assets or settings', ()
 });
 
 test('timeline parsing, auto-generation handling and worldbook write guards are unchanged', async () => {
-  assert.equal(timeline.slice(timeline.indexOf('  const context ='), timeline.indexOf('  // The Hub owns')),
+  assert.equal(timeline.slice(timeline.indexOf('  const context ='), timeline.indexOf('  // Extension-owned presentation.')),
     await read('tests/fixtures/toolbox-timeline-business.txt'));
 });
 
@@ -32,5 +32,6 @@ test('only the Shell owns the orb handlers and old position key', async () => {
   assert.ok(root.includes('pointerdown: pointerDown'));
   assert.equal(timeline.includes('pointerDown'), false);
   assert.equal(timeline.includes('DOCK_KEY'), false);
-  assert.equal(timeline.includes('root.remove()'), false);
+  assert.equal(timeline.includes('hubShell'), false);
+  assert.equal(timeline.includes('root.remove()'), true);
 });

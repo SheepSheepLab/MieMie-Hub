@@ -54,13 +54,15 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
     content.replaceChildren();
     content.append(el('p', '已识别的全局 Package 可以管理酒馆助手脚本条目。其他扩展的“Runtime 注销”只清理运行实例，不删除原始脚本。物理卸载会删除该脚本条目及其 data，确认后直接卸载，不生成备份；localStorage 等外部业务设置不清空。', 'mm-hub-note'));
     if (unavailable) content.append(el('p', 'Package 管理不可用：' + unavailable, 'mm-hub-note'));
-    const managed = new Map(physical.map(x => [x.id, x])), records = new Map(runtime.list().map(x => [x.manifest.id, x]));
+    // Product presentation policy comes from the build, not specific tool IDs.
+    const userManaged = id => sources.policy?.(id)?.management !== 'hub';
+    const managed = new Map(physical.filter(x => userManaged(x.id)).map(x => [x.id, x])), records = new Map(runtime.list().filter(x => userManaged(x.manifest.id)).map(x => [x.manifest.id, x]));
     const ids = new Set([...managed.keys(), ...records.keys()]);
     for (const id of ids) {
       const local = records.get(id), installed = managed.get(id), manifest = local?.manifest || installed?.manifest || installed || {};
       const card = el('article', undefined, 'mm-extension-card'); card.dataset.extensionId = id;
       const title = el('div', undefined, 'mm-extension-title'); title.append(el('strong', manifest.name || installed?.name || id));
-      const enabled = installed ? installed.enabled : local.enabled;
+      const enabled = installed ? installed.enabled : !!local?.enabled;
       title.append(el('small', (installed ? (installed.version || '保存版本待确认') : (manifest.version || '')) + ' · ' + (enabled ? '已启用' : '已停用'))); card.append(title);
       card.append(el('p', manifest.description || id, 'mm-hub-note'));
       if (installed) card.append(el('p', '酒馆脚本名称：' + installed.name + '（更新保留原名；版本以已保存内容为准）', 'mm-hub-note'));
@@ -89,7 +91,7 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
       } else action(actions, 'Runtime 注销', () => operate(() => runtime.uninstall(id)), id + ':uninstall', busy || local?.busy);
       content.append(card);
     }
-    for (const manifest of sources.list().filter(x => !records.has(x.id) && !managed.has(x.id))) action(content, '注册 ' + manifest.name, () => operate(() => sources.register(manifest.id)), manifest.id + ':register');
+    for (const manifest of sources.list().filter(x => userManaged(x.id) && !records.has(x.id) && !managed.has(x.id))) action(content, '注册 ' + manifest.name, () => operate(() => sources.register(manifest.id)), manifest.id + ':register');
     if (!ids.size) content.append(el('p', '没有已注册的扩展。', 'mm-hub-note'));
   }
   async function previewInstall(repoURL, parent) {
