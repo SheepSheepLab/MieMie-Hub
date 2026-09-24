@@ -440,3 +440,47 @@ test('saved-script reader is same-origin, read-only, and extracts only the exact
   settings.extension_settings.tavern_helper.script.scripts.push(installedScript());
   await assert.rejects(reader('actual-installed-id', signal), hasCode('persistence'));
 });
+
+test('CORS fallback installs verified Hub content through fixed-ID anonymous Registry request', async t => {
+  const data=await fixture(),base='https://registry.example.org',endpoint=base+'/api/hub/releases/asset';
+  const sys=system(t,data,{updater:{getRegistryBaseURL:()=>base},fetch:async(url,init)=>{
+    if(url===HUB_UPDATE_REPOSITORY_API+'/releases/201')return response(encode(data.release),url);
+    if(url.startsWith(HUB_UPDATE_REPOSITORY_API+'/releases/assets/'))throw TypeError('Failed to fetch (CORS)');
+    assert.equal(url,endpoint);assert.equal(init.method,'POST');assert.equal(init.credentials,'omit');assert.equal(init.redirect,'error');assert.equal(init.mode,'cors');
+    assert.deepEqual(Object.keys(init.headers).sort(),['Accept','Content-Type']);
+    const body=JSON.parse(init.body);assert.deepEqual(Object.keys(body).sort(),['assetId','releaseId']);assert.equal(body.releaseId,201);
+    return response(body.assetId===302?data.metadataBytes:data.bytes,url);
+  }});
+  const result=await sys.updater.start(target());assert.equal(result.status,'awaiting-reload');assert.equal(sys.writes(),1);
+  const installed=sys.readTrees().find(x=>x.id==='actual-installed-id');assert.equal(installed.content,data.script.content);assert.deepEqual(installed.data,installedScript().data);
+  assert.equal(sys.calls.filter(c=>c.url===endpoint).length,2);
+});
+test('Hub relay errors, tampering, redirects, opaque responses and service switching never write',async t=>{
+  for(const scenario of ['offline','http','quota','tamper','redirect','opaque','switch']){
+    const data=await fixture();let base='https://registry.example.org';
+    const sys=system(t,data,{updater:{getRegistryBaseURL:()=>base},fetch:async(url,init)=>{
+      if(url===HUB_UPDATE_REPOSITORY_API+'/releases/201')return response(encode(data.release),url);
+      if(url.startsWith(HUB_UPDATE_REPOSITORY_API))throw TypeError('CORS');
+      if(scenario==='offline')throw TypeError('offline');
+      if(scenario==='http')return response('private diagnostics',url,{status:502});
+      if(scenario==='quota')return response(encode({error:{code:'github_rate_limited',retryAt:new Date(Date.now()+60000).toISOString()}}),url,{status:429});
+      if(scenario==='tamper')return response(encode('wrong'),url);
+      if(scenario==='redirect')return response(data.metadataBytes,'https://evil.invalid/');
+      if(scenario==='opaque'){const r=response(data.metadataBytes,url);Object.defineProperty(r,'type',{value:'opaque'});return r;}
+      base='https://other.example.org';return response(data.metadataBytes,url);
+    }});
+    const result=await sys.updater.start(target());assert.equal(result.status,'failed',scenario);assert.equal(sys.writes(),0,scenario);assert.equal(sys.backups.length,0,scenario);assert.equal(sys.readTrees()[1].content,installedScript().content);
+    assert.ok(!result.error.includes('private diagnostics'));
+  }
+});
+test('Hub relay timeout and teardown cannot write after a late response',async t=>{
+  for(const cancel of [false,true]){
+    const data=await fixture();let finish;
+    const sys=system(t,data,{updater:{getRegistryBaseURL:()=> 'https://registry.example.org',metadataTimeoutMs:15},fetch:async(url)=>{
+      if(url===HUB_UPDATE_REPOSITORY_API+'/releases/201')return response(encode(data.release),url);
+      if(url.startsWith(HUB_UPDATE_REPOSITORY_API))throw TypeError('CORS');
+      return new Promise(resolve=>{finish=()=>resolve(response(data.metadataBytes,url));});
+    }});
+    const pending=sys.updater.start(target());while(!finish)await settle();if(cancel)sys.updater.dispose();await pending;finish();await settle();assert.equal(sys.writes(),0);
+  }
+});

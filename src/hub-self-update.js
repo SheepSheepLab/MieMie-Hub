@@ -1,3 +1,4 @@
+import {registryBaseURL} from './registry-client.js';
 import {compareSemVer} from './hub-update-check.js';
 import {parseHubBuildIdentity} from './hub-script-host.js';
 
@@ -34,8 +35,8 @@ async function hubUpdateDeadline(action, milliseconds, parentSignal) {
   finally {clearTimeout(timer); parentSignal?.removeEventListener('abort', onAbort);}
 }
 
-async function hubUpdateReadBytes(response, limit, signal, expectedSize) {
-  if (!response?.ok || response.type === 'opaque' || response.type === 'opaqueredirect') {
+async function hubUpdateReadBytes(response, limit, signal, expectedSize, allowError = false) {
+  if ((!response?.ok && !allowError) || response.type === 'opaque' || response.type === 'opaqueredirect') {
     throw hubUpdateFail('http', '无法读取更新文件' + (response?.status ? '（HTTP ' + response.status + '）' : '') + '。');
   }
   const length = response.headers?.get('content-length');
@@ -140,16 +141,36 @@ export async function validateHubUpdatePackage(bytes, metadata, crypto = globalT
   return script;
 }
 
-async function hubUpdatePublicBytes(request, url, {signal, limit, size, binary = false}) {
-  let response;
+async function hubUpdatePublicBytes(request, url, {signal, limit, size, binary = false, relay}) {
+  let response, relayed = false;
   try {
     response = await request(url, {method: 'GET', headers: {Accept: binary ? 'application/octet-stream' : 'application/vnd.github+json'},
       mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', redirect: binary ? 'follow' : 'error', signal});
   } catch (error) {
     signal.throwIfAborted();
-    throw hubUpdateFail('download', '无法读取 GitHub 更新文件：网络或浏览器 CORS 限制。未安装更新，可手动下载官方 Release。');
+    if (!binary || !relay?.base) throw hubUpdateFail('download', '无法读取 GitHub 更新文件（网络或 CORS 限制），且安全下载服务不可用；未安装更新，可手动下载官方 Release。');
+    const endpoint = relay.base + '/api/hub/releases/asset';
+    try {
+      response = await request(endpoint, {method: 'POST', headers: {Accept: 'application/octet-stream', 'Content-Type': 'application/json'},
+        body: JSON.stringify({releaseId: relay.releaseId, assetId: relay.assetId}), mode: 'cors', credentials: 'omit',
+        referrerPolicy: 'no-referrer', redirect: 'error', cache: 'no-store', signal});
+    } catch (_) {signal.throwIfAborted(); throw hubUpdateFail('relay', '安全下载服务无法连接；未安装更新。');}
+    signal.throwIfAborted();
+    if (response?.url !== endpoint || response.redirected) throw hubUpdateFail('redirect', '安全下载服务响应地址变化；拒绝安装。');
+    relayed = true;
+    if (!response.ok && !['opaque', 'opaqueredirect'].includes(response.type)) {
+      let detail;
+      try {detail = hubUpdateParseJSON(await hubUpdateReadBytes(response, 16384, signal, undefined, true))?.error;} catch (_) {signal.throwIfAborted();}
+      if (detail?.code === 'github_rate_limited') {
+        const at = Date.parse(detail.retryAt);
+        const when = Number.isFinite(at) && at > Date.now() && at < Date.now() + 86400000 ? new Date(at).toLocaleTimeString() : '稍后';
+        throw hubUpdateFail('github_rate_limited', 'GitHub 匿名访问额度暂时用完，请在' + when + '重试；未安装更新。');
+      }
+      const errors = {origin_denied: '当前酒馆地址未获下载服务允许', release_changed: 'Release 在传输期间变化，请重新检查更新', upstream_timeout: '安全下载服务读取 GitHub 超时', invalid_package: '安全下载服务拒绝了无效更新包'};
+      throw hubUpdateFail('relay', (errors[detail?.code] || '安全下载服务暂不可用（HTTP ' + response.status + '）') + '；未安装更新。');
+    }
   }
-  if (binary) {
+  if (binary && !relayed) {
     let finalURL;
     try { finalURL = new URL(response.url); } catch (_) {}
     const officialHosts = ['api.github.com', 'github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'];
@@ -196,7 +217,7 @@ function hubUpdatePendingValid(record) {
 }
 
 export function createHubSelfUpdater({currentVersion, host, storage, backup, readSavedContent,
-  fetch: request = (...args) => globalThis.fetch(...args), crypto = globalThis.crypto,
+  fetch: request = (...args) => globalThis.fetch(...args), crypto = globalThis.crypto, getRegistryBaseURL = () => '',
   metadataTimeoutMs = 15000, assetTimeoutMs = 60000, confirmationTimeoutMs = 15000, confirmationIntervalMs = 500,
   now = () => Date.now()}) {
   let state = {status: 'idle', error: '', targetVersion: null, backupRequested: false};
@@ -239,9 +260,10 @@ export function createHubSelfUpdater({currentVersion, host, storage, backup, rea
       return validateHubUpdateRelease(hubUpdateParseJSON(bytes), target);
     }, metadataTimeoutMs, signal);
   }
-  async function download(asset, limit, timeout, signal) {
+  async function download(asset, limit, timeout, signal, releaseId, base) {
     return hubUpdateDeadline(async stageSignal => {
-      const bytes = await hubUpdatePublicBytes(request, asset.url, {signal: stageSignal, limit, size: asset.size, binary: true});
+      const bytes = await hubUpdatePublicBytes(request, asset.url, {signal: stageSignal, limit, size: asset.size, binary: true, relay: {base, releaseId, assetId: asset.id}});
+      if (registryBaseURL(getRegistryBaseURL()) !== base) throw hubUpdateFail('cancelled', '下载服务已切换，请重新检查更新。');
       if (await hashHubUpdateBytes(bytes, crypto) !== asset.sha256) throw hubUpdateFail('hash', 'Release 附件 SHA-256 不匹配；拒绝更新。');
       stageSignal.throwIfAborted();
       return bytes;
@@ -252,15 +274,16 @@ export function createHubSelfUpdater({currentVersion, host, storage, backup, rea
     if (!hubUpdateVersion(currentVersion) || !hubUpdateVersion(target?.version) || target.tag !== 'v' + target.version ||
         !hubUpdateId(target.releaseId) || compareSemVer(currentVersion, target.version) >= 0) throw hubUpdateFail('version', '请选择严格高于当前版本的三段式 Hub 版本。');
     if (readPending()) throw hubUpdateFail('pending', '上次更新仍待确认，请先重新确认保存状态。');
+    const registryBase = registryBaseURL(getRegistryBaseURL());
     const snapshot = host.snapshot();
     // Feature checks and old-content digest happen before requesting any bytes.
     const previousContentSha256 = await hashHubUpdateBytes(new TextEncoder().encode(snapshot.content), crypto);
     signal.throwIfAborted();
     const release = await getRelease(target, signal);
     publish({status: 'downloading'});
-    const metadataBytes = await download(release.metadata, HUB_UPDATE_METADATA_LIMIT, metadataTimeoutMs, signal);
+    const metadataBytes = await download(release.metadata, HUB_UPDATE_METADATA_LIMIT, metadataTimeoutMs, signal, release.releaseId, registryBase);
     const metadata = validateHubUpdateMetadata(hubUpdateParseJSON(metadataBytes), release);
-    const bytes = await download(release.asset, HUB_UPDATE_ASSET_LIMIT, assetTimeoutMs, signal);
+    const bytes = await download(release.asset, HUB_UPDATE_ASSET_LIMIT, assetTimeoutMs, signal, release.releaseId, registryBase);
     publish({status: 'verifying'});
     const script = await validateHubUpdatePackage(bytes, metadata, crypto);
     signal.throwIfAborted();
@@ -280,6 +303,7 @@ export function createHubSelfUpdater({currentVersion, host, storage, backup, rea
     signal.throwIfAborted();
     publish({status: 'installing'});
     signal.throwIfAborted();
+    if (registryBaseURL(getRegistryBaseURL()) !== registryBase) {clearPending(record); throw hubUpdateFail('cancelled', '下载服务已切换；未安装更新。');}
     currentTask.committing = true;
     try {host.install(snapshot, script.content);}
     catch (error) {

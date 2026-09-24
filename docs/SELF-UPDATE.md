@@ -72,3 +72,25 @@ Hub 主球位置、Extension 注册／启用偏好、时间线变量与世界书
 - `tools/build.mjs`：严格版本、构建身份、ASCII 附件及机器更新元数据。
 
 本文件记录Hub自更新边界。Hub0.3.0另有独立Extension Package和Registry模块，详见ECOSYSTEM.md；未来Loader/Core仍未实现。
+# Hub 0.5.1 download transport
+
+Hub Release metadata still comes from the fixed official GitHub API. If a binary
+download fails due to browser CORS/network restrictions, the Hub can POST only
+`releaseId` and `assetId` to the configured Registry `/api/hub/releases/asset`.
+Registry 0.3.1 or later is required. The server fixes the repository to
+`SheepSheepLab/MieMie-Hub`; clients cannot supply another repository or URL.
+
+Both ends retain size, digest/SHA-256, product, version, script identity, content
+hash and Release lock checks. No cookies, Discord sessions or Tavern credentials
+are sent. Redirects, opaque responses, corruption, timeouts, cancellation and a
+changed Registry configuration cannot bypass verification. Host writes, recovery
+downloads, iframe handoff and persistence confirmation are unchanged.
+
+Versions 0.4.3 and 0.5.0 do not contain this fallback. Users blocked by CORS must
+manually import 0.5.1 once. Future versions can use the corrected download path.
+Do not enable two Hub instances simultaneously.
+
+`tests/browser-self-update/run.mjs` exercises native Chromium CORS and the real
+Registry HTTP handler with isolated SQLite and a mocked GitHub upstream. Configure
+`MIEMIE_REGISTRY_PROJECT`, `PLAYWRIGHT_MODULE` and, if needed,
+`PLAYWRIGHT_BROWSERS_PATH`. It never changes real Tavern scripts.

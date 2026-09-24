@@ -2,7 +2,7 @@
 
 咩咩Hub 是咩咩（MieMie）开源软件与社区生态的官方项目。生态由 SheepSheep 发起和创建（Founder / 创始人）；SheepSheepLab 是官方 GitHub 开发、维护与发布命名空间，官方项目主要通过该命名空间维护和发布，并欢迎社区贡献者共同参与。
 
-当前版本 **0.5.0**（开发测试 Pre-release）。轻量 Core 保留时间线、Extension Runtime 与 Hub 自更新，新增 Extension Ecosystem MVP。基础构建和测试不依赖 Registry 或 Polisher 源码。
+当前版本 **0.5.1**（开发测试 Pre-release）。轻量 Core 保留时间线、Extension Runtime 与 Hub 自更新，新增 Extension Ecosystem MVP。基础构建和测试不依赖 Registry 或 Polisher 源码。
 
 ## 扩展中心
 
@@ -24,7 +24,7 @@ Extension 安装和更新先验证 Release/Asset、Manifest、产品身份、版
 
 物理卸载会删除目标脚本条目及其 data，仅确认删除，不自动生成备份；不清空 localStorage、酒馆变量、Polisher 历史设置或其他脚本。请保存编辑并停止正在生成的任务后更新。Hash 校验不能保证作者代码安全，软件并未运行在完整沙盒里。
 
-GitHub Extension 下载首先直连作者 Release；浏览器因 CORS 无法读取附件时，使用内置官方服务（或开发者显式覆盖的 Registry）受限字节转发。转发无需 Discord 登录，不携带 Token、聊天、密钥或宿主凭据。Registry 必须先验证作者仓库、Release 与 Manifest，只能转发匹配的两个附件；Hub 再独立校验 digest／SHA-256／身份。Registry 不持久托管软件文件。没有配置服务、服务不可达、超时或校验失败时拒绝写入，不开启宿主 Proxy、不使用公共代理或 no-cors。详见 [浏览器下载修复与复测](docs/DOWNLOAD-TRANSPORT.md)。这次不修改 Hub 自更新的独立下载流程。
+GitHub Extension 下载首先直连作者 Release；浏览器因 CORS 无法读取附件时，使用内置官方服务（或开发者显式覆盖的 Registry）受限字节转发。转发无需 Discord 登录，不携带 Token、聊天、密钥或宿主凭据。Registry 必须先验证作者仓库、Release 与 Manifest，只能转发匹配的两个附件；Hub 再独立校验 digest／SHA-256／身份。Registry 不持久托管软件文件。没有配置服务、服务不可达、超时或校验失败时拒绝写入，不开启宿主 Proxy、不使用公共代理或 no-cors。详见 [浏览器下载修复与复测](docs/DOWNLOAD-TRANSPORT.md)。Hub 0.5.1 自更新另有官方仓库限定的安全转发入口，需要 Registry 0.3.1 或以上，详见 [自更新说明](docs/SELF-UPDATE.md)。
 
 Hub 自更新继续使用设置页独立流程，仅更新自己；[既有自更新说明](docs/SELF-UPDATE.md) 中的安装实例定位、仅 content 写入、新 iframe 交接与保存读回确认保持有效。旧 alpha.4 没有更新代码，首次仍需手动引导。
 

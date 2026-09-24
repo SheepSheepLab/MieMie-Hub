@@ -60,6 +60,7 @@ const readSavedExtensionContent = createHubSavedScriptReader({fetch: (...args) =
     },
   });
 const hubSelfUpdater = createHubSelfUpdater({currentVersion: HUB_VERSION, host: hubScriptHost,
+  getRegistryBaseURL: () => registryClient.getBase(),
   storage: {getItem: key => h.sessionStorage.getItem(key), setItem: (key, value) => h.sessionStorage.setItem(key, value), removeItem: key => h.sessionStorage.removeItem(key)},
   backup(script, version) {
     // A recovery download is not a guarantee that the browser saved the file.
