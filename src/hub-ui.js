@@ -24,7 +24,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     panel.append(header, body); shell.root.appendChild(panel); returnButton(panel);
     return {panel, body, heading};
   }
-  const message = makePanel('Hello Mie', '咩咩Hub Extension');
+  const message = makePanel('扩展消息', '咩咩Hub Extension');
   // Core panels have no Extension registration, Manifest or lifecycle.
   const center = makePanel('咩咩Hub · 扩展中心', '发现更多咩咩工具');
   const manager = {panel: center.panel, body: center.body};
@@ -218,7 +218,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     showMessage(id, title, text) {
       if (disposed) return;
       activeExtension = id; message.heading.textContent = title; message.panel.setAttribute('aria-label', title);
-      message.body.replaceChildren(); const p = doc.createElement('p'); p.className = 'mm-hello-text'; p.textContent = text; message.body.appendChild(p);
+      message.body.replaceChildren(); const p = doc.createElement('p'); p.className = 'mm-extension-message-text'; p.textContent = text; message.body.appendChild(p);
       void go('extension');
     },
     closeMessage(id) {

@@ -1,47 +1,48 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createExtensionRuntime} from '../src/extension-runtime.js';
-import {createHelloMie} from '../extensions/hello-mie/hello-mie.js';
-import {readFile} from 'node:fs/promises';
+import {createRuntimeFixture} from './fixtures/runtime-extension.js';
 
-const hello = JSON.parse(await readFile(new URL('../extensions/hello-mie/manifest.json', import.meta.url)));
+const {manifest: sample, factory: sampleFactory} = createRuntimeFixture();
 const manifest = (id, launcher = true) => ({schemaVersion: 1, apiVersion: 1, id, name: id, version: '0.1.0', ...(launcher ? {contributes: {launcher: {title: id}}} : {})});
 const nextTask = () => new Promise(resolve => setTimeout(resolve, 0));
 
-test('Hello Mie: register, enable, open, disable, re-enable and uninstall', async () => {
+test('Runtime fixture: register, enable, open, disable, re-enable and uninstall', async () => {
+  const {manifest: sample, factory: sampleFactory, events} = createRuntimeFixture();
   const messages = [], closed = [];
   const runtime = createExtensionRuntime({onMessage: (...args) => messages.push(args), onClose: id => closed.push(id)});
-  assert.equal(runtime.register(hello, createHelloMie).ok, true);
-  assert.equal(runtime.get(hello.id).state, 'disabled');
-  assert.equal((await runtime.open(hello.id)).ok, false);
-  assert.equal((await runtime.enable(hello.id)).ok, true);
-  assert.equal(runtime.get(hello.id).launcherAvailable, true);
-  assert.equal(runtime.get(hello.id).launcherError, '');
-  assert.equal((await runtime.open(hello.id)).ok, true);
-  assert.deepEqual(messages[0], [hello.id, 'Hello Mie', '咩咩Hub扩展系统运行正常']);
-  await runtime.disable(hello.id);
-  assert.equal(runtime.get(hello.id).enabled, false);
-  assert.equal(runtime.get(hello.id).launcherAvailable, false);
-  assert.equal((await runtime.open(hello.id)).ok, false);
-  await runtime.enable(hello.id); await runtime.open(hello.id);
+  assert.equal(runtime.register(sample, sampleFactory).ok, true);
+  assert.equal(runtime.get(sample.id).state, 'disabled');
+  assert.equal((await runtime.open(sample.id)).ok, false);
+  assert.equal((await runtime.enable(sample.id)).ok, true);
+  assert.equal(runtime.get(sample.id).launcherAvailable, true);
+  assert.equal(runtime.get(sample.id).launcherError, '');
+  assert.equal((await runtime.open(sample.id)).ok, true);
+  assert.deepEqual(messages[0], [sample.id, 'Runtime fixture', 'Fixture message']);
+  await runtime.disable(sample.id);
+  assert.equal(runtime.get(sample.id).enabled, false);
+  assert.equal(runtime.get(sample.id).launcherAvailable, false);
+  assert.equal((await runtime.open(sample.id)).ok, false);
+  await runtime.enable(sample.id); await runtime.open(sample.id);
   assert.equal(messages.length, 2);
-  await runtime.uninstall(hello.id);
-  assert.equal(runtime.get(hello.id), null);
+  await runtime.uninstall(sample.id);
+  assert.equal(runtime.get(sample.id), null);
   assert.equal(closed.length, 2);
-  assert.equal((await runtime.enable(hello.id)).ok, false);
-  assert.equal(runtime.register(hello, createHelloMie).ok, true);
+  assert.deepEqual(events, ['factory','activate','open','deactivate','cleanup','factory','activate','open','deactivate','cleanup']);
+  assert.equal((await runtime.enable(sample.id)).ok, false);
+  assert.equal(runtime.register(sample, sampleFactory).ok, true);
   await runtime.dispose();
 });
 
 test('duplicate registration and invalid manifests do not replace a working instance', async () => {
   const runtime = createExtensionRuntime();
-  runtime.register(hello, createHelloMie); await runtime.enable(hello.id);
-  assert.equal(runtime.register(hello, () => {throw Error('should not execute');}).ok, false);
-  assert.equal(runtime.register({...hello, id: '__proto__'}, createHelloMie).ok, false);
-  assert.equal(runtime.register({...hello, id: 'test.future', apiVersion: 2}, createHelloMie).ok, false);
-  const snapshot = runtime.get(hello.id); snapshot.manifest.name = 'mutated';
-  assert.equal(runtime.get(hello.id).manifest.name, 'Hello Mie');
-  assert.equal(runtime.get(hello.id).enabled, true);
+  runtime.register(sample, sampleFactory); await runtime.enable(sample.id);
+  assert.equal(runtime.register(sample, () => {throw Error('should not execute');}).ok, false);
+  assert.equal(runtime.register({...sample, id: '__proto__'}, sampleFactory).ok, false);
+  assert.equal(runtime.register({...sample, id: 'test.future', apiVersion: 2}, sampleFactory).ok, false);
+  const snapshot = runtime.get(sample.id); snapshot.manifest.name = 'mutated';
+  assert.equal(runtime.get(sample.id).manifest.name, 'Runtime fixture');
+  assert.equal(runtime.get(sample.id).enabled, true);
   await runtime.dispose();
 });
 
@@ -123,7 +124,7 @@ for (const phase of ['factory', 'activate', 'deactivate', 'cleanup']) {
   test(`${phase} failure is contained and all tracked resources are cleaned`, async () => {
     const runtime = createExtensionRuntime();
     const events = [];
-    runtime.register(hello, createHelloMie); await runtime.enable(hello.id);
+    runtime.register(sample, sampleFactory); await runtime.enable(sample.id);
     runtime.register(manifest('test.fault'), api => {
       api.onCleanup(() => events.push('cleanup-first'));
       api.onCleanup(() => {events.push('cleanup-second'); if (phase === 'cleanup') throw Error('cleanup fault');});
@@ -142,8 +143,8 @@ for (const phase of ['factory', 'activate', 'deactivate', 'cleanup']) {
     }
     assert.ok(runtime.get('test.fault').error.includes('fault'));
     assert.deepEqual(events.slice(-2), ['cleanup-second', 'cleanup-first']);
-    assert.equal(runtime.get(hello.id).enabled, true);
-    assert.equal((await runtime.open(hello.id)).ok, true);
+    assert.equal(runtime.get(sample.id).enabled, true);
+    assert.equal((await runtime.open(sample.id)).ok, true);
     await runtime.uninstall('test.fault');
     assert.equal(runtime.get('test.fault'), null);
     assert.equal(events.filter(x => x === 'cleanup-first').length, 1);
@@ -176,10 +177,10 @@ test('disable cancels in-progress activation and late work cannot reopen a panel
 test('hanging lifecycle times out while another extension remains usable', async () => {
   const runtime = createExtensionRuntime({timeoutMs: 30}); let cleaned = 0;
   runtime.register(manifest('test.hang'), api => {api.onCleanup(() => cleaned++); return {activate: () => new Promise(() => {}), open() {}};});
-  runtime.register(hello, createHelloMie);
+  runtime.register(sample, sampleFactory);
   const hanging = runtime.enable('test.hang');
-  assert.equal((await runtime.enable(hello.id)).ok, true);
-  assert.equal((await runtime.open(hello.id)).ok, true);
+  assert.equal((await runtime.enable(sample.id)).ok, true);
+  assert.equal((await runtime.open(sample.id)).ok, true);
   assert.equal((await hanging).ok, false);
   assert.equal(runtime.get('test.hang').state, 'error'); assert.equal(cleaned, 1);
   await runtime.dispose();
@@ -243,7 +244,7 @@ test('rapid concurrent enable calls produce one active instance; teardown persis
   assert.equal(starts, 1); assert.equal(runtime.get('test.repeat').enabled, true);
   await runtime.dispose(); assert.equal(stops, 1);
   assert.equal(changes.includes('uninstall'), false);
-  assert.equal(runtime.register(hello, createHelloMie).ok, false);
+  assert.equal(runtime.register(sample, sampleFactory).ok, false);
 });
 
 test('custom panel is session-scoped and detached after activation failure or disable', async () => {

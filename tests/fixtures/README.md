@@ -5,3 +5,7 @@
 原始文件 SHA-256：`e28585ed12e7937af2ff4ea1852c3d1dd6584470d0217f16f3561799a5c8f233`。
 
 `toolbox-timeline-business.txt` 是从 `  const context =` 到 `  // 以下仅为呈现层` 之前的时间线业务区段；`legacy-export-metadata.json` 保存助手脚本身份与导出选项。
+
+## 通用 Runtime 夹具
+
+`runtime-extension.js` 提供可参数化的 Manifest / 工厂及生命周期事件记录，由测试显式注册，用于 Runtime、消息面板、Launcher、启停与清理的验证。它只存在于测试目录，不参与产品构建或随包声明。

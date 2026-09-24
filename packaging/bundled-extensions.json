@@ -9,10 +9,5 @@
     "policy": {
       "management": "hub"
     }
-  },
-  {
-    "directory": "extensions/hello-mie",
-    "factory": "createHelloMie",
-    "resources": {}
   }
 ]

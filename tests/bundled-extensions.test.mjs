@@ -15,7 +15,7 @@ async function until(check) {
   for (let i=0;i<200;i++) {if (check()) return; await new Promise(r=>setTimeout(r,5));}
   assert.fail('fixture condition timed out');
 }
-async function fixture(t, artifact=full, hostAPI=true) {
+async function fixture(t, artifact=full, hostAPI=true, preferences=null) {
   const errors=[], subscriptions=new Set(), timers=new Set();
   const vc=new VirtualConsole(); vc.on('jsdomError',e=>errors.push(String(e)));
   const dom=new JSDOM('<!doctype html><body></body>',{url:'http://127.0.0.1:8000',runScripts:'outside-only',virtualConsole:vc});
@@ -29,6 +29,7 @@ async function fixture(t, artifact=full, hostAPI=true) {
   if(hostAPI)h.SillyTavern={getContext:()=>ctx};
   h.localStorage.setItem('meeme_timeline_dock_v1',JSON.stringify({side:'right',ratio:.4}));
   h.localStorage.setItem('fixture-other-data','unchanged');
+  if(preferences)h.localStorage.setItem('miemie_hub_extensions_v1',JSON.stringify(preferences));
   h.confirm=()=>true;
   h.fetch=async url=>{assert.equal(url,'/api/worldinfo/get');return {ok:true,json:async()=>holdRead?holdRead():structuredClone(book)};};
   async function unmount(){if(!frame)return;const hub=h.__MieMieHub;frame.contentWindow.dispatchEvent(new frame.contentWindow.Event('pagehide'));await hub?.whenDisposed;frame.remove();frame=null;await tick();}
@@ -82,8 +83,7 @@ test('physical deletion of Timeline directory and declaration still builds and b
     const f=await fixture(t,artifact,false),runtime=f.h.__MieMieHub.extensions;
     assert.equal(runtime.get('miemie.timeline'),null);assert.equal(f.d.querySelector('.ts-panel'),null);
     assert.equal(f.subscriptions.size,0);assert.equal(f.timers.size,0);
-    assert.equal(runtime.list().length,selection===null?1:0);
-    if(selection===null)assert.equal((await runtime.open('miemie.hello')).ok,true);
+    assert.equal(runtime.list().length,0);
     for(const id of ['extension-center','settings']){
       await f.h.__MieMieHub.open();f.d.querySelector(`[data-hub-app="${id}"]`).click();await tick();
       assert.equal(f.d.querySelector(`[data-hub-panel="${id}"]`).hidden,false);
@@ -105,7 +105,7 @@ test('Timeline uses runtime lifecycle, closes pickers, preserves data and stays 
     await runtime().disable('miemie.timeline');assert.equal(f.subscriptions.size,0);assert.equal(f.timers.size,0);
     assert.equal(f.d.querySelector('#miemie-timeline-extension'),null);assert.equal(f.h.__timelineSwitcherV1,undefined);
     assert.equal(f.d.querySelector('[data-hub-app="miemie.timeline"]'),null);
-    assert.equal((await runtime().open('miemie.hello')).ok,true);
+    await f.h.__MieMieHub.open();assert.ok(f.d.querySelector('[data-hub-app="settings"]'));
     await runtime().enable('miemie.timeline');assert.equal(f.subscriptions.size,5);assert.equal(f.timers.size,1);
     assert.equal(f.d.querySelectorAll('#miemie-timeline-extension').length,1);
   }
@@ -120,7 +120,7 @@ test('Timeline is a fixed Launcher tool, absent from installed management even w
   await installed();
   assert.equal(f.d.querySelector('[data-extension-id="miemie.timeline"]'),null);
   for(const action of ['open','toggle','uninstall','check','update','register'])assert.equal(f.d.querySelector(`[data-action="miemie.timeline:${action}"]`),null);
-  assert.ok(f.d.querySelector('[data-action="miemie.hello:uninstall"]'),'Hello existing contract unchanged');
+  assert.equal(f.d.querySelectorAll('[data-extension-id]').length,0);
   assert.ok(f.d.querySelector('[data-hub-app="miemie.timeline"]'));
   // Developer lifecycle calls remain standard, but cannot establish a normal product removal preference.
   await f.h.__MieMieHub.extensions.disable('miemie.timeline');await f.unmount();await f.mount();
@@ -141,11 +141,40 @@ test('disabling Timeline during a pending worldbook read prevents a late write',
   assert.equal(JSON.stringify(f.vars),f.before);
 });
 
-test('missing Timeline host APIs fail that Extension without blocking Core or Hello',async t=>{
+test('missing Timeline host APIs fail that Extension without blocking Core panels',async t=>{
   const f=await fixture(t,full,false);
   assert.equal(f.h.__MieMieHub.extensions.get('miemie.timeline').enabled,false);
   assert.equal(f.d.querySelector('#miemie-timeline-extension'),null);
   assert.equal(f.subscriptions.size,0);assert.equal(f.timers.size,0);
-  assert.equal((await f.h.__MieMieHub.extensions.open('miemie.hello')).ok,true);
   await f.h.__MieMieHub.open();assert.ok(f.d.querySelector('[data-hub-app="settings"]'));
+});
+
+
+test('official distribution contains only its fixed Timeline bundle and no test probe',async t=>{
+  const declarations=JSON.parse(await readFile(new URL('packaging/bundled-extensions.json',project)));
+  assert.deepEqual(declarations.map(x=>[x.directory,x.policy]),[['extensions/timeline',{management:'hub'}]]);
+  assert.deepEqual(await readdir(new URL('extensions/',project)),['timeline']);
+  assert.doesNotMatch(full.content,/createRuntimeFixture|Runtime fixture|Fixture message|test\.runtime/);
+  const f=await fixture(t);
+  assert.deepEqual(Array.from(f.h.__MieMieHub.extensions.list(),x=>x.manifest.id),['miemie.timeline']);
+  await f.h.__MieMieHub.open();
+  assert.deepEqual(Array.from(f.d.querySelectorAll('[data-hub-app]'),x=>x.dataset.hubApp).sort(),['extension-center','miemie.timeline','settings']);
+  await f.open();assert.equal(f.d.querySelectorAll('#miemie-timeline-extension').length,1);
+});
+
+test('preferences for absent sources never create phantom launchers or installed entries',async t=>{
+  const preferences={version:1,extensions:{'test.removed':{registered:true,enabled:true},'test.disabled':{registered:true,enabled:false},'test.unregistered':{registered:false,enabled:false}}};
+  const f=await fixture(t,full,true,preferences);
+  for(let i=0;i<2;i++){
+    assert.deepEqual(Array.from(f.h.__MieMieHub.extensions.list(),x=>x.manifest.id),['miemie.timeline']);
+    await f.h.__MieMieHub.open();f.d.querySelector('[data-hub-app="extension-center"]').click();await tick();
+    f.d.querySelector('[data-center-tab="installed"]').click();await tick();
+    assert.equal(f.d.querySelectorAll('[data-extension-id]').length,0);
+    for(const id of Object.keys(preferences.extensions)){
+      assert.equal(f.d.querySelector(`[data-hub-app="${id}"]`),null);
+      assert.deepEqual(JSON.parse(f.h.localStorage.getItem('miemie_hub_extensions_v1')).extensions[id],preferences.extensions[id]);
+    }
+    assert.equal(f.h.localStorage.getItem('fixture-other-data'),'unchanged');
+    await f.unmount();await f.mount();
+  }
 });

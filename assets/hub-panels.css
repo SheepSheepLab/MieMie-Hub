@@ -13,7 +13,7 @@
 #miemie-hub-shell .mm-extension-actions button{padding:8px 12px}
 #miemie-hub-shell .mm-extension-error{color:#ffd0cb;font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 #miemie-hub-shell .mm-hub-panel>.mm-return{position:static;width:calc(100% - 32px);margin:0 16px 12px;flex-shrink:0}
-#miemie-hub-shell .mm-hello-text{font-size:17px;padding:24px 4px;line-height:1.8}
+#miemie-hub-shell .mm-extension-message-text{font-size:17px;padding:24px 4px;line-height:1.8}
 #miemie-hub-shell .mm-system-card{padding:16px;border:1px solid #594070;border-radius:12px;background:#20152f}
 #miemie-hub-shell .mm-system-card h2{margin:0 0 16px;font-size:16px;color:#f1eaff}
 #miemie-hub-shell .mm-system-card p:last-child{margin-bottom:0;line-height:1.8}

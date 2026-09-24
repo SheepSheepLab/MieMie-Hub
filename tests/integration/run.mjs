@@ -65,7 +65,7 @@ host.__loadArtifact = kind => {
 };
 let result;
 try {
-  host.eval((await readFile(new URL('./host-fixture.js', import.meta.url), 'utf8')) + '\n' +
+  host.eval((await readFile(new URL('../fixtures/runtime-extension.js', import.meta.url), 'utf8')).replace(/^export /gm, '') + '\n' + (await readFile(new URL('./host-fixture.js', import.meta.url), 'utf8')) + '\n' +
     (await readFile(new URL('./polisher-checks.js', import.meta.url), 'utf8')));
   result = await host.runTests();
   result = {...result, environment: 'Node.js + jsdom; simulated Tavern APIs, no rendering or real network', artifacts: verified, warnings, jsdomErrors: errors};

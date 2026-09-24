@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {JSDOM, VirtualConsole} from 'jsdom';
+import {createRuntimeFixture} from './fixtures/runtime-extension.js';
 
 const read = name => readFile(new URL('../' + name, import.meta.url), 'utf8');
 const pkg = JSON.parse(await read('package.json'));
@@ -93,11 +94,11 @@ test('Core system launchers coexist with existing entries without registering Ex
   const f = await fixture(t);
   await f.click('.ts-orb');
   assert.equal(f.query('#meeme-combined-menu').dataset.open, 'true');
-  for (const [id, label] of [['miemie.timeline', '时间线切换器'], ['extension-center', '扩展中心'], ['settings', '设置'], ['miemie.hello', 'Hello Mie']]) {
+  for (const [id, label] of [['miemie.timeline', '时间线切换器'], ['extension-center', '扩展中心'], ['settings', '设置']]) {
     assert.equal(f.doc.querySelectorAll('[data-hub-app="' + id + '"]').length, 1);
     assert.equal(f.query('[data-hub-app="' + id + '"]').getAttribute('aria-label'), label);
   }
-  assert.deepEqual(Array.from(f.host.__MieMieHub.extensions.list(), item => item.manifest.id), ['miemie.timeline', 'miemie.hello']);
+  assert.deepEqual(Array.from(f.host.__MieMieHub.extensions.list(), item => item.manifest.id), ['miemie.timeline']);
   await f.click('[data-hub-app="extension-center"]');
   const panel = f.query('[data-hub-panel="extension-center"]');
   assert.equal(panel.hidden, false); assert.equal(panel.inert, false);
@@ -105,7 +106,7 @@ test('Core system launchers coexist with existing entries without registering Ex
   for (const tab of ['discover', 'installed', 'mine']) assert.ok(f.query('[data-center-tab="' + tab + '"]'));
   assert.match(panel.textContent, /在线扩展服务暂未开放/);
   await f.click('[data-center-tab="installed"]');
-  assert.equal(f.doc.querySelectorAll('[data-extension-id]').length, 1);
+  assert.equal(f.doc.querySelectorAll('[data-extension-id]').length, 0);
 });
 
 test('settings uses the actual package and built Core version, with an honest initial status', async t => {
@@ -177,15 +178,17 @@ test('timeline and optional Extension launchers still work alongside Core panels
   await f.launch('miemie.timeline');
   assert.equal(f.query('.ts-panel').hidden, false);
   assert.equal(f.query('[data-hub-panel="settings"]').hidden, true);
-  await f.launch('miemie.hello');
+  const probe = createRuntimeFixture();
+  await f.host.__MieMieHub.extensions.provide(probe.manifest, probe.factory).ready;
+  await f.launch('test.runtime');
   assert.equal(f.query('[data-hub-panel="message"]').hidden, false);
-  assert.match(f.query('[data-hub-panel="message"]').textContent, /咩咩Hub扩展系统运行正常/);
-  await f.host.__MieMieHub.extensions.disable('miemie.hello');
-  assert.equal(f.query('[data-hub-app="miemie.hello"]'), null);
+  assert.match(f.query('[data-hub-panel="message"]').textContent, /Fixture message/);
+  await f.host.__MieMieHub.extensions.disable('test.runtime');
+  assert.equal(f.query('[data-hub-app="test.runtime"]'), null);
   await f.launch('extension-center');
   assert.equal(f.query('[data-hub-panel="extension-center"]').hidden, false);
-  await f.host.__MieMieHub.extensions.enable('miemie.hello');
-  await f.launch('miemie.hello');
+  await f.host.__MieMieHub.extensions.enable('test.runtime');
+  await f.launch('test.runtime');
   assert.equal(f.query('[data-hub-panel="message"]').hidden, false);
 });
 

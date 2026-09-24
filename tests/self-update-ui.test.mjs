@@ -196,6 +196,10 @@ test('built Hub UI checks, updates its renamed global instance, reloads and conf
   assert.equal(f.host.__MieMieHub.version, nextVersion);
   assert.equal(f.query('[data-hub-version]').textContent, nextVersion);
   assert.equal(f.query('[data-hub-update-status]').textContent, '✓ 更新完成，已确认保存');
+  const expectedBundles = f.update.script.content.includes('function createTimelineExtension(') ? ['miemie.timeline'] : [];
+  assert.deepEqual(Array.from(f.host.__MieMieHub.extensions.list(), x => x.manifest.id), expectedBundles, 'updated artifact controls bundled sources; stale preferences cannot resurrect removed sources');
+  assert.equal(f.doc.querySelectorAll('#miemie-timeline-extension').length, expectedBundles.length);
+
   assert.equal(f.writes(), 1); assert.equal(f.reloads(), 1); assert.equal(f.savedReads(), 2);
   const expected = clone(f.initialTrees); expected[0].scripts[1].content = f.update.script.content;
   assert.deepEqual(f.readTrees(), expected);
@@ -209,7 +213,7 @@ test('built Hub UI checks, updates its renamed global instance, reloads and conf
   assert.equal(f.doc.querySelectorAll('[data-hub-action="update"]').length, 1);
   assert.equal(f.host.sessionStorage.getItem('miemie_hub_update_pending_v1'), null);
   const newPrefs = JSON.parse(f.host.localStorage.getItem('miemie_hub_extensions_v1'));
-  for (const [id, pref] of Object.entries(JSON.parse(oldPrefs).extensions)) assert.deepEqual(newPrefs.extensions[id], pref);
+  for (const [id, pref] of Object.entries(JSON.parse(oldPrefs)?.extensions || {})) assert.deepEqual(newPrefs?.extensions?.[id], pref);
   if (!targetArtifact) assert.equal(f.host.localStorage.getItem('miemie_hub_extensions_v1'), oldPrefs);
   assert.equal(f.host.localStorage.getItem('meeme_translation_key_v1'), 'test-only-not-a-real-key');
   assert.equal(f.host.localStorage.getItem('other-extension-storage'), 'test-only-preserve');

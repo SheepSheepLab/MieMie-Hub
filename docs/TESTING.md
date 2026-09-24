@@ -20,7 +20,7 @@ npm test
 | 发布验证 | Release／Asset ID 锁定、唯一附件、机器元数据、API digest、真实字节数、包 hash、content hash、错误 JSON／产品／版本、错误地址、下载／CORS 失败与超时 |
 | 更新生命周期 | 重复点击、写入前 teardown 不再写入、迟到异步任务失效、备份／storage 失败、写入后交接、新实例确认、待确认错误、记录被替换、精确旧版本恢复 |
 | Core Panel | 当前构建版本、查询与安装状态、更新按钮、失败和重新确认、面板切换、关闭／返回／Escape、清理、Core 与 Extension 入口共存 |
-| 既有兼容 | Runtime 生命周期与 Launcher 错误隔离、时间线静态基线、Hello Mie、历史存储标识 |
+| 既有兼容 | Runtime 生命周期与 Launcher 错误隔离、时间线静态基线、通用 Runtime 测试夹具、历史存储标识 |
 
 测试使用显式 fetch 替身、内存脚本树、流式 Response、模拟保存读回及 Node／jsdom 环境。不会在测试过程中修改真实酒馆脚本，也不会把模拟 GitHub 数据当成远程发布结果。
 
@@ -113,7 +113,7 @@ node tests/browser-download/run.mjs --serve
 ```sh
 # 无时间线生产包（正常包先按 PRODUCTION.md 构建）
 MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL=https://registry.sheepsheeplab.com \
-  node tools/build.mjs --bundled=miemie.hello --output-dir=build/without-timeline
+  node tools/build.mjs --bundled= --output-dir=build/without-timeline
 
 # 同一生态套件可显式指定无时间线包，并另存结果
 node tests/ecosystem/run.mjs --hub build/without-timeline/MieMie-Hub-0.6.0.json \
@@ -132,3 +132,31 @@ MIEMIE_TEST_ARTIFACT=/path/to/verified-MieMie-Hub-0.5.1.json \
 ```
 
 测试不声称已在真实 Safari / SillyTavern 验收 0.6.0。本机 Chromium 启动受系统沙箱限制，本轮没有新增真实浏览器通过结果。Phase A 生产 Registry 0.3.2 的 Owner/Integrity/Catalog 验证由用户 Workbench 输出确认；真实 Owner 登录由用户确认。危险角色负向测试只在隔离数据库执行，真实多账号是非阻断后续验收。
+
+
+## 随包清理回归（0.6.0 工作树）
+
+本次仅清理临时测试扩展。正式构建只声明 Timeline；通用 Runtime 夹具只由测试显式提供，不进入构建。版本仍为 0.6.0，本次本地构建未覆盖 GitHub 上已发布的同版本附件。
+
+| 检查 | 结果 |
+| --- | --- |
+| Hub 单元 / DOM / 构建（含 Timeline、包管理、自更新） | 210 / 210 |
+| Polisher 自身回归（源码未修改） | 23 / 23 |
+| 完整 Hub / Polisher 产物组合 | 28 / 28 |
+| 正常包 / 无时间线架构测试包的安装、更新、物理卸载、重装 | 各 13 / 13 |
+| 正常生产包自更新 | 3 / 3 |
+| 无时间线架构测试包自更新 | 3 / 3 |
+| 0.5.1 历史源码构建 → 本次 0.6.0 模拟自更新 | 3 / 3 |
+
+共 296 项检查（含不同构建组合），无失败。历史产物升级核对同 Script ID、保存回读、用户数据与偏好保留、新 iframe 的实际随包列表；已移除的来源不能由旧偏好复活。空 Core 不要求预先存在扩展偏好记录。
+
+这些结果来自 Node.js / jsdom 与模拟宿主，不代替真实酒馆人工验收。Timeline 业务、资源、独立 Extension 生命周期和随 Hub 分发边界保持不变；Registry / Polisher 源码未修改。新产物版本、脚本 ID、字节数、SHA-256 与更新元数据一致。
+
+
+## 0.6.1 发布回归
+
+在清理工作树基础上发布独立补丁，不覆盖 v0.6.0。正常包仍固定携带 Timeline；Registry 保持 0.3.2，Polisher 保持 1.1.3。
+
+发布验证使用 GitHub v0.6.0 附件 SHA-256 核对过的完整旧包作为起点，执行 0.6.0 → 0.6.1 下载、校验、同实例写入、保存回读、新 iframe 启动与随包列表确认。用户设置、其他脚本和旧偏好保留；已移除来源不能从旧偏好恢复入口。
+
+Hub 全套 210 项、Polisher 23 项、正式产物组合 28 项、生态安装链 13 项、真实旧版产物模拟自更新 3 项、无 Timeline 架构测试包自更新 3 项均通过。生产构建另核对版本、机器清单、原始字节 hash、content hash 及发布配置。不将模拟宿主测试称为真实酒馆验收。

@@ -174,9 +174,9 @@ try {
     assert.equal(u.q('[data-hub-app="miemie.polisher"] img').src,expectedIcon);assert.equal(u.q('#meeme-translation [data-tool-icon]').src,expectedIcon);
     await until(()=>u.q('[data-hub-panel="extension-center"]').textContent.includes('已重新读取宿主脚本'),'durable update confirmation');
   });
-  await check('Registry offline leaves real installed package, Hello, timeline and local settings usable',async()=>{
+  await check('Registry offline leaves real installed package, timeline and local settings usable',async()=>{
     await u.h.__MieMieHub.open();u.click('[data-hub-app="settings"]');await tick();u.q('[data-hub-developer-settings]').open=true;const url=u.q('[aria-label="Registry 服务地址"]');url.value='https://registry-fixture.invalid';u.registryOffline();await u.action('registry:configure');await u.center('discover');await until(()=>u.q('[data-hub-panel="extension-center"]').textContent.includes('扩展目录无法连接'),'offline Catalog message');
-    checkTimeline(u.h);assert.equal(u.h.__MieMieHub.extensions.get('miemie.polisher').enabled,true);assert.equal((await u.h.__MieMieHub.extensions.open('miemie.hello')).ok,true);await u.center('installed');assert.ok(u.q('[data-extension-id="miemie.polisher"]'));
+    checkTimeline(u.h);assert.equal(u.h.__MieMieHub.extensions.get('miemie.polisher').enabled,true);await u.center('installed');assert.ok(u.q('[data-extension-id="miemie.polisher"]'));
   });
   await check('upgraded Polisher restores one standalone launcher when only Hub stops',async()=>{
     const frame=u.frames.get(u.actualLegacyId).frame;await u.stopHub();await until(()=>u.h.__MieMiePolisherSource?.mode==='standalone','standalone after Hub');assert.equal(u.frames.get(u.actualLegacyId).frame,frame);assert.equal(u.d.querySelectorAll('[data-miemie-polisher-standalone]').length,1);assert.equal(u.d.querySelectorAll('#meeme-translation').length,1);u.click('[data-miemie-polisher-standalone]');await until(()=>u.q('#meeme-translation section').hidden===false,'standalone opens original UI');
@@ -192,7 +192,7 @@ try {
   await u.close();activeFixture=null;
   const failed=activeFixture=await fixture({cors:true});
   await check('real center displays CORS/readability failure without partial script installation',async()=>{
-    await failed.center();failed.q('[aria-label="GitHub Repository URL"]').value=repoURL;await failed.action('github:preview');await until(()=>failed.q('[data-hub-panel="extension-center"]').textContent.match(/安全下载服务暂(?:不可用|时无法连接)/),'safe download service error');assert.equal(failed.installed(),undefined);assert.equal(failed.writes.length,0);checkTimeline(failed.h);assert.equal((await failed.h.__MieMieHub.extensions.open('miemie.hello')).ok,true);
+    await failed.center();failed.q('[aria-label="GitHub Repository URL"]').value=repoURL;await failed.action('github:preview');await until(()=>failed.q('[data-hub-panel="extension-center"]').textContent.match(/安全下载服务暂(?:不可用|时无法连接)/),'safe download service error');assert.equal(failed.installed(),undefined);assert.equal(failed.writes.length,0);checkTimeline(failed.h);await failed.h.__MieMieHub.open();assert.ok(failed.q('[data-hub-app="settings"]'));
   });
   await failed.close();activeFixture=null;
   const bad=activeFixture=await fixture({corrupt:true});

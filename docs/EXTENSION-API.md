@@ -45,7 +45,7 @@
 | `open(id)` | Promise，尝试调用当前实例的 open |
 | `list()` / `get(id)` | 状态快照；不存在时 get 返回 null |
 
-快照包含 `manifest`、`state`、`enabled`、`busy`、`error`、`launcherAvailable`、`launcherError`。`hub.ready` 表示内置 Hello Mie 初始处理完成，不代表所有外部脚本已加载。
+快照包含 `manifest`、`state`、`enabled`、`busy`、`error`、`launcherAvailable`、`launcherError`。`hub.ready` 表示随包扩展初始处理完成，不代表所有外部脚本已加载。
 
 ## 工厂与生命周期
 
@@ -72,4 +72,4 @@ Hub API 版本当前为 1；Hub 产品版本与扩展产品版本分别维护。
 
 ## 随包扩展
 
-Hub 0.6.0 的时间线与 Hello Mie 使用相同 API v1 Manifest、provide 和生命周期。构建资源封装不是新的宿主权限。见 [Core 架构](CORE-ARCHITECTURE.md)。
+Hub 0.6.1 的时间线使用标准 API v1 Manifest、provide 和生命周期。构建资源封装不是新的宿主权限。见 [Core 架构](CORE-ARCHITECTURE.md)。

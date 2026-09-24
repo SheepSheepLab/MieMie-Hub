@@ -120,13 +120,16 @@ async function mount(kind='hub') {
   frame=await loadFrame('hub');
   await until(()=>window.__MieMieHub,'脚本载入');
   if(window.__MieMieHub)await window.__MieMieHub.ready;
+  const probe = createRuntimeFixture();
+  const provided = __MieMieHub.extensions.provide(probe.manifest, probe.factory);
+  assert(provided.ok, '测试夹具注册失败'); await provided.ready;
   if(kind==='hub')await loadPolisher();
 }
 function click(selector) {const el = document.querySelector(selector); assert(el && !el.disabled, '找不到可点击元素：' + selector); el.click();}
 async function menu() {await __MieMieHub.open(); await until(() => document.querySelector('#meeme-combined-menu')?.dataset.open === 'true', '菜单打开');}
 async function manage() {await menu(); click('[data-hub-app="extension-center"]'); await until(() => !document.querySelector('[data-hub-panel="extension-center"]').hidden, '扩展中心');click('[data-center-tab="installed"]');await waits(5);}
-const registered = () => __MieMieHub.extensions.get('miemie.hello');
-const launcher = () => document.querySelector('[data-hub-app="miemie.hello"]');
+const registered = () => __MieMieHub.extensions.get('test.runtime');
+const launcher = () => document.querySelector('[data-hub-app="test.runtime"]');
 const messagePanel = () => document.querySelector('[data-hub-panel="message"]');
 function resetLocal() {
   localStorage.removeItem('miemie_hub_extensions_v1');
@@ -154,7 +157,7 @@ async function runTests() {
     await check('扩展中心与设置作为 Core 入口共存，版本与实际 Hub 一致', async () => {
       const ids = JSON.stringify(__MieMieHub.extensions.list().map(item => item.manifest.id));
       await menu();
-      for (const id of ['miemie.timeline', 'extension-center', 'settings', 'miemie.hello', 'miemie.polisher']) {
+      for (const id of ['miemie.timeline', 'extension-center', 'settings', 'test.runtime', 'miemie.polisher']) {
         assert(document.querySelectorAll('[data-hub-app="' + id + '"]').length === 1, '入口缺失或重复：' + id);
       }
       click('[data-hub-app="extension-center"]');
@@ -180,30 +183,30 @@ async function runTests() {
       click('[data-hub-panel="settings"] .mm-return');
       await until(() => document.querySelector('#meeme-combined-menu').dataset.open === 'true', '设置返回菜单');
     });
-    await check('Hello Mie 已注册，快捷入口只出现一次并能显示正确文本', async () => {
-      assert(registered().enabled, '默认 Hello 未启用'); await menu();
-      assert(document.querySelectorAll('[data-hub-app="miemie.hello"]').length === 1, '入口数量错误');
-      click('[data-hub-app="miemie.hello"]');
-      await until(() => !messagePanel().hidden && messagePanel().textContent.includes('咩咩Hub扩展系统运行正常'), 'Hello 文本');
+    await check('通用 Runtime 测试夹具已注册，快捷入口只出现一次并能显示正确文本', async () => {
+      assert(registered().enabled, '测试夹具未启用'); await menu();
+      assert(document.querySelectorAll('[data-hub-app="test.runtime"]').length === 1, '入口数量错误');
+      click('[data-hub-app="test.runtime"]');
+      await until(() => !messagePanel().hidden && messagePanel().textContent.includes('Fixture message'), '测试夹具文本');
     });
     await check('停用移除入口，旧回调不能重开；重新载入后保持停用', async () => {
-      await manage(); click('[data-action="miemie.hello:toggle"]');
+      await manage(); click('[data-action="test.runtime:toggle"]');
       await until(() => registered().state === 'disabled' && !launcher(), '停用');
-      assert((await __MieMieHub.extensions.open('miemie.hello')).ok === false, '停用仍可打开');
+      assert((await __MieMieHub.extensions.open('test.runtime')).ok === false, '停用仍可打开');
       await unmount(); await mount(); assert(!registered().enabled && !launcher(), '刷新恢复了停用扩展');
     });
     await check('重新启用恢复入口，卸载清理窗口和记录；重新载入不会复活', async () => {
-      await manage(); click('[data-action="miemie.hello:toggle"]'); await until(() => registered().enabled && launcher(), '重新启用');
-      await menu(); click('[data-hub-app="miemie.hello"]'); await until(() => !messagePanel().hidden, '重新打开');
-      await __MieMieHub.extensions.uninstall('miemie.hello');
+      await manage(); click('[data-action="test.runtime:toggle"]'); await until(() => registered().enabled && launcher(), '重新启用');
+      await menu(); click('[data-hub-app="test.runtime"]'); await until(() => !messagePanel().hidden, '重新打开');
+      await __MieMieHub.extensions.uninstall('test.runtime');
       assert(!registered() && !launcher(), '卸载残留记录或入口');
       await until(() => messagePanel().hidden, '卸载关闭窗口');
       await unmount(); await mount(); assert(!registered() && !launcher(), '刷新后卸载扩展复活');
     });
-    await check('管理页重新注册 Hello，重复注册不会产生两个实例', async () => {
-      await manage(); click('[data-action="miemie.hello:register"]'); await until(() => registered()?.enabled, '重新注册');
+    await check('管理页重新注册测试夹具，重复注册不会产生两个实例', async () => {
+      await manage(); click('[data-action="test.runtime:register"]'); await until(() => registered()?.enabled, '重新注册');
       const result = __MieMieHub.extensions.register(registered().manifest, () => ({open() {throw Error('duplicate');}}));
-      assert(!result.ok && document.querySelectorAll('[data-hub-app="miemie.hello"]').length === 1, '重复注册未阻止');
+      assert(!result.ok && document.querySelectorAll('[data-hub-app="test.runtime"]').length === 1, '重复注册未阻止');
     });
     await check('无快捷入口的后台扩展可以启停和清理', async () => {
       let starts = 0, stops = 0;
@@ -235,7 +238,7 @@ async function runTests() {
       assert(cleaned === 0 && runtime.get('fixture.fault').enabled && registered().enabled && document.querySelector('[data-hub-app="fixture.fault"]'), '打开失败破坏生命周期');
       await runtime.uninstall('fixture.fault');
       assert(cleaned === 1 && !document.querySelector('[data-hub-app="fixture.fault"]'), '卸载未完成清理');
-      await runtime.open('miemie.hello'); await until(() => !messagePanel().hidden, '故障后 Hello');
+      await runtime.open('test.runtime'); await until(() => !messagePanel().hidden, '故障后测试夹具');
     });
     await check('故障后时间线仍可读取和手动切换，普通世界书条目不变', async () => {
       await menu(); click('[data-hub-app="miemie.timeline"]');
@@ -315,7 +318,7 @@ async function runTests() {
       assert(!document.querySelector('#miemie-hub-shell, #miemie-timeline-extension') && !document.querySelector('#meeme-translation') && !document.querySelector('#meeme-combined-menu'), '残留 DOM');
       assert(window.fetch === fixtureFetch, 'fetch 包装未恢复');
       assert(!window.__MieMieHub && !window.__timelineSwitcherV1 && !window.__meemeTranslation01 && !window.__meemeCombinedUI, '残留全局实例');
-      await mount(); assert(registered().enabled, '重新载入没有恢复 Hello');
+      await mount(); assert(registered().enabled, '重新载入没有恢复测试夹具');
     });
     await check('未捕获异常和外部网络请求均为零', async () => {
       assert(pageErrors.length === 0, pageErrors.join('\n')); assert(externalRequests === 0, '存在外部请求');
