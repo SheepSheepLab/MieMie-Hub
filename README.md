@@ -18,7 +18,7 @@
 
 ## 安装、更新与数据
 
-只启用 Hub 即可使用时间线。MieMie Polisher 1.1.3 可单独运行；Hub 出现后主动收纳，Hub 消失后恢复独立球。Hub 不扫描或删除第三方悬浮球。Launcher 是可选能力，后台 Extension 不需要 open()。
+只启用 Hub 即可使用时间线。MieMie Polisher 可单独运行；Hub 出现后主动收纳，Hub 消失后恢复独立球。Hub 不扫描或删除第三方悬浮球。Launcher 是可选能力，后台 Extension 不需要 open()。
 
 Extension 安装和更新先验证 Release/Asset、Manifest、产品身份、版本、大小和双 SHA-256，才写入酒馆助手全局脚本。更新同时写入目标 content 与名称末尾版本，保留实例 ID、自定义名称主体、data、文件夹与其他脚本；同源保存回读必须同时确认内容和名称。公开包 data 必须为空。脚本 API 返回不等于服务器持久保存或作者代码已成功启动；界面明确提示保存/运行待确认。更新前请求导出旧脚本，作者代码启动失败时可手工恢复，第一版没有自动回滚。
 
