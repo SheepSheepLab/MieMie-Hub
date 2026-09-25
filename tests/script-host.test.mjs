@@ -79,6 +79,7 @@ test('finds the installed Hub inside a global folder and preserves complete tree
   });
   const expected = read();
   expected[1].scripts[1].content = content('0.2.2');
+  expected[1].scripts[1].name = '更新下载期间改名 0.2.2';
   const installed = host.install(snapshot, content('0.2.2'));
   assert.deepEqual(read(), expected);
   assert.deepEqual(installed.script, expected[1].scripts[1]);
@@ -232,4 +233,19 @@ test('host callbacks must execute exactly once synchronously and return the inst
     const {host} = setup(undefined, {updateScriptTreesWith});
     throwsCode(() => host.install(host.snapshot(), content('0.2.2')), code);
   }
+});
+
+test('stale list version is replaced even when it differs from the running code version', () => {
+  const sys = setup([script({name: '咩咩Hub 0.5.1', content: content('0.6.0')})], {currentVersion: '0.6.0'});
+  const before = sys.host.snapshot();
+  const installed = sys.host.install(before, content('0.6.2'));
+  assert.equal(installed.script.name, '咩咩Hub 0.6.2');
+  assert.deepEqual(installed.script, {...before.script, name: '咩咩Hub 0.6.2', content: content('0.6.2')});
+});
+
+test('host retaining the old name cannot pass synchronous write verification', () => {
+  const sys = setup(undefined, {updateScriptTreesWith(updater) {
+    const result = updater([script()]); result[0].name = script().name; return result;
+  }});
+  throwsCode(() => sys.host.install(sys.host.snapshot(), content('0.2.2')), 'HOST_WRITE');
 });

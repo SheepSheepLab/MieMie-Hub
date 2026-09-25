@@ -1,3 +1,5 @@
+import {applyScriptUpdate} from './script-update-fields.js';
+
 // Only the audited Tavern Helper script-tree shape is writable. Its schema
 // strips unknown fields, so silently passing an unfamiliar shape is unsafe.
 const hubHostPackageId = 'e85cd9a3-6352-4b23-938a-6c94d826b4d3';
@@ -142,6 +144,7 @@ export function createHubScriptHost({getScriptId, getScriptTrees, updateScriptTr
       }
       let acceptingCallback = true;
       let callbackCount = 0;
+      let expectedName;
       let result;
       try {
         result = updateScriptTreesWith(trees => {
@@ -151,7 +154,7 @@ export function createHubScriptHost({getScriptId, getScriptTrees, updateScriptTr
           if (runtimeId() !== snapshot.id) throw hubHostError('HOST_CHANGED', '当前 Hub 安装实例已变化，已取消自动更新。');
           const target = hubHostLocate(trees, snapshot.id, currentVersion);
           if (target.content !== snapshot.content) throw hubHostError('HOST_CHANGED', 'Hub 脚本内容已被其他操作修改，请重新检查更新后再试。');
-          target.content = newContent;
+          expectedName = applyScriptUpdate(target, newContent, nextIdentity.version);
           return trees;
         }, {type: 'global'});
       } catch (error) {
@@ -166,7 +169,7 @@ export function createHubScriptHost({getScriptId, getScriptTrees, updateScriptTr
       }
       if (callbackCount !== 1) throw hubHostError('HOST_WRITE', '宿主没有执行脚本更新，已取消自动更新。');
       const installed = hubHostLocate(result, snapshot.id, nextIdentity.version);
-      if (installed.content !== newContent) throw hubHostError('HOST_WRITE', '宿主返回的脚本内容与目标不一致，保存状态尚未确认。');
+      if (installed.content !== newContent || installed.name !== expectedName) throw hubHostError('HOST_WRITE', '宿主返回的脚本内容或名称版本与目标不一致，保存状态尚未确认。');
       // This confirms only the synchronous in-memory API result, not durable save.
       return makeSnapshot(installed);
     },

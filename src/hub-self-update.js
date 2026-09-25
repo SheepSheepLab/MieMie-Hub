@@ -1,3 +1,4 @@
+import {updatedScriptName} from './script-update-fields.js';
 import {registryBaseURL} from './registry-client.js';
 import {compareSemVer} from './hub-update-check.js';
 import {parseHubBuildIdentity} from './hub-script-host.js';
@@ -184,7 +185,7 @@ async function hubUpdatePublicBytes(request, url, {signal, limit, size, binary =
 // This is a version-bounded SillyTavern 1.18 persistence readback, not a
 // TavernHelper flush API. No settings are POSTed back or sent to GitHub.
 export function createHubSavedScriptReader({fetch: request, origin, getRequestHeaders}) {
-  return async function readSavedContent(id, signal) {
+  return async function readSavedScript(id, signal) {
     if (typeof request !== 'function' || typeof getRequestHeaders !== 'function' || !/^https?:\/\//.test(origin || '')) {
       throw hubUpdateFail('persistence', '宿主未提供保存确认接口；请保留恢复文件并手动确认。');
     }
@@ -204,19 +205,22 @@ export function createHubSavedScriptReader({fetch: request, origin, getRequestHe
     }};
     visit(trees);
     if (found.length > 1) throw hubUpdateFail('persistence', '保存记录中出现重复脚本 ID，无法确认。');
-    return found.length === 1 && typeof found[0].content === 'string' ? found[0].content : null;
+    if (!found.length) return null;
+    const script = found[0];
+    if (typeof script.content !== 'string' || typeof script.name !== 'string') throw hubUpdateFail('persistence', '宿主保存记录缺少代码或显示名称，未确认更新成功。');
+    return {id: script.id, name: script.name, content: script.content};
   };
 }
 
 function hubUpdatePendingValid(record) {
-  return hubUpdateObject(record) && record.schemaVersion === 1 && record.scope === 'global' &&
+  return hubUpdateObject(record) && record.schemaVersion === 1 && (record.scriptFieldsVersion === undefined || record.scriptFieldsVersion === 1) && record.scope === 'global' &&
     typeof record.id === 'string' && record.id.length > 0 && record.id.length <= 200 &&
     hubUpdateVersion(record.version) && hubUpdateVersion(record.previousVersion) &&
     hubUpdateId(record.releaseId) && hubUpdateId(record.assetId) &&
     ['contentSha256', 'assetSha256', 'previousContentSha256'].every(k => typeof record[k] === 'string' && hubUpdateHashPattern.test(record[k])) && Number.isFinite(record.createdAt);
 }
 
-export function createHubSelfUpdater({currentVersion, host, storage, backup, readSavedContent,
+export function createHubSelfUpdater({currentVersion, host, storage, backup, readSavedScript,
   fetch: request = (...args) => globalThis.fetch(...args), crypto = globalThis.crypto, getRegistryBaseURL = () => '',
   metadataTimeoutMs = 15000, assetTimeoutMs = 60000, confirmationTimeoutMs = 15000, confirmationIntervalMs = 500,
   now = () => Date.now()}) {
@@ -295,7 +299,7 @@ export function createHubSelfUpdater({currentVersion, host, storage, backup, rea
     signal.throwIfAborted();
     publish({backupRequested: true});
     signal.throwIfAborted();
-    const record = {schemaVersion: 1, scope: 'global', id: snapshot.id, previousVersion: currentVersion, version: target.version,
+    const record = {schemaVersion: 1, scriptFieldsVersion: 1, scope: 'global', id: snapshot.id, previousVersion: currentVersion, version: target.version,
       releaseId: release.releaseId, assetId: release.asset.id, assetSha256: release.asset.sha256,
       contentSha256: metadata.contentSha256, previousContentSha256, createdAt: now()};
     currentTask.record = record;
@@ -354,15 +358,25 @@ export function createHubSelfUpdater({currentVersion, host, storage, backup, rea
     if (snapshot.id !== record.id || actualHash !== record.contentSha256) {
       throw hubUpdateFail('handoff-identity', '新 Hub 的实例或代码与更新目标不一致，未确认成功。');
     }
-    if (typeof readSavedContent !== 'function') throw hubUpdateFail('persistence', '新版已加载，但当前宿主无法确认持久保存。');
+    if (typeof readSavedScript !== 'function') throw hubUpdateFail('persistence', '新版已加载，但当前宿主无法确认持久保存。');
+    if (JSON.stringify(readPending()) !== JSON.stringify(record)) throw hubUpdateFail('pending-changed', '更新交接记录发生变化，未确认本次更新完成。');
+    const expectedName = updatedScriptName(snapshot.script.name, record.version);
+    // A published older updater wrote content only. Complete its validated,
+    // hash-bound handoff once through the same guarded field writer; never sweep
+    // arbitrary installed scripts or treat a new writer's missing name as success.
+    if (record.scriptFieldsVersion === undefined && snapshot.script.name !== expectedName) {
+      host.install(snapshot, snapshot.content);
+    }
+    if (host.snapshot().script.name !== expectedName) throw hubUpdateFail('persistence', '宿主名称版本尚未同步，未确认更新成功。');
     await hubUpdateDeadline(async signal => {
       for (;;) {
         signal.throwIfAborted();
-        const content = await readSavedContent(record.id, signal);
-        if (typeof content === 'string' && await hashHubUpdateBytes(new TextEncoder().encode(content), crypto) === record.contentSha256) {
+        const saved = await readSavedScript(record.id, signal);
+        const content = saved?.content;
+        if (saved?.id === record.id && saved?.name === expectedName && typeof content === 'string' && await hashHubUpdateBytes(new TextEncoder().encode(content), crypto) === record.contentSha256) {
           signal.throwIfAborted();
           const latest = host.snapshot();
-          if (latest.id !== record.id || latest.content !== snapshot.content) throw hubUpdateFail('handoff-identity', '确认期间 Hub 脚本发生变化。');
+          if (latest.id !== record.id || latest.content !== snapshot.content || latest.script.name !== expectedName) throw hubUpdateFail('handoff-identity', '确认期间 Hub 脚本发生变化。');
           return;
         }
         await new Promise((resolve, reject) => {

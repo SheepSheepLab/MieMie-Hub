@@ -25,6 +25,8 @@ assert.match(metadata.version,/^\d+\.\d+\.\d+$/);assert.equal(metadata.productId
 assert.equal(metadata.tag,'v'+metadata.version);assert.equal(metadata.manifest.version,metadata.version);assert.equal(metadata.manifest.id,metadata.productId);assert.equal(metadata.manifest.repository,'https://github.com/SheepSheepLab/MieMie-Polisher');
 const identity=JSON.parse(polisherArtifact.content.split('\n')[0].replace('// MieMie-Extension-Build: ',''));assert.equal(identity.productId,metadata.productId);assert.equal(identity.version,metadata.version);assert.equal(identity.repository,metadata.manifest.repository);assert.equal(identity.scriptId,metadata.scriptId);
 const legacyHashes = {
+  'bd7f53b4f51cbea04e73eb658ab807bd6003825360bedef7f5dd7d7e7fa128a1':'1.1.3',
+  '32b613a429163aa7067795129df340a4d88611414ed2c401cb02b7e50ff71a1d':'1.1.2',
   '6bab205ab77804c2128c031e0e615295e8661ae978d58700a16da4b8958d4fbc':'1.0.1',
   '6041b413629366ad8fe5d6667fe35e005224eabc4ddaae33f1824d489b8f0f84':'1.1.0',
 };
@@ -53,8 +55,9 @@ async function fixture({legacy=false,cors=false,corrupt=false}={}) {
   const actualHubId='fixture-user-hub', actualLegacyId='fixture-user-renamed-polisher';
   const other={type:'script',id:'fixture-other-script',enabled:true,name:'Development Fixture other script',content:'window.parent.__fixtureOtherStarts=(window.parent.__fixtureOtherStarts||0)+1;',info:'untouched',button:{enabled:false,buttons:[]},data:{preserve:[1,2,3]},export_with:{data:true,button:true}};
   const hubScript={...clone(hubArtifact),id:actualHubId,name:'Development Fixture Hub'};
-  const legacyScript={...clone(legacyArtifact),id:actualLegacyId,name:'User renamed Polisher',info:'user custom info',button:{enabled:true,buttons:[{name:'user button',visible:false}]},data:{privateFixtureSetting:{keep:['value',42]}},export_with:{data:false,button:true}};
+  const legacyScript={...clone(legacyArtifact),id:actualLegacyId,name:'User renamed Polisher '+legacyVersion,info:'user custom info',button:{enabled:true,buttons:[{name:'user button',visible:false}]},data:{privateFixtureSetting:{keep:['value',42]}},export_with:{data:false,button:true}};
   let trees=[other,{type:'folder',enabled:true,id:'fixture-folder',name:'User tools folder',icon:'fa-folder',color:'#abcdef',scripts:[hubScript,...(legacy?[legacyScript]:[])]}];
+  let diskTrees=clone(trees);
   const flat=value=>value.flatMap(x=>x.type==='folder'?x.scripts.map(script=>({script,enabled:x.enabled&&script.enabled})): [{script:x,enabled:x.enabled}]);
   const events=['GENERATION_STARTED','GENERATION_ENDED','MESSAGE_RECEIVED','GENERATION_STOPPED','CHAT_CHANGED','GENERATION_AFTER_COMMANDS','CHAT_COMPLETION_SETTINGS_READY','MESSAGE_SWIPED','MESSAGE_EDITED','MESSAGE_DELETED','MESSAGE_UPDATED'];
   const scope=JSON.stringify(['fixture.png','fixture-chat',null]), text='<story_scene>Fixture processed text</story_scene>';
@@ -81,7 +84,7 @@ async function fixture({legacy=false,cors=false,corrupt=false}={}) {
       if(registryOffline)throw TypeError('Development Fixture Registry offline');
       return response({items:[{id:'fixture-catalog-polisher',name:'Development Fixture · Polisher reference',author:'SheepSheep',description:'Test Data pointing to the official package fixture',sourceType:'github',sourceUrl:repoURL,submitter:{displayName:'Development Fixture submitter'},github:{compatibility:'installable',manifest:metadata.manifest}}],hasMore:false},url);
     }
-    if(url===h.location.origin+'/api/settings/get')return response({settings:JSON.stringify({extension_settings:{tavern_helper:{script:{scripts:trees}}}})},url);
+    if(url===h.location.origin+'/api/settings/get')return response({settings:JSON.stringify({extension_settings:{tavern_helper:{script:{scripts:diskTrees}}}})},url);
     if(url.startsWith('https://fixture-api.invalid/'))return response({choices:[{message:{content:JSON.stringify({translations:['Fixture polished response']})}}]},url);
     throw Error('Unexpected or real network forbidden: '+url);
   }
@@ -97,7 +100,7 @@ async function fixture({legacy=false,cors=false,corrupt=false}={}) {
   function mount(script) {
     const frame=d.createElement('iframe');d.body.appendChild(frame);const w=frame.contentWindow;
     block(w);Object.defineProperty(w,'crypto',{value:webcrypto});Object.assign(w,{TextEncoder,TextDecoder,Response,Request,Headers,ReadableStream,structuredClone,fetch:fetchMock,getScriptId:()=>script.id,getScriptTrees:options=>{assert.equal(options.type,'global');return clone(trees);},
-      updateScriptTreesWith:(updater,options)=>{assert.equal(options.type,'global');const old=clone(trees),result=updater(clone(trees));assert.ok(Array.isArray(result));assert.equal(typeof result.then,'undefined');trees=clone(result);writes.push({before:old,after:clone(trees)});schedule();return clone(trees);},
+      updateScriptTreesWith:(updater,options)=>{assert.equal(options.type,'global');const old=clone(trees),result=updater(clone(trees));assert.ok(Array.isArray(result));assert.equal(typeof result.then,'undefined');trees=clone(result);diskTrees=clone(result);writes.push({before:old,after:clone(trees)});schedule();return clone(trees);},
       getCharWorldbookNames:()=>({primary:'Development Fixture book',additional:[]}),getVariables:spec=>clone(vars[spec.extension_id]||{}),replaceVariables:(value,spec)=>{vars[spec.extension_id]=clone(value);},
       eventOn:(type,fn)=>{const sub={id:script.id,type,fn};subscriptions.add(sub);return{stop:()=>subscriptions.delete(sub)};},setChatMessages:async rows=>{for(const row of rows)ctx.chat[row.message_id].mes=row.message;},formatAsTavernRegexedString:text=>text,
     });
@@ -121,6 +124,7 @@ async function fixture({legacy=false,cors=false,corrupt=false}={}) {
   async function drain(){await reconcileQueue;await tick();if(h.__MieMiePolisherSource)await h.__MieMiePolisherSource.settled();await tick();}
   return {h,d,q,click,center,action,installed,drain,calls,backups,writes,errors,subscriptions,frames,actualLegacyId,actualHubId,initialLegacy:legacyScript,other,vars,worldbook,ctx,
     trees:()=>clone(trees),registryOffline(){registryOffline=true;h.localStorage.setItem('miemie_registry_url_v1','https://registry-fixture.invalid');},
+    async reloadFromDisk(){await drain(); for(const id of [...frames.keys()])await stop(id); trees=JSON.parse(JSON.stringify(diskTrees)); await schedule(); await h.__MieMieHub.ready; await until(()=>h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'Polisher restarted from disk'); await drain();},
     async stopHub(){await stop(actualHubId);await drain();},
     async restartHub(){await schedule();await until(()=>h.__MieMieHub,'Hub restart');await h.__MieMieHub.ready;await until(()=>h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'Polisher recollected');await drain();},
     async close(){closing=true;for(const id of [...frames.keys()].filter(id=>id!==actualHubId))await stop(id);await stop(actualHubId);dom.window.close();assert.deepEqual(errors,[]);assert.equal(subscriptions.size,0);},
@@ -168,11 +172,18 @@ try {
     const before=clone(u.installed()),vars=JSON.stringify(u.vars),key=u.h.localStorage.getItem('meeme_translation_key_v1'),worldbook=JSON.stringify(u.worldbook);
     await u.action('miemie.polisher:check');await until(()=>u.q('[data-action="miemie.polisher:update"]'),'newer package');await u.action('miemie.polisher:update');
     await until(()=>u.h.__MieMieHub.extensions.get('miemie.polisher')?.manifest.version===metadata.version&&u.h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'upgraded iframe activation');await u.drain();
-    assert.deepEqual(u.installed(),{...before,content:polisherArtifact.content});assert.deepEqual(JSON.parse(await u.backups.at(-1).blob.text()),before);assert.equal(JSON.stringify(u.vars),vars);assert.equal(u.h.localStorage.getItem('meeme_translation_key_v1'),key);assert.equal(JSON.stringify(u.worldbook),worldbook);assert.deepEqual(u.trees()[0],u.other);assert.equal(u.h.__fixtureOtherStarts,1);
+    assert.deepEqual(u.installed(),{...before,content:polisherArtifact.content,name:'User renamed Polisher '+metadata.version});assert.deepEqual(JSON.parse(await u.backups.at(-1).blob.text()),before);assert.equal(JSON.stringify(u.vars),vars);assert.equal(u.h.localStorage.getItem('meeme_translation_key_v1'),key);assert.equal(JSON.stringify(u.worldbook),worldbook);assert.deepEqual(u.trees()[0],u.other);assert.equal(u.h.__fixtureOtherStarts,1);
     await u.h.__MieMieHub.open();u.click('[data-hub-app="miemie.polisher"]');await until(()=>u.q('#meeme-translation section')?.hidden===false,'updated Launcher UI');assert.equal(u.q('[data-key]').value,'fixture-not-real-api-key');assert.equal(u.q('[data-pre-text]').value,'Fixture pre prompt');assert.equal(u.vars.meeme_translation_v1.backups.length,1);
     const artLine=polisherArtifact.content.split('\n').find(line=>line.startsWith('const POLISHER_ASSETS='));const expectedIcon=JSON.parse(artLine.slice('const POLISHER_ASSETS='.length,-1)).icon;
     assert.equal(u.q('[data-hub-app="miemie.polisher"] img').src,expectedIcon);assert.equal(u.q('#meeme-translation [data-tool-icon]').src,expectedIcon);
     await until(()=>u.q('[data-hub-panel="extension-center"]').textContent.includes('已重新读取宿主脚本'),'durable update confirmation');
+  });
+  await check('Helper reload retains saved Polisher name/version, same instance and user data',async()=>{
+    const before=clone(u.installed()),vars=JSON.stringify(u.vars),key=u.h.localStorage.getItem('meeme_translation_key_v1');
+    await u.reloadFromDisk();
+    assert.deepEqual(u.installed(),before);assert.equal(u.installed().name,'User renamed Polisher '+metadata.version);
+    assert.equal(u.installed().id,u.actualLegacyId);assert.equal(u.h.__MieMieHub.extensions.get('miemie.polisher').manifest.version,metadata.version);
+    assert.equal(u.d.querySelectorAll('#meeme-translation').length,1);assert.equal(JSON.stringify(u.vars),vars);assert.equal(u.h.localStorage.getItem('meeme_translation_key_v1'),key);
   });
   await check('Registry offline leaves real installed package, timeline and local settings usable',async()=>{
     await u.h.__MieMieHub.open();u.click('[data-hub-app="settings"]');await tick();u.q('[data-hub-developer-settings]').open=true;const url=u.q('[aria-label="Registry 服务地址"]');url.value='https://registry-fixture.invalid';u.registryOffline();await u.action('registry:configure');await u.center('discover');await until(()=>u.q('[data-hub-panel="extension-center"]').textContent.includes('扩展目录无法连接'),'offline Catalog message');

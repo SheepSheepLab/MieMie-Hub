@@ -2,7 +2,7 @@
 
 咩咩Hub 是咩咩（MieMie）开源软件与社区生态的官方项目。生态由 SheepSheep 发起和创建（Founder / 创始人）；SheepSheepLab 是官方 GitHub 开发、维护与发布命名空间，官方项目主要通过该命名空间维护和发布，并欢迎社区贡献者共同参与。
 
-当前版本 **0.6.1**（开发测试 Pre-release）。Core 负责 Extension Runtime、包管理与 Hub 自更新；扩展中心和设置是固定 System Modules。时间线为通过标准 API v1 加载的 Bundled Official Extension，官方默认捆绑时间线、随 Hub 整体更新，时间线只在 Launcher 打开，不进入已安装列表或包管理；仅架构测试可从构建声明移除。基础构建和测试不依赖 Registry 或 Polisher 源码。
+当前版本 **0.6.2**（开发测试 Pre-release）。Core 负责 Extension Runtime、包管理与 Hub 自更新；扩展中心和设置是固定 System Modules。时间线为通过标准 API v1 加载的 Bundled Official Extension，官方默认捆绑时间线、随 Hub 整体更新，时间线只在 Launcher 打开，不进入已安装列表或包管理；仅架构测试可从构建声明移除。基础构建和测试不依赖 Registry 或 Polisher 源码。
 
 ## 扩展中心
 
@@ -20,7 +20,7 @@
 
 只启用 Hub 即可使用时间线。MieMie Polisher 1.1.3 可单独运行；Hub 出现后主动收纳，Hub 消失后恢复独立球。Hub 不扫描或删除第三方悬浮球。Launcher 是可选能力，后台 Extension 不需要 open()。
 
-Extension 安装和更新先验证 Release/Asset、Manifest、产品身份、版本、大小和双 SHA-256，才写入酒馆助手全局脚本。更新只替换目标 content，保留实例 ID、名称、data、文件夹与其他脚本。公开包 data 必须为空。脚本 API 返回不等于服务器持久保存或作者代码已成功启动；界面明确提示保存/运行待确认。更新前请求导出旧脚本，作者代码启动失败时可手工恢复，第一版没有自动回滚。
+Extension 安装和更新先验证 Release/Asset、Manifest、产品身份、版本、大小和双 SHA-256，才写入酒馆助手全局脚本。更新同时写入目标 content 与名称末尾版本，保留实例 ID、自定义名称主体、data、文件夹与其他脚本；同源保存回读必须同时确认内容和名称。公开包 data 必须为空。脚本 API 返回不等于服务器持久保存或作者代码已成功启动；界面明确提示保存/运行待确认。更新前请求导出旧脚本，作者代码启动失败时可手工恢复，第一版没有自动回滚。
 
 物理卸载会删除目标脚本条目及其 data，仅确认删除，不自动生成备份；不清空 localStorage、酒馆变量、Polisher 历史设置或其他脚本。请保存编辑并停止正在生成的任务后更新。Hash 校验不能保证作者代码安全，软件并未运行在完整沙盒里。
 
@@ -49,8 +49,8 @@ MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL="$OFFICIAL_REGISTRY_HTT
 输出：
 
 ```text
-build/MieMie-Hub-0.6.1.json
-build/咩咩Hub-0.6.1.json
+build/MieMie-Hub-0.6.2.json
+build/咩咩Hub-0.6.2.json
 build/MieMie-Hub-update.json
 build/miemie-hub.js
 ```

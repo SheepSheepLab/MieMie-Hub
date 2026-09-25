@@ -45,7 +45,7 @@ function setup(t, f = fixture(), options = {}) {
     throw Error('Unexpected URL');
   };
   const find = (list,id) => list.flatMap(x => x.type === 'folder' ? find(x.scripts,id) : x.id === id ? [x] : []);
-  const manager = createExtensionPackageManager({readSavedContent: async id => find(trees,id)[0]?.content || null,
+  const manager = createExtensionPackageManager({readSavedScript: async id => clone(find(trees,id)[0] || null),
     persistenceTimeoutMs: 100, confirmationIntervalMs: 2, getScriptTrees: () => clone(trees), updateScriptTreesWith(updater, scope) {
     assert.deepEqual(scope, {type: 'global'}); options.beforeWrite?.(trees);
     const result = updater(clone(trees)); assert.equal(typeof result?.then, 'undefined'); trees = result; writes++; return clone(trees);
@@ -119,6 +119,7 @@ test('installed folder and renamed script update preserves all data, buttons, fi
   const sys = setup(t, fixture(), {trees: original}); const result = await sys.manager.update(ID);
   assert.equal(result.instanceId, 'installed-instance'); assert.equal(result.version, '1.0.2');
   const after = sys.read(); const newContent = after[1].scripts[0].content; after[1].scripts[0].content = original[1].scripts[0].content;
+  assert.equal(after[1].scripts[0].name, 'My renamed script 1.0.2'); after[1].scripts[0].name = original[1].scripts[0].name;
   assert.deepEqual(after, original); assert.equal(parseExtensionBuildIdentity(newContent).version, '1.0.2');
 });
 
@@ -404,14 +405,14 @@ test('write return alone cannot claim success when authoritative host readback s
   assert.equal((await sys.manager.listInstalled())[0].version, '1.0.1');
 });
 test('server save failure leaves displayed version old, not the newer memory version', async t => {
-  const sys = setup(t, fixture(), {manager:{readSavedContent: async () => content('1.0.1'), persistenceTimeoutMs:30}});
+  const sys = setup(t, fixture(), {manager:{readSavedScript: async () => script(), persistenceTimeoutMs:30}});
   await assert.rejects(sys.manager.update(ID), code('persistence'));
   const installed = (await sys.manager.listInstalled())[0];
   assert.equal(installed.version,'1.0.1'); assert.equal(installed.memoryVersion,'1.0.2'); assert.ok(installed.persistenceError);
 });
 test('delayed durable save and runtime activation must both finish before update resolves', async t => {
   let reads=0, running='1.0.1', sys;
-  sys=setup(t,fixture(),{manager:{readSavedContent:async()=>{reads++; if(reads<4)return content('1.0.1'); if(reads>=6)running='1.0.2';return sys.read()[0].content;},getRunningVersion:()=>running}});
+  sys=setup(t,fixture(),{manager:{readSavedScript:async()=>{reads++; if(reads<4)return script(); if(reads>=6)running='1.0.2';return sys.read()[0];},getRunningVersion:()=>running}});
   const result=await sys.manager.update(ID);assert.ok(reads>=6);assert.equal(result.persistence,'confirmed');assert.equal(result.version,'1.0.2');assert.equal(sys.writes(),1);
 });
 test('unchanged old runtime is not update success even if content is saved', async t => {
@@ -419,16 +420,53 @@ test('unchanged old runtime is not update success even if content is saved', asy
   await assert.rejects(sys.manager.update(ID),code('persistence'));
 });
 test('missing persistence reader blocks write before backup or mutation', async t => {
-  const sys=setup(t,fixture(),{manager:{readSavedContent:undefined}});
+  const sys=setup(t,fixture(),{manager:{readSavedScript:undefined}});
   await assert.rejects(sys.manager.update(ID),code('persistence'));assert.equal(sys.writes(),0);assert.equal(sys.backups.length,0);
 });
 test('teardown cancels persistence readback and cannot report success', async t => {
-  let n=0;const sys=setup(t,fixture(),{manager:{readSavedContent:async()=>{if(++n===1)return content();return new Promise(()=>{});}}});
+  let n=0;const sys=setup(t,fixture(),{manager:{readSavedScript:async()=>{if(++n===1)return script();return new Promise(()=>{});}}});
   const job=sys.manager.update(ID);while(n<2)await new Promise(r=>setTimeout(r,1));sys.manager.dispose();await assert.rejects(job,code('cancelled'));
 });
 
 test('same version with different saved content still reports a persistence mismatch',async t=>{
- const sys=setup(t,fixture(),{manager:{readSavedContent:async()=>content('1.0.1')+'\n// different saved content'}});
+ const sys=setup(t,fixture(),{manager:{readSavedScript:async()=>script('1.0.1',{content:content('1.0.1')+'\n// different saved content'})}});
  const row=(await sys.manager.listInstalled())[0];assert.equal(row.version,'1.0.1');assert.ok(row.persistenceError);
  await assert.rejects(sys.manager.update(ID),code('persistence'));assert.equal(sys.writes(),0);
+});
+
+test('new code with stale persisted name must not report update success', async t => {
+  let sys;
+  sys = setup(t, fixture(), {manager:{readSavedScript:async()=>({...sys.read()[0], name:script().name}), persistenceTimeoutMs:20}});
+  await assert.rejects(sys.manager.update(ID), code('persistence'));
+  const row = (await sys.manager.listInstalled())[0];
+  assert.equal(row.version, '1.0.2'); assert.equal(row.name, script().name); assert.ok(row.persistenceError);
+  assert.equal(sys.writes(), 1); assert.deepEqual(sys.read()[0].data, script().data);
+});
+
+test('delayed name persistence waits after code has saved; reload reads the same single updated instance', async t => {
+  let sys, reads=0, disk;
+  sys = setup(t, fixture({version:'1.1.3'}), {trees:[script('1.1.2',{name:'My tool 1.1.2'}),other()], manager:{readSavedScript:async()=>{
+    const latest=sys.read()[0]; reads++;
+    disk=clone(reads<4?{...latest,name:'My tool 1.1.2'}:latest); return clone(disk);
+  }}});
+  const result=await sys.manager.update(ID);
+  assert.ok(reads>=4); assert.equal(result.persistence,'confirmed'); assert.equal(result.name,'My tool 1.1.3');
+  const reloaded=setup(t,fixture({version:'1.1.3'}),{trees:[disk,other()]});
+  const rows=await reloaded.manager.listInstalled();
+  assert.equal(rows.length,1); assert.equal(rows[0].instanceId,'installed-instance');
+  assert.equal(rows[0].version,'1.1.3'); assert.equal(rows[0].name,'My tool 1.1.3'); assert.equal(rows[0].persistenceError,'');
+  assert.deepEqual(reloaded.read()[0].data,script().data); assert.equal(reloaded.writes(),0);
+});
+
+test('concurrent custom rename is retained and versioned at the actual write', async t => {
+  const sys=setup(t,fixture(),{beforeWrite:trees=>{trees[0].name='New user title 0.9.0';trees[0].data.newer=true;}});
+  const result=await sys.manager.update(ID);
+  assert.equal(result.name,'New user title 1.0.2'); assert.equal(sys.read()[0].data.newer,true);
+});
+
+test('host dropping display-name mutation rejects even if returned content is correct', async t => {
+  const sys=setup(t,fixture(),{manager:{updateScriptTreesWith(updater){
+    const result=updater([script(),other()]); result[0].name=script().name; return result;
+  }}});
+  await assert.rejects(sys.manager.update(ID),code('host-write'));
 });

@@ -54,7 +54,7 @@ const hubScriptHost = createHubScriptHost({currentVersion: HUB_VERSION,
   getScriptTrees: typeof getScriptTrees === 'function' ? getScriptTrees : undefined,
   updateScriptTreesWith: typeof updateScriptTreesWith === 'function' ? updateScriptTreesWith : undefined,
 });
-const readSavedExtensionContent = createHubSavedScriptReader({fetch: (...args) => window.fetch(...args), origin: h.location.origin,
+const readSavedExtensionScript = createHubSavedScriptReader({fetch: (...args) => window.fetch(...args), origin: h.location.origin,
     getRequestHeaders: () => {
       const context = h.SillyTavern?.getContext?.();
       if (typeof context?.getRequestHeaders !== 'function') throw Error('宿主保存确认接口不可用。');
@@ -75,10 +75,10 @@ const hubSelfUpdater = createHubSelfUpdater({currentVersion: HUB_VERSION, host: 
     try {link.click();}
     finally {link.remove(); h.setTimeout(() => h.URL.revokeObjectURL(url), 60000);}
   },
-  readSavedContent: readSavedExtensionContent,
+  readSavedScript: readSavedExtensionScript,
 });
 const packageManager = createExtensionPackageManager({
-  readSavedContent: readSavedExtensionContent,
+  readSavedScript: readSavedExtensionScript,
   getRunningVersion: id => { const record = extensionRuntime.get(id); return record?.enabled ? record.manifest.version : null; },
   getScriptTrees: typeof getScriptTrees === 'function' ? getScriptTrees : undefined,
   updateScriptTreesWith: typeof updateScriptTreesWith === 'function' ? updateScriptTreesWith : undefined,

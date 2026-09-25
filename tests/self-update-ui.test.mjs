@@ -65,13 +65,14 @@ async function fixture(t, mode = 'success') {
   let frame, writes = 0, reloads = 0, savedReads = 0, reloadTimer, initialListenerCount;
   let oldCheckButton, oldInstallButton, backupNoteAtWrite, cleanupListenerCount, cleanupSubscriptionCount;
   const actualId = 'user-installed-hub-uuid';
-  const oldScript = {...clone(artifact), id: actualId, name: '我的 Hub（已手工改名）', info: '用户说明保持不变',
+  const oldScript = {...clone(artifact), id: actualId, name: '我的 Hub（已手工改名） 0.5.1', info: '用户说明保持不变',
     data: {privateExampleSetting: {keep: [true, null, 'test-only']}},
     button: {enabled: true, buttons: [{name: '自定义按钮', visible: false}]}, export_with: {data: false, button: true}};
   const other = {...clone(artifact), id: 'other-extension', name: '其他脚本', content: 'void 0;', data: {other: true}};
   let trees = [{type: 'folder', enabled: true, name: '工具文件夹', id: 'folder', icon: 'fa-folder', color: '#123456',
     scripts: [other, oldScript]}];
   const initialTrees = clone(trees);
+  let diskTrees = clone(trees);
   host.localStorage.setItem('meeme_timeline_dock_v1', JSON.stringify({side: 'right', ratio: 0.4}));
   host.localStorage.setItem('meeme_translation_key_v1', 'test-only-not-a-real-key');
   host.localStorage.setItem('other-extension-storage', 'test-only-preserve');
@@ -123,7 +124,7 @@ async function fixture(t, mode = 'success') {
     if (url === repo + '/releases/assets/902') return response(update.bytes, url);
     if (url === host.location.origin + '/api/settings/get') {
       savedReads++;
-      const savedTrees = savedReads === 1 ? initialTrees : trees;
+      const savedTrees = savedReads === 1 ? initialTrees : diskTrees;
       const settings = {extension_settings: {tavern_helper: {script: {scripts: savedTrees}}}};
       return response(encode({settings: JSON.stringify(settings)}), url);
     }
@@ -143,8 +144,10 @@ async function fixture(t, mode = 'success') {
     scope.getScriptTrees = options => {assert.equal(options.type, 'global'); return mode === 'nonglobal' ? [other] : clone(trees);};
     scope.updateScriptTreesWith = (updater, options) => {
       assert.equal(options.type, 'global');
+      const oldContent = trees[0].scripts[1].content;
       const latest = clone(trees), result = updater(latest);
-      assert.equal(typeof result.then, 'undefined'); trees = result; writes++;
+      assert.equal(typeof result.then, 'undefined'); trees = result; writes++; diskTrees = clone(result);
+      if (oldContent === trees[0].scripts[1].content) return clone(trees); // Name-only save does not restart Helper's iframe.
       backupNoteAtWrite = doc.querySelector('[data-hub-backup-note]').textContent;
       oldCheckButton = doc.querySelector('[data-hub-action="check-updates"]');
       oldInstallButton = doc.querySelector('[data-hub-action="update"]');
@@ -177,6 +180,7 @@ async function fixture(t, mode = 'success') {
     await until(() => query('[data-hub-update-status]').dataset.hubUpdateStatus === 'available', 'version check did not find target');
   }
   return {host, doc, query, openSettings, discover, calls, downloads, listeners, subscriptions, update,
+    async refreshFromDisk() {unmount(); await settle(); trees = JSON.parse(JSON.stringify(diskTrees)); await mount(trees[0].scripts[1].content);},
     initialTrees, readTrees: () => clone(trees), writes: () => writes, reloads: () => reloads, savedReads: () => savedReads,
     oldButtons: () => [oldCheckButton, oldInstallButton], backupNote: () => backupNoteAtWrite,
     initialListenerCount, cleanupCounts: () => [cleanupListenerCount, cleanupSubscriptionCount]};
@@ -200,8 +204,8 @@ test('built Hub UI checks, updates its renamed global instance, reloads and conf
   assert.deepEqual(Array.from(f.host.__MieMieHub.extensions.list(), x => x.manifest.id), expectedBundles, 'updated artifact controls bundled sources; stale preferences cannot resurrect removed sources');
   assert.equal(f.doc.querySelectorAll('#miemie-timeline-extension').length, expectedBundles.length);
 
-  assert.equal(f.writes(), 1); assert.equal(f.reloads(), 1); assert.equal(f.savedReads(), 2);
-  const expected = clone(f.initialTrees); expected[0].scripts[1].content = f.update.script.content;
+  assert.equal(f.writes(), artifact.content.includes('function applyScriptUpdate(') ? 1 : 2); assert.equal(f.reloads(), 1); assert.equal(f.savedReads(), 2);
+  const expected = clone(f.initialTrees); expected[0].scripts[1].content = f.update.script.content; expected[0].scripts[1].name = '我的 Hub（已手工改名） ' + nextVersion;
   assert.deepEqual(f.readTrees(), expected);
   assert.equal(f.downloads.length, 1); assert.match(f.downloads[0].name, new RegExp('^MieMie-Hub-backup-' + currentVersion.replaceAll('.', '\\.') + '-\\d+\\.json$'));
   assert.deepEqual(JSON.parse(await f.downloads[0].blob.text()), f.initialTrees[0].scripts[1]);
@@ -217,6 +221,10 @@ test('built Hub UI checks, updates its renamed global instance, reloads and conf
   if (!targetArtifact) assert.equal(f.host.localStorage.getItem('miemie_hub_extensions_v1'), oldPrefs);
   assert.equal(f.host.localStorage.getItem('meeme_translation_key_v1'), 'test-only-not-a-real-key');
   assert.equal(f.host.localStorage.getItem('other-extension-storage'), 'test-only-preserve');
+  await f.refreshFromDisk(); await f.openSettings();
+  assert.deepEqual(f.readTrees(), expected, 'Helper reload must restore saved name, code, same ID and user fields');
+  assert.equal(f.host.__MieMieHub.version, nextVersion);
+  assert.equal(f.doc.querySelectorAll('#miemie-hub-shell').length, 1);
   const publicCalls = f.calls.filter(c => c.url.startsWith(repo));
   assert.equal(publicCalls.length, 5);
   for (const {init} of publicCalls) {

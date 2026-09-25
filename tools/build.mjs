@@ -66,7 +66,7 @@ for (const entry of JSON.parse(await read('packaging/bundled-extensions.json')))
 }
 if (selected && [...selected].some(id => !seen.has(id))) throw Error('Unknown bundled Extension ID.');
 const functions = [];
-for (const file of ['src/extension-runtime.js', 'src/hub-root.js', 'src/hub-update-check.js', 'src/hub-script-host.js', 'src/hub-self-update.js', 'src/registry-client.js', 'src/extension-packages.js', 'src/extension-center.js', 'src/registry-settings.js', 'src/hub-ui.js', 'src/bundled-extensions.js']) {
+for (const file of ['src/extension-runtime.js', 'src/hub-root.js', 'src/hub-update-check.js', 'src/script-update-fields.js', 'src/hub-script-host.js', 'src/hub-self-update.js', 'src/registry-client.js', 'src/extension-packages.js', 'src/extension-center.js', 'src/registry-settings.js', 'src/hub-ui.js', 'src/bundled-extensions.js']) {
   let source = (await read(file)).replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
   if (file === 'src/hub-ui.js') source = source.replace('/* LEGACY_ANIMATIONS */', await read('src/legacy-animations.inc.js'));
   functions.push(source);

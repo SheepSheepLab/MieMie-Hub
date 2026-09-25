@@ -163,7 +163,7 @@ test('full update preserves the latest tree, downloads backup, stores only a sma
   const before = sys.readTrees();
   const state = await sys.updater.start(target());
   assert.equal(state.status, 'awaiting-reload'); assert.equal(state.backupRequested, true); assert.equal(sys.writes(), 1);
-  const expected = clone(before); expected[1].content = data.script.content;
+  const expected = clone(before); expected[1].content = data.script.content; expected[1].name += ' 0.2.2';
   assert.deepEqual(sys.readTrees(), expected);
   assert.deepEqual(sys.backups, [{script: before[1], version: '0.2.1'}]);
   assert.deepEqual(sys.calls.map(c => c.url), [HUB_UPDATE_REPOSITORY_API + '/releases/201',
@@ -178,9 +178,9 @@ test('full update preserves the latest tree, downloads backup, stores only a sma
   }
   sys.updater.dispose();
   let reads = 0;
-  const next = sys.next({readSavedContent: async (id, signal) => {
+  const next = sys.next({readSavedScript: async (id, signal) => {
     assert.equal(id, 'actual-installed-id'); assert.equal(signal.aborted, false);
-    return ++reads < 2 ? before[1].content : data.script.content;
+    return ++reads < 2 ? before[1] : sys.readTrees()[1];
   }});
   assert.equal((await next.resume()).status, 'completed');
   assert.equal(reads, 2); assert.equal(sys.storage.getItem(HUB_UPDATE_PENDING_KEY), null);
@@ -318,7 +318,7 @@ test('dispose after content installation preserves handoff for the next iframe',
   assert.equal((await sys.updater.start(target())).status, 'awaiting-reload');
   sys.updater.dispose();
   assert.ok(sys.storage.getItem(HUB_UPDATE_PENDING_KEY));
-  assert.equal((await sys.next({readSavedContent: async () => data.script.content}).resume()).status, 'completed');
+  assert.equal((await sys.next({readSavedScript: async () => sys.readTrees()[1]}).resume()).status, 'completed');
   assert.equal(sys.writes(), 1);
 });
 
@@ -337,9 +337,9 @@ test('installing or backup notification teardown cannot leave pending state or w
 test('replacing the handoff during confirmation prevents success and preserves the replacement', async t => {
   const data = await fixture(), sys = system(t, data); await sys.updater.start(target());
   const replacement = JSON.parse(sys.storage.getItem(HUB_UPDATE_PENDING_KEY)); replacement.releaseId++;
-  const next = sys.next({readSavedContent: async () => {
+  const next = sys.next({readSavedScript: async () => {
     sys.storage.setItem(HUB_UPDATE_PENDING_KEY, JSON.stringify(replacement));
-    return data.script.content;
+    return sys.readTrees()[1];
   }});
   const result = await next.resume();
   assert.equal(result.status, 'unconfirmed'); assert.match(result.error, /交接记录发生变化/);
@@ -386,10 +386,10 @@ test('write failures clear handoff only when the original content is positively 
 test('new iframe teardown cancels confirmation without clearing the recovery record', async t => {
   const data = await fixture(), sys = system(t, data); await sys.updater.start(target()); sys.updater.dispose();
   let resolveLate;
-  const next = sys.next({readSavedContent: () => new Promise(resolve => {resolveLate = resolve;})});
+  const next = sys.next({readSavedScript: () => new Promise(resolve => {resolveLate = resolve;})});
   const task = next.resume(); while (!resolveLate) await settle(); next.dispose();
   assert.equal((await task).status, 'cancelled');
-  resolveLate(data.script.content); await settle();
+  resolveLate(sys.readTrees()[1]); await settle();
   assert.ok(sys.storage.getItem(HUB_UPDATE_PENDING_KEY)); assert.equal(sys.writes(), 1);
 });
 
@@ -399,11 +399,11 @@ test('resume requires matching version, instance and content; failed confirmatio
     sys => ({currentVersion: '0.2.1', host: sys.hostFor('0.2.1')}),
     sys => ({host: {snapshot: () => ({...sys.hostFor('0.2.2').snapshot(), id: 'wrong-id'})}}),
     sys => ({host: {snapshot: () => ({...sys.hostFor('0.2.2').snapshot(), content: 'wrong code'})}}),
-    () => ({readSavedContent: undefined}),
-    () => ({readSavedContent: async () => buildContent(), confirmationTimeoutMs: 10}),
+    () => ({readSavedScript: undefined}),
+    () => ({readSavedScript: async () => installedScript(), confirmationTimeoutMs: 10}),
   ]) {
     const sys = system(t, data); await sys.updater.start(target());
-    const next = sys.next({readSavedContent: async () => data.script.content, ...makeOptions(sys)});
+    const next = sys.next({readSavedScript: async () => sys.readTrees()[1], ...makeOptions(sys)});
     assert.equal((await next.resume()).status, 'unconfirmed'); assert.ok(sys.storage.getItem(HUB_UPDATE_PENDING_KEY));
   }
 });
@@ -411,9 +411,9 @@ test('resume requires matching version, instance and content; failed confirmatio
 test('resume pending validation, expiry and concurrent confirmation are bounded', async t => {
   const data = await fixture(), sys = system(t, data); await sys.updater.start(target());
   let readResolve;
-  const next = sys.next({readSavedContent: () => new Promise(resolve => {readResolve = resolve;})});
+  const next = sys.next({readSavedScript: () => new Promise(resolve => {readResolve = resolve;})});
   const first = next.resume(), second = next.resume(); assert.equal(first, second);
-  while (!readResolve) await settle(); readResolve(data.script.content);
+  while (!readResolve) await settle(); readResolve(sys.readTrees()[1]);
   assert.equal((await first).status, 'completed');
   for (const value of ['not json', '{}', 'x'.repeat(4097)]) {
     sys.storage.setItem(HUB_UPDATE_PENDING_KEY, value);
@@ -432,7 +432,7 @@ test('saved-script reader is same-origin, read-only, and extracts only the exact
     getRequestHeaders: () => ({'Content-Type': 'application/json', 'X-CSRF-Token': 'test-only'}),
     fetch: async (url, init) => {calls.push({url, init}); return response(encode({settings: JSON.stringify(settings)}), url);}});
   const signal = new AbortController().signal;
-  assert.equal(await reader('actual-installed-id', signal), content);
+  assert.deepEqual(await reader('actual-installed-id', signal), {id: 'actual-installed-id', name: '用户自定义 Hub 名称', content});
   assert.equal(calls[0].url, 'https://tavern.example/api/settings/get');
   assert.equal(calls[0].init.method, 'POST'); assert.equal(calls[0].init.body, '{}');
   assert.equal(calls[0].init.credentials, 'same-origin'); assert.equal(calls[0].init.redirect, 'error');
@@ -483,4 +483,50 @@ test('Hub relay timeout and teardown cannot write after a late response',async t
     }});
     const pending=sys.updater.start(target());while(!finish)await settle();if(cancel)sys.updater.dispose();await pending;finish();await settle();assert.equal(sys.writes(),0);
   }
+});
+
+test('saved new Hub code with old name cannot complete or clear the handoff', async t => {
+  const data=await fixture(), sys=system(t,data); await sys.updater.start(target());
+  const next=sys.next({readSavedScript:async()=>({...sys.readTrees()[1],name:'用户自定义 Hub 名称 0.2.1'}),confirmationTimeoutMs:15});
+  assert.equal((await next.resume()).status,'unconfirmed');
+  assert.ok(sys.storage.getItem(HUB_UPDATE_PENDING_KEY)); assert.equal(sys.writes(),1);
+});
+
+test('new writer missing in-memory name fails rather than silently repairing its own failed write', async t => {
+  const data=await fixture(),sys=system(t,data); await sys.updater.start(target());
+  sys.editTrees(trees=>{trees[1].name='Old label 0.2.1';});
+  assert.equal((await sys.next({readSavedScript:async()=>sys.readTrees()[1]}).resume()).status,'unconfirmed');
+  assert.equal(sys.writes(),1); assert.ok(sys.storage.getItem(HUB_UPDATE_PENDING_KEY));
+});
+
+test('old published updater handoff synchronizes only the verified instance name and confirms its durable save', async t => {
+  const data=await fixture(),sys=system(t,data); await sys.updater.start(target());
+  const record=JSON.parse(sys.storage.getItem(HUB_UPDATE_PENDING_KEY)); delete record.scriptFieldsVersion;
+  sys.storage.setItem(HUB_UPDATE_PENDING_KEY,JSON.stringify(record));
+  sys.editTrees(trees=>{trees[1].name='My Hub 0.1.0';trees[1].data.latest=true;});
+  const before=sys.readTrees(); let reads=0;
+  const next=sys.next({readSavedScript:async()=>++reads<3?before[1]:sys.readTrees()[1]});
+  assert.equal((await next.resume()).status,'completed'); assert.equal(reads,3);
+  assert.deepEqual(sys.readTrees(),[before[0],{...before[1],name:'My Hub 0.2.2'}]);
+  assert.equal(sys.writes(),2); assert.equal(sys.storage.getItem(HUB_UPDATE_PENDING_KEY),null);
+});
+
+test('legacy handoff never repairs a mismatched target content or absent durable reader', async t => {
+  for (const mismatch of [true,false]) {
+    const data=await fixture(),sys=system(t,data); await sys.updater.start(target());
+    const record=JSON.parse(sys.storage.getItem(HUB_UPDATE_PENDING_KEY)); delete record.scriptFieldsVersion;
+    sys.storage.setItem(HUB_UPDATE_PENDING_KEY,JSON.stringify(record));
+    sys.editTrees(trees=>{trees[1].name='My Hub 0.1.0';if(mismatch)trees[1].content+='\n// edited';});
+    const next=sys.next({readSavedScript:mismatch?async()=>sys.readTrees()[1]:undefined});
+    assert.equal((await next.resume()).status,'unconfirmed'); assert.equal(sys.writes(),1);
+  }
+});
+
+test('durable reader rejects content-only records and never leaks script data', async () => {
+  const scripts=[installedScript({content:buildContent('0.2.2')})];
+  const reader=createHubSavedScriptReader({origin:'http://127.0.0.1:8000',getRequestHeaders:()=>({}),fetch:async()=>Response.json({settings:JSON.stringify({extension_settings:{tavern_helper:{script:{scripts}}}})})});
+  const saved=await reader(scripts[0].id,new AbortController().signal);
+  assert.deepEqual(Object.keys(saved).sort(),['content','id','name']);
+  delete scripts[0].name;
+  await assert.rejects(reader(scripts[0].id,new AbortController().signal),hasCode('persistence'));
 });

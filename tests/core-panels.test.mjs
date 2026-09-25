@@ -7,6 +7,7 @@ import {createRuntimeFixture} from './fixtures/runtime-extension.js';
 const read = name => readFile(new URL('../' + name, import.meta.url), 'utf8');
 const pkg = JSON.parse(await read('package.json'));
 const artifact = JSON.parse(await read('build/咩咩Hub-' + pkg.version + '.json'));
+const registryBase = JSON.parse(artifact.content.split('\n').find(line => line.startsWith('const HUB_DEFAULT_REGISTRY_URL=')).slice('const HUB_DEFAULT_REGISTRY_URL='.length, -1));
 const settle = () => new Promise(resolve => setImmediate(resolve));
 
 // Execute the complete built Hub in a disposable helper-like iframe. There is
@@ -59,7 +60,9 @@ async function fixture(t, releaseFetch = async () => ({ok: true, json: async () 
     frame = doc.createElement('iframe'); doc.body.appendChild(frame);
     const scope = frame.contentWindow;
     blockNetwork(scope);
+    Object.assign(scope, {TextDecoder, TextEncoder});
     scope.fetch = (url, init) => {
+      if (registryBase && url === registryBase + '/api/catalog?page=1&pageSize=12&q=&source=') return Promise.resolve(Response.json({items:[],hasMore:false}));
       assert.equal(url, 'https://api.github.com/repos/SheepSheepLab/MieMie-Hub/releases?per_page=100&page=1');
       releaseRequests.push({url, init}); return releaseFetch(url, init);
     };
@@ -104,7 +107,7 @@ test('Core system launchers coexist with existing entries without registering Ex
   assert.equal(panel.hidden, false); assert.equal(panel.inert, false);
   assert.equal(f.query('[data-hub-app="extensions"]'), null);
   for (const tab of ['discover', 'installed', 'mine']) assert.ok(f.query('[data-center-tab="' + tab + '"]'));
-  assert.match(panel.textContent, /在线扩展服务暂未开放/);
+  assert.match(panel.textContent, registryBase ? /没有符合条件的上架项目/ : /在线扩展服务暂未开放/);
   await f.click('[data-center-tab="installed"]');
   assert.equal(f.doc.querySelectorAll('[data-extension-id]').length, 0);
 });
