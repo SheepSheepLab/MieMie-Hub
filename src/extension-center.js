@@ -201,7 +201,7 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
     const generation=++serial;content.replaceChildren();
     const identity=registry.getIdentity();if(generation!==serial)return;
     if(!identity){content.append(el('p','使用 Discord 登录后即可提交和管理你的扩展。','mm-hub-note'));action(content,'使用 Discord 登录',async()=>{await registry.login();if(!registry.subscribe)await activate('mine');},'registry:login');return;}
-    const profile=el('div',undefined,'mm-submit-profile');icon(profile,identity.profile?.avatarUrl);profile.append(el('strong',identity.profile?.displayName||''));content.append(profile);
+    const profile=el('div',undefined,'mm-submit-profile');icon(profile,identity.profile?.avatarUrl);profile.append(el('strong',identity.profile?.displayName||''));const accountStatus=el('span',identity.banned===true?'受限用户':identity.isAdmin===true?'管理员':'普通用户');accountStatus.dataset.accountStatus='';profile.append(accountStatus);content.append(profile);
     if(identity.canSubmit!==false)action(content,'提交扩展',()=>submissionForm());else content.append(el('p','此 Discord 身份的投稿权限已暂停。','mm-hub-note')); action(content,'退出登录',async()=>{await registry.logout();if(!registry.subscribe)await activate('mine');},'registry:logout');
     try {
       const result=await registry.api('/api/submissions',{authenticated:true});if(disposed||generation!==serial||active!=='mine')return;
