@@ -108,3 +108,14 @@ test('catalog identity is normalized from the server row, including legacy list/
   value={manifest:{classification:'official'}};assert.equal((await f.client.api('/api/github/preview?url=fixture')).classification,undefined);
  }finally{f.client.dispose();}
 });
+
+test('authenticated status preserves Owner and explicit banned; old servers never infer banned from canSubmit',async()=>{
+ let flags={isAdmin:true,isOwner:true,banned:false,canSubmit:true};
+ const f=pollingFixture({readyAfter:1,me:()=>json({profile:{displayName:'Status Fixture'},...flags})});
+ try{
+  await f.client.login();assert.equal(f.client.getIdentity().isOwner,true);assert.equal(f.client.getIdentity().isAdmin,true);assert.equal(f.client.getIdentity().banned,false);
+  flags={...flags,banned:true,canSubmit:false};await f.client.me();assert.equal(f.client.getIdentity().banned,true);assert.equal(f.client.getIdentity().isOwner,true);
+  flags={canSubmit:false};await f.client.me();assert.equal(f.client.getIdentity().banned,false);assert.equal(f.client.getIdentity().canSubmit,false);
+  flags={banned:'true',isAdmin:'true'};await f.client.me();assert.equal(f.client.getIdentity().banned,false);assert.equal(f.client.getIdentity().isAdmin,false);
+ }finally{f.client.dispose();}
+});

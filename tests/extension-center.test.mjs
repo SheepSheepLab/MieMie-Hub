@@ -104,3 +104,16 @@ test('legacy and self-claimed catalog items show community; only explicit server
  assert.match(f.body.querySelector('[data-catalog-id="external-official"]').textContent,/🐑官方扩展/);
  assert.match(f.body.querySelector('[data-catalog-id="external-official"]').textContent,/来源：Discord/);
 });
+
+test('account labels use explicit banned first, then admin, without exposing Owner or guessing from canSubmit',async t=>{
+ for(const [flags,label]of [
+  [{banned:false,isAdmin:false},'普通用户'],[{banned:false,isAdmin:true},'管理员'],
+  [{banned:false,isAdmin:true,isOwner:true},'管理员'],[{banned:true,isAdmin:false},'受限用户'],
+  [{banned:true,isAdmin:true,isOwner:true},'受限用户'],[{canSubmit:false},'普通用户'],
+ ]){
+  const identity={profile:{displayName:'Account Fixture'},...flags};const f=fixture(t,{identity});await f.center.activate('mine');
+  assert.equal(f.body.querySelector('[data-account-status]').textContent,label);
+  assert.doesNotMatch(f.body.querySelector('.mm-submit-profile').textContent,/Owner|封禁用户/);
+  assert.equal(f.registry.getIdentity().isOwner,flags.isOwner);
+ }
+});
