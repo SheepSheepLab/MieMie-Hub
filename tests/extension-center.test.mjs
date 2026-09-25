@@ -80,17 +80,27 @@ test('Standalone and Web listings cannot enter Package install despite installab
  const items=[{...github,id:'app',type:'standalone_app',distribution:'external_release',platforms:['macos'],classification:'community',author:'SheepSheep'},{...github,id:'web',type:'web_tool',distribution:'open_url',websiteUrl:'https://author.example/tool',classification:'official'}];
  const f=fixture(t,{request:()=>({items})});await f.center.activate('discover');
  for(const id of ['app','web'])assert.equal(f.body.querySelector(`[data-catalog-id="${id}"] button`),null);
- assert.match(f.body.querySelector('[data-catalog-id="app"]').textContent,/Community/);assert.doesNotMatch(f.body.querySelector('[data-catalog-id="app"]').textContent,/MieMie 官方/);
- assert.equal(f.body.querySelector('[data-catalog-id="web"] a').href,'https://author.example/tool');assert.match(f.body.querySelector('[data-catalog-id="web"]').textContent,/MieMie 官方/);
+ assert.match(f.body.querySelector('[data-catalog-id="app"]').textContent,/🧩社区扩展/);assert.doesNotMatch(f.body.querySelector('[data-catalog-id="app"]').textContent,/🐑官方扩展/);
+ assert.equal(f.body.querySelector('[data-catalog-id="web"] a').href,'https://author.example/tool');assert.match(f.body.querySelector('[data-catalog-id="web"]').textContent,/🐑官方扩展/);
  assert.equal(f.calls.some(x=>typeof x==='string'&&x.startsWith('inspect:')),false);
 });
 test('Hub never exposes management operations even when identity is Owner/Admin',async t=>{
  const f=fixture(t,{identity:{isAdmin:true,isOwner:true,canPublishOfficial:true,profile:{displayName:'Fixture Owner'}}});await f.center.activate('mine');assert.doesNotMatch(f.body.textContent,/管理员管理|封禁|授予|Security Hold/);assert.equal(f.calls.some(x=>x.path?.startsWith('/api/admin')),false);
- await f.click('提交扩展');assert.ok(f.body.querySelector('[name="classification"]'));
+ await f.click('提交扩展');assert.equal(f.body.querySelector('[name="classification"]'),null);
 });
 test('submission form separates product/distribution/platforms and Web URL while preserving source and ownership rules',async t=>{
  const f=fixture(t,{identity:{profile:{displayName:'Fixture'}}});await f.center.activate('mine');await f.click('提交扩展');const form=f.body.querySelector('form'),field=n=>form.querySelector(`[name="${n}"]`);
  assert.equal(field('classification'),null);field('type').value='web_tool';field('type').dispatchEvent(new f.host.Event('change'));assert.equal(field('distribution').value,'open_url');assert.equal(field('websiteUrl').required,true);
  for(const [k,v]of Object.entries({name:'Web Test',author:'Fixture',description:'Test',sourceUrl:'https://github.com/example/web',websiteUrl:'https://author.example/tool',platforms:'web'}))field(k).value=v;
  form.dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();const sent=f.calls.find(x=>x.options?.method==='POST').options.body;assert.equal(sent.type,'web_tool');assert.equal(sent.distribution,'open_url');assert.deepEqual(sent.platforms,['web']);assert.equal(sent.classification,undefined);
+});
+
+test('legacy and self-claimed catalog items show community; only explicit server classification shows official',async t=>{
+ const items=[{...github,id:'old',author:'SheepSheep',submitter:{displayName:'SheepSheep'},official:true,github:{...github.github,manifest:{classification:'official'}}},
+  {...discord,id:'external-official',author:'星夜',classification:'official'},
+  {...github,id:'unknown',classification:'mirror'}];
+ const f=fixture(t,{request:()=>({items})});await f.center.activate('discover');
+ for(const id of ['old','unknown'])assert.match(f.body.querySelector(`[data-catalog-id="${id}"]`).textContent,/🧩社区扩展/);
+ assert.match(f.body.querySelector('[data-catalog-id="external-official"]').textContent,/🐑官方扩展/);
+ assert.match(f.body.querySelector('[data-catalog-id="external-official"]').textContent,/来源：Discord/);
 });

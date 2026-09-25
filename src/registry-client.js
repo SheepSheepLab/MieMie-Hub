@@ -64,6 +64,13 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
         if (!response.ok) throw Error(typeof result.error?.message === 'string' ? result.error.message.slice(0, 300) : typeof result.error === 'string' ? result.error.slice(0, 300) : '在线服务请求失败（' + response.status + '）。');
         currentIdentity();
         if (disposed || controller.signal.aborted || base !== requestBase || sessionEpoch !== requestEpoch) throw Error('登录状态已改变，请重试。');
+        // Catalog identity comes only from the Registry row, never its nested manifest.
+        // Old Registry responses and unknown future values fail closed to community.
+        if (/^\/api\/(catalog|submissions)(?:[/?]|$)/.test(path)) {
+          const entry = row => ({...row, classification: row.classification === 'official' ? 'official' : 'community'});
+          if (Array.isArray(result.items)) result.items = result.items.map(entry);
+          else if (result.id) result = entry(result);
+        }
         return result;
       })()]);
     } catch (error) {throw Error(error instanceof TypeError ? '在线服务暂时无法连接，请稍后重试。' : error?.message || '在线服务暂时无法连接，请稍后重试。');}

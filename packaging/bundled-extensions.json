@@ -2,6 +2,7 @@
   {
     "directory": "extensions/timeline",
     "factory": "createTimelineExtension",
+    "classification": "official",
     "resources": {
       "icon": "icon.png",
       "styles": "style.css"

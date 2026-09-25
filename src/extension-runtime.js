@@ -15,6 +15,7 @@ export function createExtensionRuntime(options = {}) {
   function snapshot(record) {
     return {
       manifest: copy(record.manifest),
+      classification: record.classification,
       state: record.state,
       enabled: record.state === 'enabled',
       busy: ['enabling', 'disabling', 'uninstalling'].includes(record.state),
@@ -158,7 +159,10 @@ export function createExtensionRuntime(options = {}) {
       const m = validate(manifest);
       if (records.has(m.id)) throw Error('扩展已注册：' + m.id);
       if (typeof factory !== 'function') throw Error('扩展工厂必须是函数。');
-      const record = {manifest: m, factory, state: 'disabled', error: '', launcherError: '', generation: 0, session: null, queue: Promise.resolve()};
+      // The Host supplies this resolver at construction; register/provide callers
+      // cannot assign identity through a manifest or an extra argument.
+      const classification = options.resolveClassification?.(m, factory) === 'official' ? 'official' : 'community';
+      const record = {manifest: m, factory, classification, state: 'disabled', error: '', launcherError: '', generation: 0, session: null, queue: Promise.resolve()};
       records.set(m.id, record);
       notify('register', record);
       return {ok: true, extension: snapshot(record)};
@@ -180,7 +184,10 @@ export function createExtensionRuntime(options = {}) {
       notify('transition', record);
       try {
         const api = context(record, session);
-        const creation = Promise.resolve().then(() => record.factory(api)).then(instance => {
+        // Never expose the private runtime record as an extension's receiver.
+        // Lifecycle methods still run on the extension's own returned instance.
+        const factory = record.factory;
+        const creation = Promise.resolve().then(() => factory(api)).then(instance => {
           if (!instance || typeof instance !== 'object') throw Error('扩展工厂必须返回生命周期对象。');
           if (!session.closed) session.instance = instance;
           for (const name of ['activate', 'deactivate']) if (instance[name] !== undefined && typeof instance[name] !== 'function') throw Error(name + ' 必须是函数。');

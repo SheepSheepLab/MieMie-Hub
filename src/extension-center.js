@@ -126,7 +126,7 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
         const card=el('article',undefined,'mm-extension-card'); card.dataset.catalogId=item.id;
         icon(card,item.github?.manifest?.iconUrl||item.icon); card.append(el('strong',item.name),el('p','作者：'+item.author,'mm-hub-note'),el('p',item.description,'mm-hub-note'));
         const profile=el('p',undefined,'mm-submit-profile'); icon(profile,item.submitter?.avatarUrl);profile.append(el('span','投稿者：'+(item.submitter?.displayName||'未提供')));card.append(profile);
-        card.append(el('p',(item.classification==='official'?'MieMie 官方':'Community')+' · '+({tavern_extension:'酒馆扩展',standalone_app:'独立应用',web_tool:'Web 工具'}[item.type]||'酒馆扩展')+(item.platforms?.length?' · '+item.platforms.join(', '):''),'mm-hub-note'));
+        card.append(el('p',(item.classification==='official'?'🐑官方扩展':'🧩社区扩展')+' · '+({tavern_extension:'酒馆扩展',standalone_app:'独立应用',web_tool:'Web 工具'}[item.type]||'酒馆扩展')+(item.platforms?.length?' · '+item.platforms.join(', '):''),'mm-hub-note'));
         if(item.version)card.append(el('p','Catalog 记录版本：'+item.version,'mm-hub-note'));
         card.append(el('p',item.sourceType==='github'?'来源：作者 GitHub · 文件由作者 Release 提供':'来源：Discord · 前往作者原帖获取','mm-hub-note'));
         const actions=el('div',undefined,'mm-extension-actions');card.append(actions);
@@ -155,8 +155,6 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
     const type=selectField('type','产品类型',[['tavern_extension','酒馆扩展'],['standalone_app','独立应用'],['web_tool','Web 工具']],item?.type||'tavern_extension');
     const distribution=selectField('distribution','分发方式',[['managed_install','Hub 安装'],['external_release','作者发布页'],['open_url','打开链接']],item?.distribution||(source.value==='github'?'managed_install':'open_url'));
     const platformWrap=el('label','平台（逗号分隔：windows, macos, linux, android, ios, web）'),platforms=el('input');platforms.name='platforms';platforms.value=(item?.platforms||[]).join(', ');platformWrap.append(platforms);form.append(platformWrap);
-    let classification;
-    if(registry.getIdentity()?.canPublishOfficial)classification=selectField('classification','项目身份',[['community','Community'],['official','MieMie 官方']],item?.classification||'community');
     function refreshProduct(){
       const allowed=type.value==='standalone_app'?['external_release']:type.value==='web_tool'?['open_url']:source.value==='discord'?['open_url']:['managed_install','external_release'];
       for(const o of distribution.options)o.disabled=!allowed.includes(o.value);
@@ -191,7 +189,6 @@ export function createExtensionCenter({host, body, runtime, sources, packages, r
       event.preventDefault();if(save.disabled||disposed||generation!==serial)return;save.disabled=true;
       try {
         const payload={sourceType:source.value,visibility:visibility.value,type:type.value,distribution:distribution.value,platforms:platforms.value.split(',').map(x=>x.trim()).filter(Boolean)};
-        if(classification)payload.classification=classification.value;
         for(const [key,input]of Object.entries(fields))payload[key]=key==='tags'?input.value.split(',').map(x=>x.trim()).filter(Boolean):input.value.trim();
         if(visibility.value==='discord_guild'&&source.value==='github')payload.visibilitySourceUrl=guildSource.value.trim();
         await registry.api('/api/submissions'+(item?'/'+encodeURIComponent(item.id):''),{method:item?'PATCH':'POST',body:payload,authenticated:true});
