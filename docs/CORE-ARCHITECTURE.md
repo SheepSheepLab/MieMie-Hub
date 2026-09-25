@@ -9,7 +9,7 @@
 | Bundled Official Extensions | extensions/timeline | 与普通本地扩展使用相同 Manifest、provide 和 API v1 生命周期；官方默认随包提供；可仅为架构测试从构建声明移除 |
 | Normal Extensions | 独立发布的 Polisher、第三方 Extension | 保持独立仓库、设置及数据所有权；Hub 不拥有其业务实现 |
 
-“Bundled Official”在这里是发行分类，不是 Registry 自动投稿或安全认证。时间线不进入普通 Catalog、不走 Registry Submission、没有独立 GitHub Release 或独立更新通道。用户无需单独安装；它不出现在扩展中心“已安装”，不提供打开、启停、安装、更新或卸载等包管理入口，只在 Hub Launcher 作为内置工具直接打开。时间线更新随 Hub 整体 Release 和 Self Update 一起交付。
+Bundled 是发行方式，Official 是独立的扩展身份；两者不合并成一个枚举，也不代表 Registry 自动投稿或安全认证。时间线不进入普通 Catalog、不走 Registry Submission、没有独立 GitHub Release 或独立更新通道。用户无需单独安装；它不出现在扩展中心“已安装”，不提供打开、启停、安装、更新或卸载等包管理入口，只在 Hub Launcher 作为内置工具直接打开。时间线更新随 Hub 整体 Release 和 Self Update 一起交付。
 
 ## 时间线迁移
 
@@ -30,9 +30,15 @@ Settings 只操作 Hub 版本、自更新及高级 Registry 配置。没有迁�
 
 ## 发行声明与生命周期
 
-`packaging/bundled-extensions.json` 是构建清单，不是第二套 Extension Manifest。每项只声明目录、导出工厂名、需要内嵌的资源文件及发行策略。时间线项的 `policy.management="hub"` 只规定产品管理入口，不改变标准 Manifest 或 API。目录内 `manifest.json` 仍使用 API v1 Manifest。
+`packaging/bundled-extensions.json` 是构建清单，不是第二套 Extension Manifest。每项声明目录、导出工厂名、需要内嵌的资源文件、发行策略及平台身份 `classification`（默认 community）。时间线项的 `policy.management="hub"` 只规定产品管理入口，不改变标准 Manifest 或 API。目录内 `manifest.json` 仍使用 API v1 Manifest。
 
-构建器将资源交给该工厂的闭包；Core 只收到 `{manifest, factory}`。没有时间线专属 API。通用 loader 逐个调用标准 `provide`，一个扩展失败不会中止其他扩展或系统模块。
+构建器将资源交给该工厂的闭包；Core 收到 `{manifest, factory, policy, classification}`，身份和发行策略位于普通 Manifest 之外。没有时间线专属 API。通用 loader 逐个调用标准 `provide`，一个扩展失败不会中止其他扩展或系统模块。
+
+Timeline 的 `classification:"official"` 只由受信任的 Hub 构建清单赋予。Host 私有 resolver 按构建时实际 factory 引用和 Manifest ID 共同匹配；相同 ID、Author、普通 Manifest 的 `official`/`classification`、公开 register/provide 的额外参数均不能获得官方身份。Runtime `get/list` 快照中的顶层 `classification` 供 Hub 数据模型消费，生命周期和 Extension API v1 不变。随包但未显式标为 official 的扩展仍为 community。
+
+Registry Catalog 的顶层 `classification` 由服务端治理负责；client 归一化列表/详情/投稿响应，缺失或未知值按 community，忽略嵌套 Manifest 的身份声明。扩展中心沿用现有文本位置显示完整的「🐑官方扩展 / 🧩社区扩展」，投稿表单移除身份选择，治理留在 Registry。身份与 GitHub/Discord 来源、产品类型及分发方式独立。
+
+本地运行登记/直接 GitHub 安装不携带 Registry 身份授权；不把目录身份永久写入扩展代码或安装元数据。当前已安装页没有新增身份标签。Final UI 若需要在该位置展示 Registry 身份，应按可信目录记录重新解析，不能从 Manifest 或仅凭扩展 ID 推断。可配置 Registry 的权威范围仍是用户选择的服务；这不是代码签名或对恶意同页脚本的隔离机制。
 
 官方默认加载时间线。时间线不出现在已安装管理列表，官方 Hub 启动时固定注册并启用，在 Launcher 直接打开；历史开发测试中的启停/注销偏好不改变这个产品边界。开发者仍可通过标准 runtime 做生命周期测试，下一次 Hub 载入恢复固定工具。独立 Package 的物理卸载保持原逻辑。
 

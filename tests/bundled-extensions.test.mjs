@@ -178,3 +178,61 @@ test('preferences for absent sources never create phantom launchers or installed
     await f.unmount();await f.mount();
   }
 });
+
+test('Timeline identity comes from packaging; spoofed manifests and a reused bundled ID stay community',async t=>{
+ const f=await fixture(t),runtime=f.h.__MieMieHub.extensions;
+ const original=runtime.get('miemie.timeline');
+ assert.equal(original.classification,'official');
+ assert.equal(original.manifest.classification,undefined);
+ original.classification='community';assert.equal(runtime.get('miemie.timeline').classification,'official');
+ const fake={...original.manifest,id:'test.identity',author:'SheepSheep',official:true,classification:'official'};
+ assert.equal(runtime.provide(fake,()=>({}),{classification:'official'}).ok,true);
+ assert.equal(runtime.get(fake.id).classification,'community');
+ await runtime.uninstall('miemie.timeline');
+ assert.equal(runtime.register({...fake,id:'miemie.timeline'},()=>({}),{classification:'official'}).ok,true);
+ assert.equal(runtime.get('miemie.timeline').classification,'community');
+ assert.equal(runtime.list().find(x=>x.manifest.id===fake.id).classification,'community');
+});
+
+test('built Hub does not give ordinary or Timeline-impostor factories its trusted record',async t=>{
+ const f=await fixture(t),runtime=f.h.__MieMieHub.extensions;
+ const timeline=runtime.get('miemie.timeline');
+ assert.equal(timeline.enabled,true);
+ assert.equal(timeline.classification,'official');
+ const maliciousFactory=function(){this.classification='official';return {};};
+ const fake={...timeline.manifest,id:'test.factory-spoof',official:true,classification:'official'};
+ const lease=runtime.provide(fake,maliciousFactory);
+ assert.equal(lease.ok,true);
+ assert.equal(runtime.get(fake.id).classification,'community');
+ assert.equal((await lease.ready).ok,false);
+ lease.classification='official';
+ assert.equal(runtime.get(fake.id).classification,'community');
+ assert.equal(runtime.get('miemie.timeline').classification,'official');
+ await lease.release();assert.equal(runtime.get(fake.id),null);
+ await runtime.uninstall('miemie.timeline');
+ assert.equal(runtime.register({...fake,id:'miemie.timeline'},maliciousFactory).ok,true);
+ assert.equal(runtime.get('miemie.timeline').classification,'community');
+ assert.equal((await runtime.enable('miemie.timeline')).ok,false);
+ assert.equal(runtime.get('miemie.timeline').classification,'community');
+ await runtime.uninstall('miemie.timeline');
+ await f.unmount();await f.mount();
+ assert.equal(runtime.get('miemie.timeline'),null);
+ assert.equal(f.h.__MieMieHub.extensions.get('miemie.timeline').classification,'official');
+ assert.equal(f.h.__MieMieHub.extensions.get('miemie.timeline').enabled,true);
+});
+
+test('bundling alone is not official identity and packaging authority is bound to the exact factory',async()=>{
+ const {bundledClassificationResolver}=await import('../src/bundled-extensions.js');
+ const {createExtensionRuntime}=await import('../src/extension-runtime.js');
+ const manifest={schemaVersion:1,apiVersion:1,id:'test.bundle',name:'Community bundle',version:'1.0.0',classification:'official',official:true};
+ const factory=()=>({});
+ for(const classification of [undefined,'community','official']){
+  const resolver=bundledClassificationResolver([{manifest,factory,classification}]);
+  const runtime=createExtensionRuntime({resolveClassification:resolver});
+  await loadBundledExtensions([{manifest,factory}],(m,f)=>runtime.register(m,f));
+  assert.equal(runtime.get(manifest.id).classification,classification==='official'?'official':'community');
+  assert.equal(resolver({...manifest,id:'test.other'},factory),'community');
+  assert.equal(resolver(manifest,()=>({})),'community');
+  await runtime.dispose();
+ }
+});

@@ -89,3 +89,22 @@ test('logout or Registry switch cancels polling and late result; failed me never
  const g=pollingFixture({readyAfter:10000});const changed=g.client.login();await new Promise(r=>setTimeout(r,10));g.client.setBase('https://other.example');await assert.rejects(changed,/取消/);assert.equal(g.client.getIdentity(),null);g.client.dispose();
  const h=pollingFixture({readyAfter:1,me:()=>json({error:'expired'},401)});await assert.rejects(h.client.login(),/expired/);assert.equal(h.client.getIdentity(),null);assert.ok(h.changes.every(x=>x===null));h.client.dispose();
 });
+
+test('catalog identity is normalized from the server row, including legacy list/detail and submission responses',async()=>{
+ let value={items:[]};const f=fixture(()=>json(value));
+ try {
+  for(const path of ['/api/catalog?page=1','/api/submissions']){
+   value={items:[{id:'official',classification:'official',author:'星夜'},
+    {id:'community',classification:'community',author:'SheepSheep',submitter:{displayName:'SheepSheep'}},
+    {id:'legacy',official:true,github:{manifest:{classification:'official'}}},
+    {id:'unknown',classification:'bundled'},{id:'boolean',classification:true},
+    {id:'null',classification:null},{id:'empty',classification:''},{id:'malformed',classification:'official123'}]};
+   const items=(await f.client.api(path)).items;
+   assert.deepEqual(items.map(x=>x.classification),['official','community','community','community','community','community','community','community']);
+   assert.equal(items[0].author,'星夜');assert.equal(items[1].submitter.displayName,'SheepSheep');
+  }
+  value={id:'detail',github:{manifest:{official:true}}};assert.equal((await f.client.api('/api/catalog/detail')).classification,'community');
+  value={id:'detail',classification:'official'};assert.equal((await f.client.api('/api/catalog/detail')).classification,'official');
+  value={manifest:{classification:'official'}};assert.equal((await f.client.api('/api/github/preview?url=fixture')).classification,undefined);
+ }finally{f.client.dispose();}
+});

@@ -15,6 +15,7 @@ function persistHubChange(event) {
   catch (_) { hubUI?.report('扩展状态本次未能保存；当前页面仍可使用。'); }
 }
 const extensionRuntime = createExtensionRuntime({
+  resolveClassification: bundledClassificationResolver(BUNDLED_EXTENSIONS),
   onChange(event) { persistHubChange(event); hubUI?.refresh(); },
   onMessage(id, title, text) { hubUI?.showMessage(id, title, text); },
   onClose(id) { hubUI?.closeMessage(id); },

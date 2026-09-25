@@ -62,7 +62,9 @@ for (const entry of JSON.parse(await read('packaging/bundled-extensions.json')))
   const source = (await readFile(within(entry.directory, manifest.entry), 'utf8')).replace(/^export /gm, '');
   bundledSources.push(source);
   if (entry.policy && (Object.keys(entry.policy).some(key => key !== 'management') || entry.policy.management !== 'hub')) throw Error('Invalid bundled distribution policy.');
-  bundled.push('{manifest:' + JSON.stringify(manifest) + ',policy:' + JSON.stringify(entry.policy || {}) + ',factory:api=>' + entry.factory + '(api,' + JSON.stringify(resources) + ')}');
+  const classification = entry.classification ?? 'community';
+  if (!['community', 'official'].includes(classification)) throw Error('Invalid bundled extension identity.');
+  bundled.push('{manifest:' + JSON.stringify(manifest) + ',classification:' + JSON.stringify(classification) + ',policy:' + JSON.stringify(entry.policy || {}) + ',factory:api=>' + entry.factory + '(api,' + JSON.stringify(resources) + ')}');
 }
 if (selected && [...selected].some(id => !seen.has(id))) throw Error('Unknown bundled Extension ID.');
 const functions = [];

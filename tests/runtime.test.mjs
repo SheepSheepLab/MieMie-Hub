@@ -1,11 +1,115 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {runInNewContext} from 'node:vm';
 import {createExtensionRuntime} from '../src/extension-runtime.js';
 import {createRuntimeFixture} from './fixtures/runtime-extension.js';
 
 const {manifest: sample, factory: sampleFactory} = createRuntimeFixture();
 const manifest = (id, launcher = true) => ({schemaVersion: 1, apiVersion: 1, id, name: id, version: '0.1.0', ...(launcher ? {contributes: {launcher: {title: id}}} : {})});
 const nextTask = () => new Promise(resolve => setTimeout(resolve, 0));
+
+test('ordinary factories cannot reach trusted classification or mutable runtime state through this', async t => {
+  const runtime = createExtensionRuntime(); t.after(() => runtime.dispose());
+  for (const [field, value] of Object.entries({classification:'official', manifest:manifest('test.stolen'), state:'enabled', generation:0, session:{active:true}})) {
+    const m = manifest('test.receiver.' + field.toLowerCase(), false);
+    let receiver;
+    runtime.register(m, function () {
+      receiver = this;
+      this[field] = value;
+      return {};
+    });
+    assert.equal(runtime.get(m.id).classification, 'community');
+    assert.equal((await runtime.enable(m.id)).ok, false, 'invalid this access is contained as a factory failure');
+    assert.equal(receiver, undefined);
+    const saved = runtime.get(m.id);
+    assert.equal(saved.classification, 'community');
+    assert.deepEqual(saved.manifest, m);
+    assert.equal(saved.state, 'error');
+    assert.equal((await runtime.uninstall(m.id)).ok, true);
+  }
+  assert.equal(runtime.get('test.stolen'), null);
+});
+
+test('normal, arrow and explicitly bound factories preserve lifecycle instance receivers', async t => {
+  const runtime = createExtensionRuntime(); t.after(() => runtime.dispose());
+  for (const kind of ['normal', 'arrow', 'bound']) {
+    const events = [], context = {classification:'official'};
+    const instance = {
+      activate() {assert.equal(this, instance); events.push('activate');},
+      open() {assert.equal(this, instance); events.push('open');},
+      deactivate() {assert.equal(this, instance); events.push('deactivate');},
+    };
+    function factory(api) {
+      assert.equal(this, kind === 'bound' ? context : undefined);
+      api.onCleanup(() => events.push('cleanup'));
+      return instance;
+    }
+    const m = manifest('test.receiver.' + kind);
+    runtime.register(m, kind === 'arrow' ? api => factory(api) : kind === 'bound' ? factory.bind(context) : factory);
+    assert.equal((await runtime.enable(m.id)).ok, true);
+    assert.equal((await runtime.open(m.id)).ok, true);
+    assert.equal((await runtime.disable(m.id)).ok, true);
+    assert.equal(runtime.get(m.id).classification, 'community');
+    assert.deepEqual(events, ['activate', 'open', 'deactivate', 'cleanup']);
+  }
+});
+
+test('non-strict factory global this is not the trusted runtime record', async t => {
+  const runtime = createExtensionRuntime(); t.after(() => runtime.dispose());
+  const scope = {};
+  const factory = runInNewContext('(function () { this.classification = "official"; this.state = "uninstalled"; return {}; })', scope);
+  const m = manifest('test.sloppy', false);
+  runtime.register(m, factory);
+  assert.equal((await runtime.enable(m.id)).ok, true);
+  assert.equal(scope.classification, 'official');
+  assert.equal(runtime.get(m.id).classification, 'community');
+  assert.equal(runtime.get(m.id).state, 'enabled');
+  assert.deepEqual(runtime.get(m.id).manifest, m);
+});
+
+test('manifest, API, instance, result and event snapshots cannot write trusted runtime metadata', async t => {
+  const events = [], messages = [];
+  const runtime = createExtensionRuntime({onChange:event => events.push(event), onMessage:(...args) => messages.push(args)});
+  t.after(() => runtime.dispose());
+  const m = {...manifest('test.metadata'), official:true, classification:'official'};
+  const original = structuredClone(m);
+  let api, instance;
+  const corruptSnapshot = snapshot => {
+    snapshot.classification = 'official'; snapshot.state = 'uninstalled';
+    snapshot.manifest.id = 'test.stolen'; snapshot.manifest.name = 'Forged';
+    snapshot.manifest.contributes.launcher.title = 'Forged';
+  };
+  const result = runtime.register(m, function (context) {
+    api = context;
+    assert.ok(Object.isFrozen(api));
+    assert.equal(Reflect.set(api, 'classification', 'official'), false);
+    api.manifest.id = 'test.stolen'; api.manifest.name = 'Forged';
+    api.manifest.contributes.launcher.title = 'Forged';
+    instance = {
+      classification:'official', manifest:api.manifest, state:'uninstalled', session:{active:false},
+      activate() {this.classification = 'official';},
+      open() {this.classification = 'official'; api.showMessage('Original identity');},
+      deactivate() {this.classification = 'official';},
+    };
+    return instance;
+  });
+  m.id = 'test.input-mutated'; corruptSnapshot(result.extension);
+  assert.equal((await runtime.enable(original.id)).ok, true);
+  corruptSnapshot(runtime.get(original.id)); corruptSnapshot(runtime.list()[0]);
+  for (const event of events) corruptSnapshot(event.extension);
+  const assertTrusted = state => {
+    const saved = runtime.get(original.id);
+    assert.equal(saved.classification, 'community');
+    assert.equal(saved.state, state);
+    assert.deepEqual(saved.manifest, original);
+    assert.equal(runtime.get('test.stolen'), null);
+  };
+  assertTrusted('enabled');
+  assert.equal((await runtime.open(original.id)).ok, true); assertTrusted('enabled');
+  assert.deepEqual(messages, [[original.id, original.name, 'Original identity']]);
+  assert.equal((await runtime.disable(original.id)).ok, true); assertTrusted('disabled');
+  assert.equal(instance.classification, 'official', 'extension-owned state is not platform identity');
+});
 
 test('Runtime fixture: register, enable, open, disable, re-enable and uninstall', async () => {
   const {manifest: sample, factory: sampleFactory, events} = createRuntimeFixture();

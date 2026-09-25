@@ -45,11 +45,13 @@
 | `open(id)` | Promise，尝试调用当前实例的 open |
 | `list()` / `get(id)` | 状态快照；不存在时 get 返回 null |
 
-快照包含 `manifest`、`state`、`enabled`、`busy`、`error`、`launcherAvailable`、`launcherError`。`hub.ready` 表示随包扩展初始处理完成，不代表所有外部脚本已加载。
+快照包含 `manifest`、`classification`、`state`、`enabled`、`busy`、`error`、`launcherAvailable`、`launcherError`。顶层 `classification` 来自 Host 可信元数据，独立于 Manifest 自声明。`hub.ready` 表示随包扩展初始处理完成，不代表所有外部脚本已加载。
 
 ## 工厂与生命周期
 
 `factory(api)` 返回生命周期对象，也允许异步返回。`activate()`、`deactivate()` 可选，存在时必须是函数；`open()` 是可选 UI 能力。每次重新启用会创建新实例。扩展应在 activate 中获取资源，用 deactivate／onCleanup 释放，使用 signal 和 guard 阻止迟到任务继续工作。
+
+Runtime 按普通函数调用 `factory(api)`，不提供内部记录作为 `this`。严格模式的普通 factory 收到 `undefined`；非严格函数、箭头函数或显式绑定函数遵循 JavaScript 自身的 `this` 规则。生命周期方法的接收者仍是扩展返回的 instance。扩展不能依赖或修改 Runtime 私有记录；`api.manifest`、注册结果、`get/list` 和状态事件提供副本，instance 自报的 `classification` 不改变平台身份。
 
 | 扩展上下文 | 作用 |
 |---|---|
