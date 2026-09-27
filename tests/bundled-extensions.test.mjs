@@ -236,3 +236,70 @@ test('bundling alone is not official identity and packaging authority is bound t
   await runtime.dispose();
  }
 });
+
+
+test('Timeline route picker shares the lifted panel layer and remains selectable',async t=>{
+  const f=await fixture(t);await f.open();
+  const panel=f.d.querySelector('.ts-panel'),trigger=f.d.querySelector('[data-routing-trigger]');
+  trigger.click();
+  const popup=f.d.querySelector('.ts-picker');
+  assert.equal(popup.parentElement,panel.parentElement,'picker must share the Surface panel stacking context');
+  assert.ok(Number(f.h.getComputedStyle(popup).zIndex)>Number(f.h.getComputedStyle(panel).zIndex),'picker paints above the raised panel');
+  assert.equal(panel.contains(popup),false,'floating options must not be clipped by panel scrolling');
+  assert.equal(trigger.getAttribute('aria-expanded'),'true');
+  popup.querySelector('[role=option]').click();
+  assert.equal(f.vars.books[0].links.length,0);
+  assert.equal(f.d.querySelector('.ts-picker'),null);
+  assert.equal(trigger.getAttribute('aria-expanded'),'false');
+  assert.equal(f.d.activeElement,trigger);
+  assert.equal(f.writes,0,'editing route configuration must not switch the worldbook now');
+});
+
+test('Timeline picker keyboard, resize, scroll and Surface close release the floating layer',async t=>{
+  const f=await fixture(t);await f.open();
+  const panel=f.d.querySelector('.ts-panel'),trigger=f.d.querySelector('[data-routing-trigger]');
+  const key=k=>f.d.activeElement.dispatchEvent(new f.h.KeyboardEvent('keydown',{key:k,bubbles:true,cancelable:true}));
+  trigger.dispatchEvent(new f.h.KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}));
+  key('Home');assert.equal(f.d.activeElement.textContent,'不自动切换');
+  key('End');assert.equal(f.d.activeElement.textContent,'Two');
+  key('Tab');assert.equal(f.d.querySelector('.ts-picker'),null);assert.equal(panel.hidden,false);assert.equal(f.d.activeElement,trigger);
+  for(const [node,event] of [[f.h,'resize'],[panel,'scroll'],[f.d.body,'pointerdown']]){
+    trigger.click();assert.ok(f.d.querySelector('.ts-picker'));node.dispatchEvent(new f.h.Event(event,{bubbles:true}));assert.equal(f.d.querySelector('.ts-picker'),null);
+  }
+  trigger.click();key('Escape');await until(()=>panel.hidden);
+  assert.equal(f.d.querySelector('.ts-picker'),null);
+  await f.open();f.d.querySelector('[data-routing-trigger]').click();panel.querySelector('.mm-return').click();await until(()=>panel.hidden);
+  assert.equal(f.d.querySelector('.ts-picker'),null);
+  await f.unmount();assert.equal(f.d.querySelector('.ts-picker'),null);
+});
+
+
+test('upward Timeline picker uses its rendered height, not its maximum height',async t=>{
+  const f=await fixture(t);await f.open();
+  const trigger=f.d.querySelector('[data-routing-trigger]');
+  trigger.getBoundingClientRect=()=>({left:500,top:600,bottom:644,width:280,height:44});
+  const original=f.h.HTMLElement.prototype.getBoundingClientRect;
+  let renderedHeight=90;
+  f.h.HTMLElement.prototype.getBoundingClientRect=function(){
+    if(this.classList.contains('ts-picker'))return {height:renderedHeight};
+    return original.call(this);
+  };
+  t.after(()=>{f.h.HTMLElement.prototype.getBoundingClientRect=original;});
+  for(const height of [90,180,320]){
+    renderedHeight=height;trigger.click();const popup=f.d.querySelector('.ts-picker');
+    assert.equal(parseFloat(popup.style.top)+height,595,'bottom edge stays five pixels above its trigger');
+    assert.equal(popup.style.maxHeight,'320px');
+    trigger.click();
+  }
+});
+
+test('downward Timeline picker stays attached to its trigger and respects narrow viewport bounds',async t=>{
+  const f=await fixture(t);await f.open();
+  Object.defineProperty(f.h,'innerWidth',{value:390,configurable:true});
+  const trigger=f.d.querySelector('[data-routing-trigger]');
+  trigger.getBoundingClientRect=()=>({left:300,top:100,bottom:144,width:170,height:44});
+  trigger.click();const popup=f.d.querySelector('.ts-picker');
+  assert.equal(popup.style.top,'149px');
+  assert.ok(parseFloat(popup.style.left)>=8);
+  assert.ok(parseFloat(popup.style.left)+parseFloat(popup.style.width)<=382);
+});

@@ -392,10 +392,16 @@ function mountTimeline(extensionAPI, resources) {
       const popup=doc.createElement('div');popup.className='ts-picker';popup.id='meeme-ts-picker-'+(++pickerSerial);popup.setAttribute('role','listbox');popup.setAttribute('aria-label',select.getAttribute('aria-label')||'自动接续到');
       const options=Array.from(select.children),buttons=[];
       options.forEach(option=>{const b=doc.createElement('button');b.type='button';b.tabIndex=-1;b.setAttribute('role','option');b.setAttribute('aria-selected',String(option.value===select.value));b.textContent=option.textContent;b.addEventListener('click',()=>{select.value=option.value;select.dispatchEvent(new host.Event('change',{bubbles:true}));sync();closePicker(true);});popup.appendChild(b);buttons.push(b);});
-      root.appendChild(popup);trigger.setAttribute('aria-expanded','true');trigger.setAttribute('aria-controls',popup.id);picker={popup,trigger};
+      // The Surface lifts the panel's ancestor chain. Keep this floating sibling
+      // in that same layer, above the panel and outside its scrolling/clipping box.
+      popup.style.zIndex=String((Number(host.getComputedStyle(panel).zIndex)||0)+1);
+      panel.parentElement.appendChild(popup);trigger.setAttribute('aria-expanded','true');trigger.setAttribute('aria-controls',popup.id);picker={popup,trigger};
       const rect=trigger.getBoundingClientRect(),v=viewport(),width=Math.min(Math.max(260,rect.width),v.width-16),spaceBelow=v.height-rect.bottom-12,spaceAbove=rect.top-12;
       const below=spaceBelow>=Math.min(240,spaceAbove),height=Math.max(1,Math.min(320,below?spaceBelow:spaceAbove));
-      Object.assign(popup.style,{left:clamp(rect.left,8,Math.max(8,v.width-width-8))+'px',top:(below?rect.bottom+5:Math.max(8,rect.top-height-5))+'px',width:width+'px',maxHeight:height+'px'});
+      Object.assign(popup.style,{left:clamp(rect.left,8,Math.max(8,v.width-width-8))+'px',top:(below?rect.bottom+5:8)+'px',width:width+'px',maxHeight:height+'px'});
+      // maxHeight is only a ceiling: short lists must still meet the trigger.
+      // Measure after width/height constraints so wrapped labels are included.
+      if(!below)popup.style.top=Math.max(8,rect.top-popup.getBoundingClientRect().height-5)+'px';
       let index=fromEnd?buttons.length-1:Math.max(0,options.findIndex(o=>o.value===select.value));
       function focus(i){index=(i+buttons.length)%buttons.length;buttons[index]?.focus();}
       popup.addEventListener('keydown',event=>{if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();focus(event.key==='Home'?0:event.key==='End'?buttons.length-1:index+(event.key==='ArrowDown'?1:-1));}else if(event.key==='Escape'){event.preventDefault();event.stopPropagation();closePicker(true);}else if(event.key==='Tab'){closePicker(true);}});
