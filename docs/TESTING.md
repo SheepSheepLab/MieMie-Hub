@@ -1,6 +1,6 @@
 # Hub 构建、更新与产物兼容验证
 
-当前版本：Hub **0.4.1**（GitHub Pre-release）；组合测试锁定 Polisher **1.1.0**。保留Hub自更新回归，新增生态UI、Registry客户端和Extension Package安装更新测试。
+当前本地候选版本：Hub **0.8.0**，组合产物为 Polisher **1.2.0**，Registry **0.5.0**。未发布；完整结果与人工步骤见 [RC 验收清单](RC-VALIDATION.md)。
 
 ## 独立构建与测试
 
@@ -27,10 +27,10 @@ npm test
 ## 锁定产物组合测试
 
 ```sh
-npm run test:integration -- --polisher /absolute/path/MieMie-Polisher-Extension-1.1.0.json
+npm run test:integration -- --polisher /absolute/path/MieMie-Polisher-Extension-1.2.0.json
 ```
 
-组合测试只引用完整 JSON 产物，不导入另一仓库源码。`tests/integration/artifacts.lock.json` 锁定当前 Hub 与 Polisher 1.1.0 的版本、脚本 ID 和 SHA-256；校验失败时拒绝执行。具体 hash 以该锁定文件为准，每个发布版本都重新计算最终构建字节，不在本文复制会过时的 Hub hash。
+组合测试只引用完整 JSON 产物，不导入另一仓库源码。`tests/integration/artifacts.lock.json` 锁定当前 Hub 与 Polisher 1.2.0 的版本、脚本 ID 和 SHA-256；校验失败时拒绝执行。具体 hash 以该锁定文件为准，每个发布版本都重新计算最终构建字节，不在本文复制会过时的 Hub hash。
 
 JSON 可以是中文本地文件名或 ASCII Release 文件名；校验针对实际字节、版本及脚本 ID。测试不自动寻找兄弟源码目录或下载附件。可以用 `--hub` 和 `--lock` 显式选择另一份已确认的锁定组合。
 
@@ -38,7 +38,7 @@ JSON 可以是中文本地文件名或 ASCII Release 文件名；校验针对实
 
 **自动测试不是实际 GitHub 网络、浏览器 CORS 或真实酒馆验收。** 它也不能验证真实布局、动画、拖动及浏览器是否成功保存恢复文件。
 
-## Ecosystem MVP 黄金路径
+## 历史 Ecosystem MVP 黄金路径（0.4.1 阶段记录）
 
 当前版本 **Hub 0.4.1 / Polisher 1.1.0 / Registry 0.2.1**。原Hub自更新回归仍保留；本阶段不把模拟HTTP或浏览器DOM测试称为真实Discord授权或Tavern验收。
 
@@ -56,7 +56,7 @@ JSON 可以是中文本地文件名或 ASCII Release 文件名；校验针对实
 ## 完整 Package 产物测试
 
 ```sh
-npm run test:ecosystem -- --polisher /path/to/MieMie-Polisher-Extension-1.1.0.json --metadata /path/to/MieMie-Extension-update.json --legacy-polisher /path/to/MieMie-Polisher-Extension-1.0.1.json
+npm run test:ecosystem -- --polisher /path/to/MieMie-Polisher-Extension-1.2.0.json --metadata /path/to/MieMie-Extension-update.json --legacy-polisher /path/to/MieMie-Polisher-Extension-1.0.1.json
 ```
 
 显式读取Hub完整构建JSON、Polisher1.1.0 JSON和metadata以及已发布1.0.1 JSON；不导入另一仓库源码。验证metadata/digest，报告记录每份产物SHA-256。只在模拟宿主中由正式树API触发创建/重载/删除iframe，执行真实构建代码，GitHub响应替身明确为Development Fixture。结果在ignored `test-results/ecosystem.json`。
@@ -119,7 +119,7 @@ MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL=https://registry.sheeps
 node tests/ecosystem/run.mjs --hub build/without-timeline/MieMie-Hub-0.6.0.json \
   --polisher /path/to/MieMie-Polisher-Extension-1.1.3.json \
   --metadata /path/to/MieMie-Extension-update.json \
-  --legacy-polisher /path/to/MieMie-Polisher-Extension-1.1.0.json \
+  --legacy-polisher /path/to/MieMie-Polisher-Extension-1.2.0.json \
   --report test-results/ecosystem-without-timeline.json
 
 MIEMIE_TEST_ARTIFACT=build/without-timeline/MieMie-Hub-0.6.0.json \

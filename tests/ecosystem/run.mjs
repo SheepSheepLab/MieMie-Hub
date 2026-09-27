@@ -11,7 +11,7 @@ const project = fileURLToPath(new URL('../../', import.meta.url));
 const flags = new Map();
 for (let i=2;i<process.argv.length;i+=2) {
   const flag=process.argv[i], value=process.argv[i+1];
-  if (!['--polisher','--metadata','--legacy-polisher','--hub','--report'].includes(flag)||!value||flags.has(flag)) throw Error('Use --polisher <JSON> --metadata <update JSON> --legacy-polisher <published 1.0.1 JSON>.');
+  if (!['--polisher','--metadata','--legacy-polisher','--hub','--report','--legacy-hub','--hub-metadata'].includes(flag)||!value||flags.has(flag)) throw Error('Use --polisher <JSON> --metadata <update JSON> --legacy-polisher <published 1.0.1 JSON>.');
   flags.set(flag,path.resolve(value));
 }
 for (const name of ['--polisher','--metadata','--legacy-polisher']) if (!flags.has(name)) throw Error('Missing '+name);
@@ -25,6 +25,7 @@ assert.match(metadata.version,/^\d+\.\d+\.\d+$/);assert.equal(metadata.productId
 assert.equal(metadata.tag,'v'+metadata.version);assert.equal(metadata.manifest.version,metadata.version);assert.equal(metadata.manifest.id,metadata.productId);assert.equal(metadata.manifest.repository,'https://github.com/SheepSheepLab/MieMie-Polisher');
 const identity=JSON.parse(polisherArtifact.content.split('\n')[0].replace('// MieMie-Extension-Build: ',''));assert.equal(identity.productId,metadata.productId);assert.equal(identity.version,metadata.version);assert.equal(identity.repository,metadata.manifest.repository);assert.equal(identity.scriptId,metadata.scriptId);
 const legacyHashes = {
+  'bd4c78cbf83ddbd586cc7b0b6682c9f04ebd65ba8f12d68ac4aa8f5247577059':'1.1.4',
   'bd7f53b4f51cbea04e73eb658ab807bd6003825360bedef7f5dd7d7e7fa128a1':'1.1.3',
   '32b613a429163aa7067795129df340a4d88611414ed2c401cb02b7e50ff71a1d':'1.1.2',
   '6bab205ab77804c2128c031e0e615295e8661ae978d58700a16da4b8958d4fbc':'1.0.1',
@@ -34,6 +35,16 @@ const legacyVersion = legacyHashes[sha(legacyBytes)];
 assert.ok(legacyVersion,'legacy artifact must be exact published bytes');
 assert.notEqual(metadata.version,legacyVersion);
 const hubIdentity=JSON.parse(hubArtifact.content.split('\n')[0].replace('// MieMie-Hub-Build: ',''));assert.equal(hubIdentity.version,pkg.version);assert.equal(hubIdentity.productId,'miemie.hub');
+// Optional RC upgrade check uses actual public 0.7.0 bytes, never a rebuilt old source.
+assert.equal(flags.has('--legacy-hub'),flags.has('--hub-metadata'),'Hub upgrade requires both old artifact and candidate metadata');
+const oldHubBytes=flags.has('--legacy-hub')?await readFile(flags.get('--legacy-hub')):null;
+const hubMetaBytes=oldHubBytes?await readFile(flags.get('--hub-metadata')):null;
+const oldHubArtifact=oldHubBytes?JSON.parse(oldHubBytes):null,hubMetadata=hubMetaBytes?JSON.parse(hubMetaBytes):null;
+if(oldHubBytes){
+  assert.equal(sha(oldHubBytes),'3629059f7b615ffb88f943ebb708ae06564ff812be2d193c4c18ff7f41bb8248');
+  assert.equal(hubMetadata.version,pkg.version);assert.equal(hubMetadata.asset.sha256,sha(hubBytes));
+  assert.equal(hubMetadata.asset.size,hubBytes.length);assert.equal(hubMetadata.scriptId,hubArtifact.id);
+}
 const timelineIncluded=hubArtifact.content.includes('function createTimelineExtension(');
 function checkTimeline(host){assert.equal(!!host.__timelineSwitcherV1,timelineIncluded);assert.equal(!!host.document.querySelector('#miemie-timeline-extension'),timelineIncluded);}
 const artifacts={hub:{version:pkg.version,sha256:sha(hubBytes)},polisher:{version:metadata.version,sha256:sha(polisherBytes)},metadata:{sha256:sha(metaBytes)},legacyPolisher:{version:legacyVersion,sha256:sha(legacyBytes)}};
@@ -47,14 +58,14 @@ function response(data,url){const r=new Response(data instanceof Uint8Array?data
 const results=[];
 async function check(name,fn){await fn();results.push({name,passed:true});console.log('PASS: '+name);}
 
-async function fixture({legacy=false,cors=false,corrupt=false}={}) {
+async function fixture({legacy=false,cors=false,corrupt=false,oldHub=false}={}) {
   const errors=[],calls=[],backups=[],writes=[],subscriptions=new Set(),frames=new Map(),blobURLs=new Map();
   const vc=new VirtualConsole();vc.on('jsdomError',e=>errors.push(String(e)));vc.on('error',(...e)=>errors.push(e.map(String).join(' ')));
   const dom=new JSDOM('<!doctype html><body><form id="send_form"><textarea id="send_textarea"></textarea><button id="send_but"></button></form></body>',{url:'https://ecosystem-fixture.invalid/',runScripts:'outside-only',virtualConsole:vc});
   const h=dom.window,d=h.document;let serial=0, closing=false, reconcileQueue=Promise.resolve(), registryOffline=false;
   const actualHubId='fixture-user-hub', actualLegacyId='fixture-user-renamed-polisher';
   const other={type:'script',id:'fixture-other-script',enabled:true,name:'Development Fixture other script',content:'window.parent.__fixtureOtherStarts=(window.parent.__fixtureOtherStarts||0)+1;',info:'untouched',button:{enabled:false,buttons:[]},data:{preserve:[1,2,3]},export_with:{data:true,button:true}};
-  const hubScript={...clone(hubArtifact),id:actualHubId,name:'Development Fixture Hub'};
+  const hubScript={...clone(oldHub?oldHubArtifact:hubArtifact),id:actualHubId,name:'Development Fixture Hub'};
   const legacyScript={...clone(legacyArtifact),id:actualLegacyId,name:'User renamed Polisher '+legacyVersion,info:'user custom info',button:{enabled:true,buttons:[{name:'user button',visible:false}]},data:{privateFixtureSetting:{keep:['value',42]}},export_with:{data:false,button:true}};
   let trees=[other,{type:'folder',enabled:true,id:'fixture-folder',name:'User tools folder',icon:'fa-folder',color:'#abcdef',scripts:[hubScript,...(legacy?[legacyScript]:[])]}];
   let diskTrees=clone(trees);
@@ -66,10 +77,24 @@ async function fixture({legacy=false,cors=false,corrupt=false}={}) {
   const ctx={characterId:0,characters:[{avatar:'fixture.png',name:'Development Fixture'}],chatId:'fixture-chat',groupId:null,chat:[{is_user:false,is_system:false,mes:text,swipe_id:0}],eventTypes:Object.fromEntries(events.map(x=>[x,x])),saveChat:async()=>{},stopGeneration(){},getRequestHeaders:()=>({'Content-Type':'application/json'}),loadWorldInfo:async()=>clone(worldbook),saveWorldInfo:async()=>{},reloadWorldInfoEditor(){},mainApi:'openai'};
   h.SillyTavern={getContext:()=>ctx};h.visualViewport=Object.assign(new h.EventTarget(),{width:1024,height:768,offsetLeft:0,offsetTop:0});
   h.localStorage.setItem('meeme_translation_key_v1',JSON.stringify({base:'https://fixture-api.invalid/v1',key:'fixture-not-real-api-key'}));h.localStorage.setItem('meeme_timeline_dock_v1',JSON.stringify({side:'right',ratio:0.4}));h.localStorage.setItem('fixture-other-storage','keep');
+  if(oldHub){
+    h.localStorage.setItem('miemie_hub_shortcuts_v1',JSON.stringify({'miemie.polisher':true}));
+    h.localStorage.setItem('miemie_polisher_dock_v1',JSON.stringify({side:'left',ratio:0.6}));
+  }
   h.Blob=Blob;h.URL.createObjectURL=blob=>{const url='blob:https://ecosystem-fixture.invalid/'+(++serial);blobURLs.set(url,blob);return url;};h.URL.revokeObjectURL=url=>blobURLs.delete(url);h.HTMLAnchorElement.prototype.click=function(){backups.push({name:this.download,blob:blobURLs.get(this.href)});};h.confirm=()=>true;h.alert=message=>errors.push('alert: '+message);
   function block(scope){scope.XMLHttpRequest.prototype.send=()=>{throw Error('Real XHR forbidden');};scope.WebSocket=class{constructor(){throw Error('Real websocket forbidden');}};scope.EventSource=class{constructor(){throw Error('Real EventSource forbidden');}};scope.navigator.sendBeacon=()=>{throw Error('Real beacon forbidden');};}
   async function fetchMock(url,init={}) {
     url=String(url);calls.push({url,method:init.method,headers:clone(init.headers||{}),body:init.body});
+    const hubAPI='https://api.github.com/repos/SheepSheepLab/MieMie-Hub';
+    if(oldHub&&url.startsWith(hubAPI)){
+      const hubAsset=(id,name,bytes)=>({id,name,state:'uploaded',size:bytes.length,digest:'sha256:'+sha(bytes),url:hubAPI+'/releases/assets/'+id,browser_download_url:'https://github.com/SheepSheepLab/MieMie-Hub/releases/download/'+hubMetadata.tag+'/'+name});
+      const hubRelease={id:72001,tag_name:hubMetadata.tag,draft:false,prerelease:false,assets:[hubAsset(72002,hubMetadata.asset.name,hubBytes),hubAsset(72003,'MieMie-Hub-update.json',hubMetaBytes)]};
+      if(url===hubAPI)return response({private:false,full_name:'SheepSheepLab/MieMie-Hub'},url);
+      if(url===hubAPI+'/releases?per_page=100&page=1')return response([hubRelease],url);
+      if(url===hubAPI+'/releases/72001')return response(hubRelease,url);
+      if(url===hubAPI+'/releases/assets/72002')return response(hubBytes,url);
+      if(url===hubAPI+'/releases/assets/72003')return response(hubMetaBytes,url);
+    }
     if(url.startsWith(repoAPI)) {
       assert.equal(init.credentials,'omit');assert.equal(init.referrerPolicy,'no-referrer');assert.equal(init.mode,'cors');assert.equal(init.body,undefined);assert.equal(init.headers.Authorization,undefined);
       if(url===repoAPI)return response({private:false,full_name:'SheepSheepLab/MieMie-Polisher'},url);
@@ -254,10 +279,44 @@ try {
     await until(()=>bad.q('[data-hub-panel="extension-center"]').textContent.includes('digest 校验失败'),'integrity error');assert.equal(bad.installed(),undefined);assert.equal(bad.writes.length,0);assert.equal(bad.backups.length,0);assert.equal(bad.h.__MieMieHub.extensions.get('miemie.polisher'),null);assert.deepEqual(bad.trees()[0],bad.other);
   });
   await bad.close();activeFixture=null;
+  if(oldHubBytes){
+    const upgrade=activeFixture=await fixture({legacy:true,oldHub:true});
+    await check('public Hub 0.7.0 recognizes the candidate through its real updater',async()=>{
+      assert.equal(upgrade.h.__MieMieHub.version,'0.7.0');
+      await upgrade.h.__MieMieHub.open();upgrade.click('[data-hub-app="settings"]');await tick();
+      upgrade.click('[data-hub-action="check-updates"]');
+      await until(()=>upgrade.q('[data-hub-action="update"]')?.disabled===false,'Hub candidate update offered');
+    });
+    await check('real Hub self-update preserves host instance, business data, dock and Shortcut preference',async()=>{
+      const vars=JSON.stringify(upgrade.vars),installed=clone(upgrade.installed());
+      const keys=['meeme_timeline_dock_v1','miemie_polisher_dock_v1','miemie_hub_shortcuts_v1','meeme_translation_key_v1'];
+      const saved=keys.map(key=>upgrade.h.localStorage.getItem(key));
+      const extensionState=JSON.parse(upgrade.h.localStorage.getItem('miemie_hub_extensions_v1'));
+      upgrade.click('[data-hub-action="update"]');
+      await until(()=>upgrade.h.__MieMieHub?.version===pkg.version,'candidate Hub restarted',15000);
+      await upgrade.h.__MieMieHub.ready;await upgrade.drain();
+      const current=upgrade.trees()[1].scripts.find(s=>s.id===upgrade.actualHubId);
+      assert.equal(current.content,hubArtifact.content);assert.equal(current.id,upgrade.actualHubId);
+      assert.equal(JSON.stringify(upgrade.vars),vars);assert.deepEqual(upgrade.installed(),installed);
+      assert.deepEqual(keys.map(key=>upgrade.h.localStorage.getItem(key)),saved);
+      assert.equal(upgrade.h.__MieMieHub.extensions.get('miemie.polisher').enabled,true);
+      assert.deepEqual(JSON.parse(upgrade.h.localStorage.getItem('miemie_hub_extensions_v1')),extensionState);
+      assert.deepEqual(upgrade.trees()[0],upgrade.other);
+    });
+    await check('upgraded Hub reload keeps one runtime, one Polisher panel and readable legacy state',async()=>{
+      await upgrade.reloadFromDisk();assert.equal(upgrade.h.__MieMieHub.version,pkg.version);
+      assert.equal(upgrade.d.querySelectorAll('#miemie-hub-shell').length,1);
+      assert.equal(upgrade.d.querySelectorAll('#meeme-translation').length,1);
+      assert.equal(upgrade.vars.meeme_translation_v1.cards['fixture.png'].polishRules,'Fixture rules');
+      assert.equal(upgrade.h.localStorage.getItem('fixture-other-storage'),'keep');
+    });
+    await upgrade.close();activeFixture=null;
+  }
 } catch(error) {
   results.push({passed:false,error:error.stack||String(error)});
   if(activeFixture)try{await activeFixture.close();}catch(cleanup){results.push({passed:false,error:'Cleanup: '+cleanup.stack});}
 }
+if(oldHubBytes)artifacts.legacyHub={version:'0.7.0',sha256:sha(oldHubBytes)};
 const report={environment:'Development Fixture: Node.js + jsdom; complete built artifacts, mocked official host APIs and author GitHub; no real browser/CORS/OAuth proof',artifacts,passed:results.filter(x=>x.passed).length,failed:results.filter(x=>!x.passed).length,checks:results};
 await mkdir(path.join(project,'test-results'),{recursive:true});await writeFile(flags.get('--report')||path.join(project,'test-results/ecosystem.json'),JSON.stringify(report,null,2)+'\n');
 if(report.failed){console.error(results.filter(x=>!x.passed));process.exitCode=1;}else console.log('PASS: '+report.passed+' ecosystem artifact golden-path checks.');
