@@ -6,13 +6,13 @@
       "version": "0.7.0",
       "filename": "MieMie-Hub-0.7.0.json",
       "scriptId": "e85cd9a3-6352-4b23-938a-6c94d826b4d3",
-      "sha256": "ef7ed792d5515be1d914a57f6b673ef1c7f49698d55b371d3929890d1bc289c3"
+      "sha256": "d4ee3856b435a09fa98104a27c375b0aae536dd5f81d9327674b7eadf39e6330"
     },
     "polisher": {
       "version": "1.1.4",
       "filename": "MieMie-Polisher-Extension-1.1.4.json",
       "scriptId": "4dd658f1-9d4b-4f74-bba8-305c4ef2a9c8",
-      "sha256": "e62e12ef4b17dbb1a7bd34dcfbf8c1cdfbfb2a49419bec60f2c37b1e29d747d2"
+      "sha256": "243f2e57b973a4b943a3ea1d2844c4ba4c34bee7e8a12ec7eb97aeb0db3ba3cb"
     }
   }
 }

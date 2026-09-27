@@ -75,10 +75,10 @@ export function createExtensionRuntime(options = {}) {
     session.closed = true;
     session.controller.abort();
     try { options.onClose?.(record.manifest.id); } catch (_) {}
-    if (typeof session.instance?.deactivate === 'function') {
-      try { await bounded(() => session.instance.deactivate(), '停用'); }
-      catch (error) { report(record, '停用', error); }
-    }
+    try {
+      // Reading an Extension-owned lifecycle property can itself throw.
+      if (typeof session.instance?.deactivate === 'function') await bounded(() => session.instance.deactivate(), '停用');
+    } catch (error) { report(record, '停用', error); }
     // A failed disposer does not prevent the remaining disposers from running.
     for (const fn of session.cleanups.splice(0).reverse()) await cleanOne(record, fn);
   }
