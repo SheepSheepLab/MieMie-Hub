@@ -26,7 +26,7 @@ Bundled 是发行方式，Official 是独立的扩展身份；两者不合并成
 - 设置继续由 Extension 通过 Tavern Helper 变量 `timeline_switcher_v2` 保存。世界书仍归酒馆。停用、开发者 Runtime 生命周期测试和不含时间线的架构测试包均不清空这些数据。
 - Hub 的 `meeme_timeline_dock_v1` 是历史遗留的**主球位置**键；为保留用户位置仍沿用，里面没有时间线业务数据。
 
-Settings 只操作 Hub 版本、自更新及高级 Registry 配置。没有迁入时间线或 Polisher 的设置。
+Settings 只展示 Hub 版本、自更新及当前 Registry 服务信息；高级配置不再作为用户入口。没有迁入时间线或 Polisher 的设置。
 
 ## 发行声明与生命周期
 

@@ -27,7 +27,7 @@ Registry 不是软件文件的权威来源，也不是普通 URL 代理。未收
 
 1. 手动导入 Hub 0.3.2，停用旧 Hub，避免两个实例。
 2. 启动或部署 Registry 0.1.2。只验证下载不需要 Discord OAuth Client ID / Secret，也不需要登录。
-3. Registry 的 `CORS_ORIGINS` 必须精确包含酒馆地址的协议、主机、端口。本机测试时在 Hub「设置 → 高级 / 开发者选项」展开并保存此服务根地址；普通用户使用生产构建内置地址，无需配置。默认本地服务为 `http://127.0.0.1:8787`；其他设备访问时需可达的 HTTPS 部署。
+3. Registry 的 `CORS_ORIGINS` 必须精确包含酒馆地址的协议、主机、端口。本机测试时通过 `MIEMIE_DEFAULT_REGISTRY_URL` 构建参数配置此服务根地址；普通用户使用生产构建内置地址，无需配置。默认本地服务为 `http://127.0.0.1:8787`；其他设备访问时需可达的 HTTPS 部署。
 4. 在“从作者 GitHub 查看安装兼容性”输入 `https://github.com/SheepSheepLab/MieMie-Polisher`，预览应显示可安装版本和作者来源。确保没有重复 Polisher 后安装；不手动导入 Polisher JSON。
 5. 已安装旧 Polisher 的用户检查更新，保存请求下载的恢复文件，更新后核对实例、设置、Key、Prompt 和其他扩展。不要为了测试删除现有用户数据。
 6. 停掉 Registry 后重复预览应明确失败，Hub、时间线和本地扩展仍可用。

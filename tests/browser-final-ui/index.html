@@ -1,0 +1,40 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Hub Final UI · 本地验收</title>
+<style>body{margin:0;background:#17151f;color:#d6cdda;font:16px/1.8 system-ui}main{max-width:760px;margin:90px auto;padding:24px}body>header{position:fixed;top:0;left:0;right:0;padding:12px;background:#242030;display:flex;gap:12px;flex-wrap:wrap;z-index:1}body>header button,body>header select{font:inherit;border:1px solid #756485;border-radius:8px;background:#362943;color:inherit;padding:6px 12px}article{border:1px solid #494054;border-radius:16px;margin:24px 0;padding:24px;background:#24202d}small{color:#aa9db8}iframe{display:none}</style>
+<header><button id="open">打开 Hub</button><a href="/?mode=hub">Hub 模式</a><a href="/?mode=standalone">独立润色</a><label>测试应用 <select id="count"><option>5</option><option selected>20</option><option>50</option></select></label><small id="review-status"></small><small>真实 Hub 构建 · 模拟宿主 / 目录 · 无生产写入</small></header>
+<main><small>LOCAL VISUAL REVIEW / FINAL UI v1</small><h1>故事还在继续。</h1><p>这是用于检查背景压暗、模糊及手机布局的模拟聊天页面。浮层和面板来自本轮实际构建，没有另一份 UI 实现。</p><article><small>你 · 刚刚</small><p>夜色渐深，城中的灯光依次亮起。打开工具，继续整理今天的故事。</p></article><article><small>角色</small><p>风掠过窗边，桌上的书页轻轻翻动。他停下笔，望向远处微紫的天空。</p></article><article><p>滚动底层页面仍然使用浏览器原生行为。打开 Hub 后，上下滑动浏览更多扩展；点击主图标收起。</p></article></main>
+<script>
+window.SillyTavern={getContext:()=>({characterId:null,characters:[],chat:[],eventTypes:Object.fromEntries(['GENERATION_STARTED','GENERATION_ENDED','GENERATION_AFTER_COMMANDS','GENERATION_STOPPED','CHAT_CHANGED','CHAT_COMPLETION_SETTINGS_READY','MESSAGE_SWIPED','MESSAGE_EDITED','MESSAGE_DELETED','MESSAGE_UPDATED'].map(x=>[x,x]))})};
+localStorage.setItem('miemie_registry_url_v1',location.origin);
+// Local OAuth stand-in only: no Discord window or real credentials.
+const originalOpen=window.open.bind(window);window.open=(url,name,...rest)=>name==='miemie-registry-login'?{closed:false,location:{href:''},close(){this.closed=true;}}:originalOpen(url,name,...rest);
+const profile={displayName:'本地测试账号',avatarUrl:'/api/avatars/fixture'};
+const demoNames=['咩咩润色工具','Timeline','Community Test A','Community Test B'];
+window.mockFetch=async(input,options={})=>{
+ const path=new URL(input,location.href).pathname;
+ if(path==='/api/auth/start')return Response.json({requestId:'local-fixture',authorizationUrl:location.origin+'/api/auth/authorize?requestId=local-fixture',handoff:'poll-v1'});
+ if(path==='/api/auth/complete')return Response.json({token:'local-fixture-only',profile,expiresAt:new Date(Date.now()+3600000).toISOString()});
+ if(path==='/api/me')return Response.json({profile,banned:false,isAdmin:false,canSubmit:true});
+ if(path==='/api/auth/logout')return Response.json({ok:true});
+ if(path==='/api/submissions')return Response.json({items:[]});
+ if(path==='/api/discord/verify'){
+   const url=new URL(input,location.href).searchParams.get('url');
+   if(!/^https:\/\/discord\.com\/channels\/\d{15,22}\/\d{15,22}(?:\/\d{15,22})?$/.test(url))return Response.json({error:{message:'请输入有效 Discord 原帖链接'}},{status:400});
+   return Response.json({member:true,sourceUrl:url,guild:{id:url.split('/')[4],name:'咩咩社区 · 本地模拟验证',iconUrl:location.origin+'/api/avatars/fixture'}});
+ }
+ if(path==='/api/catalog')return Response.json({items:demoNames.map((name,i)=>({id:'visual.'+i,name,author:i<2?'SheepSheep':'社区作者',description:['保持原意，精细润色每一段文字。','在不同故事时间线之间自由切换。','随手记录你的灵感与角色设定。','让每一段对话更有层次。'][i],version:'1.0.0',classification:i<2?'official':'community',sourceType:'github',sourceUrl:'https://github.com/example/visual-fixture',discordUrl:i===0?'https://discord.com/channels/111111111111111111/222222222222222222':null,submitter:{displayName:'测试投稿者',avatarUrl:'/api/avatars/fixture'},type:'tavern_extension',distribution:i===0?'managed_install':'external_release',github:i===0?{compatibility:'installable',manifest:{id:'visual.app.0'}}:undefined})),hasMore:false});
+ throw Error('本地视觉检查不访问真实服务：'+path);
+};
+const frame=document.createElement('iframe');document.body.append(frame);
+const scope=frame.contentWindow;scope.fetch=window.mockFetch;scope.getCharWorldbookNames=()=>({primary:'',additional:[]});scope.getVariables=()=>({});scope.replaceVariables=()=>{};scope.eventOn=()=>({stop(){}});
+const standalone=new URLSearchParams(location.search).get('mode')==='standalone';
+function loadPolisher(){const f=document.createElement('iframe');document.body.append(f);const w=f.contentWindow;w.getVariables=()=>({});w.replaceVariables=()=>{};w.eventOn=()=>({stop(){}});w.setChatMessages=async()=>{};w.fetch=window.mockFetch;const s=w.document.createElement('script');s.src='/build/miemie-polisher.js';s.onerror=()=>document.querySelector('#review-status').textContent='未指定或无法加载 Polisher 构建';s.onload=async()=>{await window.__MieMiePolisherSource?.ready;const record=window.__MieMieHub?.extensions.get('miemie.polisher');document.querySelector('#review-status').textContent='Polisher: '+(record?.error||window.__MieMiePolisherSource?.mode||'unavailable')+' · '+(record?.state||'standalone');};w.document.body.append(s);}
+const script=scope.document.createElement('script');script.src='/build/miemie-hub.js';if(standalone){document.querySelector('#open').disabled=true;loadPolisher();}else scope.document.body.append(script);
+script.onload=async()=>{
+ await window.__MieMieHub.ready;let leases=[];
+ async function populate(){for(const lease of leases)await lease.release();leases=[];for(let i=0;i<Number(document.querySelector('#count').value);i++){
+  const name=['灵感笔记','世界书','角色档案','场景卡片','对话归档','故事导演'][i%6];
+  const lease=window.__MieMieHub.extensions.provide({schemaVersion:1,apiVersion:1,id:'visual.app.'+i,name,version:'1.0.0',contributes:{launcher:{title:name+' '+(i+1),icon:['✧','▤','◎','◈','☷','▶'][i%6]}}},api=>({open(){api.showMessage('此面板通过正式 Extension API 打开。这里只使用本地测试数据。');}}));leases.push(lease);await lease.ready;
+ } }
+ document.querySelector('#count').onchange=populate;document.querySelector('#open').onclick=()=>window.__MieMieHub.open();await populate();loadPolisher();await window.__MieMieHub.open();
+};
+</script></html>

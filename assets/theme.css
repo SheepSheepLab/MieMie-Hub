@@ -1,0 +1,57 @@
+/* Core visual tokens; no protocol or Extension branding overrides. */
+#miemie-hub-shell{
+ --mie-z-surface:2147483500;--mie-motion-hero:760ms;--mie-blur-hero:14px;--mie-hero-backdrop:#201332b8;--mie-ease-hero:cubic-bezier(.4,0,.2,1);
+ --mie-bg:#0b0814;--mie-surface:#171124;--mie-surface-strong:#211832;--mie-text:#f3edff;--mie-text-muted:#b5a8cd;
+ --mie-accent:#b495ff;--mie-highlight:#91dded;--mie-border:#aa80f238;--mie-glow:0 0 24px #a56aff38;
+ --mie-radius:16px;--mie-blur:12px;--mie-shadow:0 24px 80px #0009;
+ --mie-space-1:4px;--mie-space-2:8px;--mie-space-3:12px;--mie-space-4:16px;--mie-space-5:24px;--mie-space-6:32px;
+ --mie-gap:12px;--mie-control-height:44px;--mie-motion-fast:160ms;--mie-motion-normal:420ms;
+ --mie-motion-surface-open:520ms;--mie-motion-surface-close:460ms;--mie-ease-surface:cubic-bezier(.32,.72,0,1);
+ /* Skin surfaces and semantic states. Geometry stays in the component styles. */
+ --mie-panel-fill:linear-gradient(135deg,#1e142cf5,#0e0c19fa);
+ --mie-panel-glow:0 0 40px #9254df12;
+ --mie-header-fill:#23153080;
+ --mie-card-fill:linear-gradient(115deg,#2b1e3b7a,#1a142580);
+ --mie-control-fill:linear-gradient(145deg,#37234e,#211632);
+ --mie-control-active:#493363;
+ --mie-sidebar-fill:#110d1c80;
+ --mie-selected-fill:#8561bd26;
+ --mie-selected-border:#b28ade65;
+ --mie-selected-text:#e3cdff;
+ --mie-error:#ffc7d3;
+ --mie-description:#d2c6e1;
+ --mie-icon-fill:#322644;
+ --mie-badge-fill:#b58bff16;
+ --mie-badge-border:#a782de45;
+ --mie-badge-text:#d9c2ff;
+ --mie-official-fill:#b586e92b;
+ --mie-official-border:#dcaff36b;
+ --mie-official-text:#f0d7ff;
+ --mie-success-fill:#90bc9c12;
+ --mie-success-border:#9acbac35;
+ --mie-success-text:#b5d8c2;
+ --mie-account-fill:#a57ddd20;
+ --mie-account-border:#b48ee238;
+ --mie-account-text:#d7c5f8;
+ --mie-launcher-overlay:radial-gradient(ellipse at center,#26113780,#090613bd);
+ --mie-app-fill:radial-gradient(circle at 30% 18%,#634c85,#34204f 65%,#231332);
+ --mie-settings-icon-fill:radial-gradient(circle at 30% 18%,#606887,#2c304f 65%,#181a30);
+ --mie-app-border:#c8acff82;
+ --mie-app-shadow:inset 0 1px 8px #e1cfff30,0 8px 22px #0006,0 0 0 4px #b486ff09;
+ --mie-app-hover-shadow:0 0 32px #caa8ff59,0 12px 24px #0005;
+ --mie-app-hover-border:#dbc6ff;
+ --mie-app-ring:#caa8ff;
+ --mie-orb-fill:radial-gradient(circle at 35% 25%,#493263,#180c2b);
+ --mie-orb-border:#bb94ff9c;
+ --mie-orb-shadow:0 0 0 5px #9c68ec16,0 0 20px #9263d942,0 6px 18px #0006;
+ --mie-orb-launcher-shadow:0 0 0 5px #ab77ff20,0 0 0 9px #b68cff10,0 0 36px #9b62ec45;
+ --mie-back-fill:#29183d;
+ --mie-back-system-fill:#24182f;
+ --mie-back-border:#9970c2;
+ --mie-back-text:#eee4fa;
+ --mie-radius-control:12px;--mie-font-body:14px;--mie-font-small:13px;--mie-font-heading:17px;
+ --mie-motion-hover:350ms;--mie-motion-highlight:250ms;--mie-motion-shadow:300ms;--mie-ease-hover:cubic-bezier(.2,1.5,.4,1);
+ --mie-hover-lift:-5px;--mie-hover-scale:1.11;--mie-press-scale:.95;
+ --mie-safe-top:env(safe-area-inset-top,0px);--mie-safe-bottom:env(safe-area-inset-bottom,0px);--mie-safe-left:env(safe-area-inset-left,0px);--mie-safe-right:env(safe-area-inset-right,0px);
+ color-scheme:dark;
+}

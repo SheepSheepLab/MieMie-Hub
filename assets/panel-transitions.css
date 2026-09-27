@@ -1,0 +1,2 @@
+:is(#miemie-hub-shell,.miemie-extension-surface) .mm-return{position:sticky;bottom:0;display:block;width:100%;margin:12px 0 0;min-height:var(--mie-control-height,44px);flex-shrink:0;background:var(--mie-back-fill,#29183d);border:1px solid var(--mm-palette-40,var(--mie-back-border,#9970c2));color:var(--mie-back-text,#eee4fa);border-radius:10px;padding:10px 12px;font:inherit;cursor:pointer;z-index:3}
+#miemie-hub-shell [data-close]{display:none!important}

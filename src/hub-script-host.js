@@ -85,6 +85,7 @@ function hubHostValidateTree(trees) {
 function hubHostCandidate(script) {
   return script.id === hubHostPackageId
     || script.content.startsWith('// MieMie-Hub-Build:')
+    // Historical script header recognition, not current UI copy.
     || /^\/\/ 咩咩Hub(?:\s|$)/.test(script.content);
 }
 

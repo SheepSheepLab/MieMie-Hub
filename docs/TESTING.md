@@ -47,7 +47,7 @@ JSON 可以是中文本地文件名或 ASCII Release 文件名；校验针对实
 - C：Hub首页只有扩展中心管理入口，内部发现/已安装/我的；Registry离线仍可使用时间线和本地工具。
 - D：确保没有重复Polisher条目，在发现选已配置Catalog项目，或使用作者GitHub直接预览入口，点击安装；不手工导入JSON。作者仓库为SheepSheepLab/MieMie-Polisher，机器校验全部通过才执行。
 - E：已发布1.0.1作为旧基线，本轮可测试原位更新至1.1.0并验证双模式及原设置保留。尚无修正版Icon，因此新Icon验收延期，不伪造1.0.2。
-- F：按Registry部署说明配置真实Discord应用，使用我的登录，分别提交GitHub/Discord项目，核对作者与投稿者、公开资料与来源。
+- F：按Registry部署说明配置真实Discord应用，使用扩展中心标题栏登录，分别提交GitHub/Discord项目，核对作者与投稿者、公开资料与来源。
 - G：同一身份编辑、下架、重新上架；发现同步变化、我的保留；已安装代码不远程停用。
 - H：修改Discord显示名/头像后重新登录，资料更新而旧投稿仍归同一身份。
 
@@ -90,7 +90,7 @@ node tests/browser-download/run.mjs --serve
 
 ## 生产形态回归（0.4.1）
 
-构建测试区分 development / production：生产缺地址、示例域名、本机地址、非 HTTPS 或带凭据的地址全部拒绝。普通扩展中心不含服务地址或保存配置控件；内置地址直接读取发现及进入 Discord 登录。设置页高级选项默认折叠，仅创建一次，旧覆盖偏好保留、留空恢复默认值，teardown 清理按钮处理器。真实公网部署和 Discord 授权仍需要维护者提供实际 HTTPS 地址及服务端私有凭据；测试 URL 是 Fixture，不宣称服务已上线。
+构建测试区分 development / production：生产缺地址、示例域名、本机地址、非 HTTPS 或带凭据的地址全部拒绝。普通扩展中心不含服务地址或保存配置控件；内置地址直接读取发现及进入 Discord 登录。设置页不再挂载高级选项；开发配置 helper 仍有独立测试，旧覆盖偏好保留。Final UI 测试确认标题栏账号、侧栏导航与蜂窝事件 teardown。真实公网部署和 Discord 授权仍需要维护者提供实际 HTTPS 地址及服务端私有凭据；测试 URL 是 Fixture，不宣称服务已上线。
 
 ## 0.6.0 Core Purification 验证
 

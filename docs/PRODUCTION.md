@@ -18,6 +18,6 @@ production 模式要求真实域名 HTTPS 根地址；空值、凭据、路径�
 
 ## 可选覆盖
 
-自定义服务仅位于 **设置 → 高级 / 开发者选项**，默认折叠。保存 HTTPS 地址（本机可 HTTP）覆盖构建默认值；留空保存恢复默认值。历史 `miemie_registry_url_v1` 偏好继续沿用，不迁移或删除用户现有配置。切换服务会退出当前登录，防止原服务的 Session 发往其他地址。
+用户设置不再显示高级配置入口。开发者使用 `MIEMIE_DEFAULT_REGISTRY_URL` 配置 HTTPS 服务地址（development 构建允许本机 HTTP）。历史 `miemie_registry_url_v1` 偏好继续沿用，不迁移或删除用户现有配置。切换服务会退出当前登录，防止原服务的 Session 发往其他地址。
 
 登录会话只在当前 Hub 内存中，退出登录或 Hub 重载后清除；Registry 的 OAuth Token、Discord 私人 ID 和管理员白名单不下发给 Hub。恢复默认服务不会改变已安装 Extension、Polisher 设置、时间线或 Hub 自更新逻辑。

@@ -31,14 +31,14 @@ if (process.env.MIEMIE_DEFAULT_REGISTRY_URL) {
   if (buildMode === 'production' && (loopback || placeholder || /^[\d.]+$/.test(url.hostname) || url.hostname.startsWith('[') || !url.hostname.includes('.'))) throw Error('生产构建必须配置真实官方 HTTPS Registry 域名，不能使用示例或本机地址。');
   defaultRegistry = url.origin;
 }
+const {HUB_PRODUCT} = await import('../src/product-identity.js');
 const icons = {home: 'data:image/png;base64,' + (await readFile(path.join(project, 'assets/hub.png'))).toString('base64')};
 const assets = {
   icons,
-  shellStyles: await read('assets/shell.css'),
-  menuStyles: await read('assets/legacy-menu.css'),
+  shellStyles: (await read('assets/theme.css')) + '\n' + (await read('assets/shell.css')),
+  menuStyles: (await read('assets/launcher.css')) + '\n' + (await read('assets/panel-transitions.css')),
   hubStyles: await read('assets/hub-panels.css'),
   orbHTML: (await read('assets/orb.html')).replace(' src="__HUB_ICON__"', ''),
-  effectsHTML: await read('assets/effects.html'),
 };
 // Build-only assembly; Core has no imports or identifiers for specific bundles.
 const bundled = [], bundledSources = [], seen = new Set();
@@ -68,19 +68,18 @@ for (const entry of JSON.parse(await read('packaging/bundled-extensions.json')))
 }
 if (selected && [...selected].some(id => !seen.has(id))) throw Error('Unknown bundled Extension ID.');
 const functions = [];
-for (const file of ['src/extension-runtime.js', 'src/hub-root.js', 'src/hub-update-check.js', 'src/script-update-fields.js', 'src/hub-script-host.js', 'src/hub-self-update.js', 'src/registry-client.js', 'src/extension-packages.js', 'src/extension-center.js', 'src/registry-settings.js', 'src/hub-ui.js', 'src/bundled-extensions.js']) {
+for (const file of ['src/product-identity.js', 'src/ui-copy.js', 'src/motion-tuning.js', 'src/honeycomb-launcher.js', 'src/surface-motion.js', 'src/surface-controller.js', 'src/shortcut-launchers.js', 'src/extension-runtime.js', 'src/hub-root.js', 'src/hub-update-check.js', 'src/script-update-fields.js', 'src/hub-script-host.js', 'src/hub-self-update.js', 'src/registry-client.js', 'src/extension-packages.js', 'src/extension-center.js', 'src/hub-ui.js', 'src/bundled-extensions.js']) {
   let source = (await read(file)).replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
-  if (file === 'src/hub-ui.js') source = source.replace('/* LEGACY_ANIMATIONS */', await read('src/legacy-animations.inc.js'));
   functions.push(source);
 }
 const content = [
   '// MieMie-Hub-Build: ' + JSON.stringify(identity),
-  '// 咩咩Hub ' + pkg.version + ' · Hub 自更新 / 基于咩咩工具箱 1.0.1',
+  '// ' + HUB_PRODUCT.name + ' ' + pkg.version + ' · Hub 自更新 / 基于咩咩工具箱 1.0.1',
   '(() => {',
   "'use strict';",
   'const h=window.parent;',
   'if(h.__MieMieHub){h.__MieMieHub.open();return;}',
-  "if(h.__meemeCombinedUI||(h.__meemeTranslation01&&!h.__MieMiePolisherSource)){h.alert('请先停用旧咩咩工具箱或旧版独立脚本并刷新，再启用咩咩Hub。原有设置会沿用。');return;}",
+  "if(h.__meemeCombinedUI||(h.__meemeTranslation01&&!h.__MieMiePolisherSource)){h.alert(" + JSON.stringify('请先停用旧咩咩工具箱或旧版独立脚本并刷新，再启用' + HUB_PRODUCT.name + '。原有设置会沿用。') + ");return;}",
   'const HUB_VERSION=' + JSON.stringify(pkg.version) + ';',
   'const HUB_BUILD_MODE=' + JSON.stringify(buildMode) + ';',
   'const HUB_DEFAULT_REGISTRY_URL=' + JSON.stringify(defaultRegistry) + ';',
@@ -93,14 +92,14 @@ const content = [
   '})();\n',
 ].join('\n');
 new vm.Script(content, {filename: 'miemie-hub.js'});
-data.name = '咩咩Hub ' + pkg.version;
-data.info = '包含固定设置、扩展中心及按发行配置加载的随包扩展；润色请另行导入独立扩展。首次从旧版本升级需手动导入并停用旧 Hub。设置可查询官方 GitHub Release；全局脚本支持校验后就地更新自身。浏览器 CORS 或宿主校验失败时拒绝安装；请保留更新前请求下载的恢复文件。扩展中心支持 Catalog、Discord 投稿管理和作者 GitHub Package 安装更新；在线服务地址可由构建预设，开发测试可在高级设置覆盖。';
+data.name = HUB_PRODUCT.name + ' ' + pkg.version;
+data.info = '包含固定设置、扩展中心及按发行配置加载的随包扩展；润色请另行导入独立扩展。首次从旧版本升级需手动导入并停用旧 Hub。设置可查询官方 GitHub Release；全局脚本支持校验后就地更新自身。浏览器 CORS 或宿主校验失败时拒绝安装；请保留更新前请求下载的恢复文件。扩展中心支持 Catalog、Discord 投稿管理和作者 GitHub Package 安装更新；在线服务地址可由构建预设，开发测试通过构建参数配置。';
 data.content = content;
 await mkdir(output, {recursive: true});
 await writeFile(path.join(output, 'miemie-hub.js'), content);
 const bytes = Buffer.from(JSON.stringify(data, null, 2) + '\n');
 const assetName = 'MieMie-Hub-' + pkg.version + '.json';
-await writeFile(path.join(output, '咩咩Hub-' + pkg.version + '.json'), bytes);
+await writeFile(path.join(output, HUB_PRODUCT.name + '-' + pkg.version + '.json'), bytes);
 await writeFile(path.join(output, assetName), bytes);
 const hash = value => createHash('sha256').update(value).digest('hex');
 const update = {schemaVersion: 1, productId: identity.productId, version: pkg.version, tag: 'v' + pkg.version,
