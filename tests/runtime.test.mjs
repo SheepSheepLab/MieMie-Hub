@@ -363,3 +363,12 @@ test('custom panel is session-scoped and detached after activation failure or di
   assert.equal((await runtime.enable('test.failpanel')).ok,false);assert.equal(detached,3);
   await runtime.dispose();
 });
+
+test('closePanel is session-bound, optional and does not deactivate or expose runtime state',async t=>{
+ const calls=[],apis=[];let cleaned=0;
+ const r=createExtensionRuntime({onPanel:()=>()=>cleaned++,onShowPanel:id=>{calls.push('show:'+id);return true;},onClosePanel:id=>{calls.push('close:'+id);return Promise.resolve(true);}});t.after(()=>r.dispose());
+ for(const id of ['test.surface.a','test.surface.b']){r.register(manifest(id),api=>{apis.push(api);return {activate(){api.attachPanel({});},open(){return api.showPanel();}};});await r.enable(id);}
+ assert.ok(Object.isFrozen(apis[0]));await apis[0].closePanel('test.surface.b');assert.equal(calls.at(-1),'close:test.surface.a');assert.equal(cleaned,0);assert.equal(r.get('test.surface.a').enabled,true);
+ await r.disable('test.surface.a');assert.equal(apis[0].closePanel(),false);assert.equal(cleaned,1);assert.equal(await apis[1].closePanel(),true);
+ assert.deepEqual(Object.keys(apis[1]).sort(),['attachPanel','closePanel','guard','manifest','onCleanup','registerShortcutLauncher','showMessage','showPanel','signal'].sort());
+});

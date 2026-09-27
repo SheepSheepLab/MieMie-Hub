@@ -12,7 +12,7 @@ Hub 0.4.1、Polisher 1.1.0、Registry 0.2.1 独立安装依赖、构建、测试
 
 ## 目录与身份
 
-扩展中心三个分页：发现永远是普通用户视角；已安装管理本机实例；我的才提供登录、投稿和管理。Author是作品作者文本；Submitter是Discord OAuth确认的投稿者，不等于经过认证的作者。
+扩展中心三个分页：发现永远是普通用户视角；已安装管理本机实例；我的提供投稿和管理；登录和账号状态常驻标题栏右上角。Author是作品作者文本；Submitter是Discord OAuth确认的投稿者，不等于经过认证的作者。
 
 Registry仅使用Discord `identify guilds`（不读取消息），内部以不可变Snowflake绑定所有权，重新登录同步Display Name/Username/Avatar。公开资料不返回用户ID、邮箱、OAuth Token、Guild 列表或管理员名单。即使Display Name同名也不能管理别人的投稿。
 
@@ -46,4 +46,4 @@ GitHub API 与 Release 是权威来源。Extension 附件直连被 CORS 拦截�
 
 Registry需要Node24+。在Registry目录`npm ci`后`npm start`可以读取空Catalog；没有Discord凭据时登录清楚返回未配置，不提供假登录后门。按Registry部署文档在本机.env配置Client ID/Secret、准确Callback URL、随机SESSION_SECRET、CORS_ORIGINS、数据库路径。
 
-生产构建使用 `MIEMIE_BUILD_MODE=production` 和真实 `MIEMIE_DEFAULT_REGISTRY_URL`，缺失或假地址会阻止构建。当前开发版尚无生产域名，使用明确的 development 构建、空默认值，不冒充已上线服务。普通扩展中心不显示服务配置；Hub「设置 → 高级 / 开发者选项」可覆盖服务根地址（HTTPS，本机可HTTP），默认折叠，留空保存恢复构建默认值，该地址是公开服务地址，不是Secret。Registry服务端CORS必须明确列出Tavern实际origin（含协议/端口）。不要把Client Secret、管理员ID名单、数据库或Session复制到Hub脚本。没有真实凭据的自动测试仅用明确Development Fixture/Test Adapter。
+生产构建使用 `MIEMIE_BUILD_MODE=production` 和真实 `MIEMIE_DEFAULT_REGISTRY_URL`，缺失或假地址会阻止构建。普通开发构建可使用空默认值离线运行。用户界面不显示高级配置入口；开发者通过 `MIEMIE_DEFAULT_REGISTRY_URL` 配置服务根地址（HTTPS，本机可 HTTP），历史本地覆盖偏好继续保留。该地址是公开服务地址，不是 Secret。Registry服务端CORS必须明确列出Tavern实际origin（含协议/端口）。不要把Client Secret、管理员ID名单、数据库或Session复制到Hub脚本。没有真实凭据的自动测试仅用明确Development Fixture/Test Adapter。

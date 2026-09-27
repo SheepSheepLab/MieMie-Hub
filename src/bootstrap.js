@@ -16,11 +16,13 @@ function persistHubChange(event) {
 }
 const extensionRuntime = createExtensionRuntime({
   resolveClassification: bundledClassificationResolver(BUNDLED_EXTENSIONS),
-  onChange(event) { persistHubChange(event); hubUI?.refresh(); },
+  onChange(event) { persistHubChange(event); hubUI?.runtimeChanged(event,withdrawing.has(event.extension.manifest.id)||hubDisposed); },
   onMessage(id, title, text) { hubUI?.showMessage(id, title, text); },
   onClose(id) { hubUI?.closeMessage(id); },
+  onShortcut: (id,mount) => hubUI.registerShortcut(id,mount),
   onPanel: (...args) => hubUI.attachPanel(...args),
   onShowPanel: id => hubUI.showPanel(id),
+  onClosePanel: id => hubUI.closePanel(id),
   onError(id, error) { hubUI?.report(id + ' · ' + error); },
 });
 async function registerSource(id, enable = true) {
@@ -112,6 +114,7 @@ async function withPackagePreference(id, enabled, action) {
   }
 }
 packageUI.setEnabled = (id, enabled) => withPackagePreference(id, enabled, () => packageManager.setEnabled(id, enabled));
+packageUI.uninstall = async id => {const result=await packageManager.uninstall(id);if(result?.action==='uninstalled')hubUI?.forgetShortcut(id);return result;};
 packageUI.install = candidate => {
   if (!/^[a-z0-9][a-z0-9._-]{1,79}$/.test(candidate?.id || '')) return Promise.reject(Error('Extension ID 无效。'));
   if (bundledPolicies.get(candidate.id)?.management === 'hub') return Promise.reject(Error('此随包工具随 Hub 整体更新，无需单独安装。'));

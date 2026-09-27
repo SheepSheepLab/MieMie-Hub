@@ -414,7 +414,7 @@ function mountTimeline(extensionAPI, resources) {
   function panelScrolled(){closePicker();}
   root.querySelector('[data-close]').hidden=true;
   const back=doc.createElement('button');back.type='button';back.className='mm-return';back.textContent='返回';
-  back.onclick=()=>host.__MieMieHub?.open();panel.appendChild(back);
+  back.onclick=()=>extensionAPI.closePanel();panel.appendChild(back);
   panel.querySelector('[data-tool-icon]').src=resources.icon;
   panel.tabIndex=-1;
   doc.addEventListener('pointerdown',outsidePointer,true);host.addEventListener('resize',resized);panel.addEventListener('scroll',panelScrolled);

@@ -12,9 +12,9 @@
 - **GitHub**：文件始终来自作者自己的公开 Repository / Release。符合 [Package v1](docs/EXTENSION-PACKAGE.md) 才能安装；普通 GitHub 项目仍可跳转获取。也可直接输入作者仓库预览安装兼容性。
 - **Discord**：仅展示原帖入口，不缓存临时 CDN 附件或自动安装。
 - **已安装**：打开、启停、检查更新、更新，以及确认后物理卸载已识别的全局 Package。未识别为 Package 的运行扩展明确标为「Runtime 注销」，不会冒称已删除助手条目。
-- **我的**：Discord OAuth、公开资料、投稿、编辑、上下架，以及服务器成员限定可见。Registry 登录会话仅留在当前 Hub 内存；重载后需重新登录。Official 身份来自服务端可信角色；治理后台独立于 Hub。
+- **我的**：投稿、编辑、上下架，以及服务器成员限定可见。Registry 登录会话仅留在当前 Hub 内存；重载后需重新登录。Official 身份来自服务端可信角色；治理后台独立于 Hub。
 
-普通用户打开「发现」直接使用构建内置的官方服务，在「我的」使用 Discord 登录，不需要 MieMie 账号或任何服务配置。扩展中心不提供 Registry 地址输入。自定义连接仅位于「设置 → 高级 / 开发者选项」，默认折叠；留空保存恢复构建默认值。官方生产构建内置 https://registry.sheepsheeplab.com；普通开发构建可离线。OAuth Secret、管理员 ID 名单始终只在服务器。配置见 [生态使用与安全边界](docs/ECOSYSTEM.md) 及 [Registry 部署说明](https://github.com/SheepSheepLab/MieMie-Registry/blob/main/docs/DEPLOYMENT.md)。
+普通用户打开「发现」直接使用构建内置的官方服务，在扩展中心右上角使用 Discord 登录，不需要 MieMie 账号或任何服务配置。扩展中心不提供 Registry 地址输入。设置不再显示高级入口；开发服务通过构建参数配置，已有自定义地址偏好继续沿用。官方生产构建内置 https://registry.sheepsheeplab.com；普通开发构建可离线。OAuth Secret、管理员 ID 名单始终只在服务器。配置见 [生态使用与安全边界](docs/ECOSYSTEM.md) 及 [Registry 部署说明](https://github.com/SheepSheepLab/MieMie-Registry/blob/main/docs/DEPLOYMENT.md)。
 
 ## 安装、更新与数据
 
@@ -56,6 +56,10 @@ build/miemie-hub.js
 ```
 
 中英文 JSON 字节一致，Release 使用 ASCII 文件名。版本来自 package.json，官方版本强制纯 x.x.x。node_modules、build、test-results 均不提交。
+
+## Final UI v1 验收
+
+当前工作区的蜂窝 Launcher、侧栏扩展中心和新设置界面等待实机验收，尚未发布。运行 `npm run build` 后执行 `node tools/ui-review.mjs`，打开 http://127.0.0.1:5173 检查同一份实际构建（宿主和目录为本地假数据）。详见 [Final UI 验收与结构](docs/FINAL-UI.md)。
 
 ## 开发者资料
 

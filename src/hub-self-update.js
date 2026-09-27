@@ -1,3 +1,4 @@
+import {HUB_PRODUCT} from './product-identity.js';
 import {updatedScriptName} from './script-update-fields.js';
 import {registryBaseURL} from './registry-client.js';
 import {compareSemVer} from './hub-update-check.js';
@@ -130,7 +131,7 @@ export async function validateHubUpdatePackage(bytes, metadata, crypto = globalT
       script.button.buttons.some(b => !hubUpdateObject(b) || typeof b.name !== 'string' || typeof b.visible !== 'boolean') ||
       !hubUpdateObject(script.export_with) || typeof script.export_with.data !== 'boolean' || typeof script.export_with.button !== 'boolean' ||
       Object.keys(script).some(k => !['type', 'id', 'name', 'content', 'enabled', 'info', 'data', 'button', 'export_with'].includes(k))) {
-    throw hubUpdateFail('package', '下载内容不是受支持的 MieMie Hub 单脚本包。');
+    throw hubUpdateFail('package', '下载内容不是受支持的 '+HUB_PRODUCT.englishName+' 单脚本包。');
   }
   const identity = parseHubBuildIdentity(script.content);
   if (!identity || identity.productId !== metadata.productId || identity.scriptId !== metadata.scriptId || identity.version !== metadata.version) {
@@ -229,7 +230,7 @@ export function createHubSelfUpdater({currentVersion, host, storage, backup, rea
   const listeners = new Set();
   function publish(next) {
     if (!disposed) {state = {...state, ...next}; for (const listener of listeners) {
-      try {listener({...state});} catch (_) {console.warn('[MieMie Hub] 更新状态界面未能刷新。');}
+      try {listener({...state});} catch (_) {console.warn('['+HUB_PRODUCT.englishName+'] 更新状态界面未能刷新。');}
     }}
     return {...state};
   }

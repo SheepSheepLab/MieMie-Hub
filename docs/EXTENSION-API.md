@@ -61,7 +61,8 @@ Runtime 按普通函数调用 `factory(api)`，不提供内部记录作为 `this
 | `api.guard(fn)` | 实例失效后不再调用；普通回调异常进入扩展级错误清理 |
 | `api.showMessage(text)` | 显示 Hub 文本窗口 |
 | `api.attachPanel(panel, {icon})` | 挂载本实例的一个主面板，绑定 Hub 的展示与解绑逻辑 |
-| `api.showPanel()` | 展示已挂载面板 |
+| `api.showPanel()` | 从所属 Launcher 打开展示已挂载面板，返回过渡任务 |
+| `api.closePanel()` | 关闭当前实例自己的 Surface、返回原 Launcher；不触发生命周期停用 |
 
 扩展自行负责事件、Hook、请求、计时器、业务 DOM、对象 URL 等资源。Hub 不会自动追踪所有宿主副作用。默认生命周期等待超时为 10 秒，单项 onCleanup 等待最多 2 秒；超时无法强制中断任意 JavaScript。这是协作式运行机制，不是沙盒。
 
@@ -75,3 +76,143 @@ Hub API 版本当前为 1；Hub 产品版本与扩展产品版本分别维护。
 ## 随包扩展
 
 Hub 0.6.1 的时间线使用标准 API v1 Manifest、provide 和生命周期。构建资源封装不是新的宿主权限。见 [Core 架构](CORE-ARCHITECTURE.md)。
+
+## 可选 Surface API：Launcher Icon → Panel → 原 Icon
+
+这是 API v1 的向后兼容能力扩展。Surface 是推荐的协作式 UI 适配，**不是强制接管第三方界面**。不调用 `attachPanel` 的扩展可以继续维护自己的悬浮球、面板、动画和关闭逻辑，Hub 不查找或改写其 DOM。
+
+- `api.attachPanel(panel, {icon})`：在 activate 中登记当前实例已挂载到宿主 document 的一个主面板。Hub 负责该面板的显示、位置与过渡；Extension 仍负责业务内容与最终资源清理。重复挂载被拒绝。
+- `api.showPanel()`：显示该面板，返回过渡完成的 Promise（失效上下文返回 false）。Hub 根据 Extension ID 关联 Launcher，保留蜂窝滚动位置，并从对应图标展开。重复打开正在打开 / 已打开的面板不新增实例。
+- `api.closePanel()`：请求关闭**当前实例自己的**面板，返回 Promise<boolean> 或 false。过渡后面板保持挂载但隐藏、inert，可以再次 showPanel。它不 deactivate、不卸载、不重置设置。关闭中的重复请求复用同一任务；不能关闭另一个 Extension 的面板。
+
+```js
+function factory(api) {
+  let panel;
+  return {
+    activate() {
+      panel = window.parent.document.createElement('section');
+      const back = window.parent.document.createElement('button');
+      back.textContent = '返回';
+      back.onclick = () => api.closePanel();
+      panel.append(back);
+      window.parent.document.body.append(panel);
+      api.onCleanup(() => { back.onclick = null; panel.remove(); });
+      api.attachPanel(panel);
+    },
+    open() { return api.showPanel(); }
+  };
+}
+```
+
+Hub 私有保存图标 identity、DOM 引用、打开时矩形及蜂窝 scroll snapshot；它们不作为 Runtime record 或可写权威对象传给 Extension。关闭优先重测当前对应图标，重建后按 identity 找新节点；测量不可用或图标消失时使用经过当前视口边界约束的 snapshot；snapshot 也无效才缩小淡出。resize / orientation / visualViewport 变化时取消旧坐标动画并清理临时图标图层，以最新布局完成当前状态；无法回原点不会阻止关闭。
+
+System Module（扩展中心 / 设置）使用内部导航，复用同一个私有 Surface Controller，但不注册为 Extension。已接入的 Surface 顺序切换，不同时叠放两个全尺寸窗口。返回与 Hub 的 Escape 处理进入同一关闭路径；不拦截浏览器系统历史返回。Reduced Motion 跳过复杂动画，仍恢复蜂窝位置。
+
+Polisher 以能力检测兼容旧 Hub：新 Hub 走 `api.closePanel()`，旧 Hub 保留原 `hub.open()` 返回方式；Standalone adapter 自己提供 showPanel / closePanel，没有 Hub 也能独立工作。
+
+## Optional native Shortcut Launcher (API v1 additive capability)
+
+`api.registerShortcutLauncher({ mount })` registers **presentation only** after
+`attachPanel()`. The manifest must contribute a Launcher and the same instance must
+implement `open()`. It returns `true`; a revoked session returns `false`. Duplicate
+registration is rejected. An enabled Runtime snapshot exposes only the boolean
+`shortcutLauncherAvailable`, never the provider, origin or controller.
+
+```js
+activate() {
+  api.attachPanel(panel, {icon: productIcon});
+  if (api.registerShortcutLauncher) api.registerShortcutLauncher({
+    mount({open}) {
+      // Synchronous mount. Reuse the application's standalone launcher component.
+      const native = createNativeLauncher({onOpen: open});
+      return {
+        getOrigin: () => native.element, // connected Element in host document
+        setActive: active => native.setActive(active), // optional flight feedback
+        highlight: () => native.highlight(),           // optional return feedback
+        presentation: native.presentation,             // optional shared native motion
+        dispose: () => native.dispose(),               // required; remove all resources
+      };
+    },
+  });
+}
+open() { return api.showPanel(); }
+// Close / Back -> api.closePanel(); closing is not deactivation.
+```
+
+Hub calls mount only when the local Installed-page “显示悬浮球” preference is on
+(default off). `mount` receives a frozen object with **only `open()`**. Use this
+callback for shortcut clicks rather than `showPanel()` directly: it captures the
+shortcut origin and requests `open()` on the existing Extension instance. No
+second factory, settings store, task or main panel is created. Treat `open()` as
+an asynchronous request; its result is the existing Runtime `{ok, ...}` result
+(or `false` once revoked). Do not rely on a callback `this` receiver.
+
+The Extension owns appearance, hover/press, pointer/drag/dock, position storage,
+and DOM cleanup. `dispose()` must synchronously detach the entry and its UI handlers;
+register asynchronous business cleanup separately with `api.onCleanup`. `getOrigin()` supplies an explicit node; Hub measures it but
+never scans third-party DOM or rewrites handlers. Native entries stay visible
+through opening and closing; `setActive` is press/glow feedback, not replacement
+of the entry. A non-round native launcher is supported.
+
+### Shared Native Floating Presentation
+
+Presentation is selected by **entrance**, not by the presence of Hub. An optional
+`presentation` on the mounted handle lets an application reuse exactly its own
+Standalone floating presentation for Hub Shortcut. Polisher is the reference.
+All four methods must be supplied:
+
+- `place(panel)`: synchronously fit the attached panel beside the native entry.
+- `run(panel, opening)`: animate open (`true`) or close (`false`), returning a
+  Promise that settles after animation. Keep the orb visible; own native drag /
+  follow and visual cleanup. Do not change navigation or business state.
+- `cancel()`: synchronously cancel flights, clean temporary visuals and settle
+  outstanding animations. The lifecycle still completes at its current endpoint.
+- `release()`: cancel and stop following the panel after close/revoke; keep the
+  native entry mounted. Must be safe after cancellation/disposal.
+
+Callbacks receive only the Extension's own attached panel and the opening
+boolean, with no `this` receiver, Runtime record, origin object or Hub controller.
+Hub owns hidden/inert state, focus, transition serialization, origin return and
+Extension lifecycle. Native presentation owns geometry, motion, splash, and
+drag-follow. It must not independently hide/remove a Hub-owned panel when the
+Shortcut is toggled off. Dispose only its presentation resources and entry.
+
+Honeycomb opens always use Hub Surface Motion, even when that Extension also has
+a native presentation. Repeated opens retain the first entrance. A removed mount
+is never rebound to a new mount; close falls back to its captured origin. Older
+Shortcut providers without this optional object retain the existing Hub fallback.
+There is no change to `attachPanel/showPanel/closePanel` or API v1 identity.
+
+Provider failure is isolated within the current Surface. A synchronous `place()`
+exception is reported and falls through to Hub geometry. A thrown/rejected `run()`
+or a `run()` Promise still pending after **5000ms** triggers cancel/release and the
+existing Hub Surface Motion fallback, completing the requested open/close. The
+failed presentation is not called again for that Surface's close; a new explicit
+open may retry. The 5-second bound is a liveness deadline, not an animation token.
+Cleanup errors are reported without blocking navigation; cleanup Promises are not
+awaited. Success, resize, revoke and dispose clear the deadline. Late settlement
+cannot change Hub's completed transition or start another fallback.
+
+Providers must return control promptly and clean up their own temporary DOM and
+effects. As with other API v1 callbacks, they execute in the page's JavaScript
+realm: a timeout can bound an awaited Promise, but cannot preempt a synchronous
+infinite loop or undo arbitrary DOM mutations made later by third-party code.
+
+Honeycomb always keeps its own entry. Both entrances share one panel. Reopening
+an already visible panel focuses it and retains its original opening origin.
+Shortcut close uses current native rect, then viewport-clamped snapshot, then
+safe fade/scale. It returns to the pre-open Hub visibility and scroll state;
+explicitly asking to open Hub still opens Honeycomb. Resize cancels stale flights
+and completes the lifecycle. Disabling or unmounting an origin cannot prevent
+closing an already open panel.
+
+`miemie_hub_shortcuts_v1` is Hub-local UI preference keyed by Extension ID.
+Disable retains it, re-enable restores it, source replacement/update retains it,
+confirmed package uninstall or explicit Runtime uninstall removes it. A missing
+capability ignores old preference. Hub disposal unmounts all shortcuts. Polisher
+shares `miemie_polisher_dock_v1` between native Standalone and Shortcut modes;
+this is separate from the Hub legacy Dock key.
+
+This capability is optional for official **and third-party** extensions. No
+capability means no switch and no behavior change. It is unrelated to Catalog
+Product Type, Distribution or Official/Community classification.

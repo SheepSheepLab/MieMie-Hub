@@ -43,7 +43,7 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
     const requestBase = base, requestEpoch = sessionEpoch, requestToken = authenticated ? token : '';
     const controller = new AbortController(); controllers.add(controller);
     let timer;
-    const expired = new Promise((_, reject) => { timer = setTimeout(() => {controller.abort(); reject(Error('在线服务请求超时，请稍后重试。'));}, timeoutMs); });
+    const expired = new Promise((_, reject) => { timer = setTimeout(() => {reject(Object.assign(Error('在线服务请求超时，请稍后重试。'),{code:'request_timeout'}));controller.abort();}, timeoutMs); });
     const cancelled = new Promise((_, reject) => controller.signal.addEventListener('abort', () => reject(Error('在线服务请求已取消。')), {once: true}));
     try {
       return await Promise.race([expired, cancelled, (async () => {
@@ -73,7 +73,10 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
         }
         return result;
       })()]);
-    } catch (error) {throw Error(error instanceof TypeError ? '在线服务暂时无法连接，请稍后重试。' : error?.message || '在线服务暂时无法连接，请稍后重试。');}
+    } catch (error) {
+      if(error instanceof TypeError) throw Object.assign(Error('在线服务暂时无法连接，请稍后重试。'),{code:'network_unavailable'});
+      throw error instanceof Error ? error : Error('在线服务暂时无法连接，请稍后重试。');
+    }
     finally {clearTimeout(timer); controllers.delete(controller);}
   }
   function login() {
@@ -83,22 +86,29 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
     const popup = host.open('about:blank', 'miemie-registry-login', 'popup,width=520,height=720');
     if (!popup) return Promise.reject(Error('登录窗口被浏览器阻止，请允许此页面弹出窗口。'));
     const expectedOrigin = base, expectedLogin = ++loginEpoch;
+    const retryable = error => ['network_unavailable','request_timeout'].includes(error?.code);
+    const stageError = (stage,error) => Error('Discord 登录：'+stage+'失败。'+error.message+
+      (retryable(error)?' 请检查网络或浏览器的跨站请求限制后重新登录。':''));
     const assertLogin = () => {if (disposed || base !== expectedOrigin || loginEpoch !== expectedLogin) throw Error('登录上下文已改变。');};
     loginOperation = (async () => {
-      let listener, timer, closePoll, pollTimer, focusListener, stopped = false;
+      let listener, timer, closePoll, pollTimer, retryTimer, focusListener, stopped = false;
+      const retryPause = () => new Promise((resolve,reject)=>{
+        cancelLogin=()=>{clearTimeout(retryTimer);reject(Error('登录已取消。'));};
+        retryTimer=setTimeout(resolve,loginPollMs);
+      });
       try {
         const bytes = crypto.getRandomValues(new Uint8Array(32));
         const encode = data => host.btoa(String.fromCharCode(...data)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
         const verifier = encode(bytes);
         const challenge = encode(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
         assertLogin();
-        const started = await api('/api/auth/start', {method: 'POST', body: {codeChallenge: challenge, returnOrigin: host.location.origin}});
+        const started = await api('/api/auth/start', {method: 'POST', body: {codeChallenge: challenge, returnOrigin: host.location.origin}}).catch(error=>{throw stageError('连接授权服务',error);});
         assertLogin();
         const auth = new URL(started.authorizationUrl);
         if (auth.origin !== expectedOrigin || auth.pathname !== '/api/auth/authorize' || auth.username || auth.password || auth.searchParams.get('requestId') !== started.requestId || typeof started.requestId !== 'string') throw Error('Discord 登录地址校验失败。');
         const polling = started.handoff === 'poll-v1';
         const result = await new Promise((resolve, reject) => {
-          let exchanging = false;
+          let exchanging = false, networkFailures = 0;
           const finish = (error, value) => {if (stopped) return; stopped = true; clearTimeout(pollTimer); error ? reject(error) : resolve(value);};
           cancelLogin = () => finish(Error('登录已取消。'));
           timer = setTimeout(() => finish(Error('Discord 登录超时，请重新登录。')), loginTimeoutMs);
@@ -112,9 +122,13 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
               assertLogin();
               const value = await api('/api/auth/complete', {method: 'POST', body: {requestId: started.requestId, codeVerifier: verifier}});
               if (stopped) return;
-              assertLogin();
+              assertLogin();networkFailures=0;
               if (value.status !== 'pending') finish(null, value);
-            } catch (error) {finish(error);}
+            } catch (error) {
+              // A backgrounded Tavern tab can briefly lose network while consent succeeds.
+              // Retry only transport failures, never invalid/consumed handoffs or auth errors.
+              if(!retryable(error)||++networkFailures>=3) finish(stageError('接收授权结果',error));
+            }
             finally {exchanging = false; if (!stopped) pollTimer = setTimeout(poll, loginPollMs);}
           };
           listener = async event => {
@@ -137,12 +151,18 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
         // Verify the origin-bound session against the real current-user endpoint
         // before publishing the signed-in UI. No third-party cookie is required.
         try {
-          const current = await api('/api/me', {authenticated: true}); assertLogin();
+          let current;
+          for(let attempt=0;attempt<3;attempt++){
+            assertLogin();
+            try {current=await api('/api/me',{authenticated:true});break;}
+            catch(error){assertLogin();if(!retryable(error)||attempt===2)throw stageError('确认账号状态',error);await retryPause();}
+          }
+          assertLogin();
           identity = acceptIdentity({...current, expiresAt: nextIdentity.expiresAt});
           watchExpiry(); notify(); return identity;
         } catch (error) {if (loginEpoch === expectedLogin) clearSession(); throw error;}
       } finally {
-        stopped = true; clearTimeout(timer); clearTimeout(pollTimer); clearInterval(closePoll); if (focusListener) host.removeEventListener('focus', focusListener); if (listener) host.removeEventListener('message', listener);
+        stopped = true; clearTimeout(retryTimer); clearTimeout(timer); clearTimeout(pollTimer); clearInterval(closePoll); if (focusListener) host.removeEventListener('focus', focusListener); if (listener) host.removeEventListener('message', listener);
         cancelLogin = null; try {popup.close();} catch (_) {}
       }
     })().finally(() => {loginOperation = null;});

@@ -1,0 +1,38 @@
+#meeme-combined-menu{position:fixed;overflow:hidden;isolation:isolate;pointer-events:none;z-index:5}
+#meeme-combined-menu::before{content:'';position:absolute;inset:0;background:var(--mie-launcher-overlay);backdrop-filter:blur(var(--mie-blur));-webkit-backdrop-filter:blur(var(--mie-blur));opacity:0;transition:opacity var(--mie-motion-launcher-close) ease;pointer-events:none}
+#meeme-combined-menu[data-open=true]::before{opacity:1;animation:mm-launcher-reveal var(--mie-motion-launcher-open) ease both}
+@keyframes mm-launcher-reveal{from{opacity:0}to{opacity:1}}
+#meeme-combined-menu .mm-honeycomb-scroll{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;touch-action:pan-y;scrollbar-width:none;-webkit-overflow-scrolling:touch;pointer-events:auto;outline:none}
+#meeme-combined-menu .mm-honeycomb-scroll::-webkit-scrollbar{display:none}
+#meeme-combined-menu[data-open=false] .mm-honeycomb-scroll{pointer-events:none}
+#meeme-combined-menu .mm-honeycomb-canvas{position:relative;width:100%;min-height:100%;touch-action:pan-y}
+#meeme-combined-menu .mm-honeycomb-cell{position:absolute;transform-origin:center;will-change:transform;contain:layout style;display:grid;place-items:center;touch-action:pan-y}
+#meeme-combined-menu .mm-honeycomb-cell:focus-within,#meeme-combined-menu .mm-honeycomb-cell:hover{z-index:2}
+#miemie-hub-shell .mm-app{position:relative;width:100%;height:100%;min-height:0;padding:0;border-radius:50%;display:grid;place-items:center;background:var(--mie-app-fill);border:1px solid var(--mie-app-border);box-shadow:var(--mie-app-shadow);user-select:none;-webkit-user-select:none;touch-action:pan-y;transition:transform var(--mie-motion-hover) var(--mie-ease-hover),scale var(--mie-motion-hover) var(--mie-ease-hover),filter var(--mie-motion-highlight),box-shadow var(--mie-motion-shadow)}
+#miemie-hub-shell .mm-app>span{font-size:28px;line-height:1;pointer-events:none}
+#miemie-hub-shell .mm-settings{background:var(--mie-settings-icon-fill)}
+#miemie-hub-shell .mm-app small{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);max-width:calc(100% + 16px);width:max-content;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;line-height:1.3;color:var(--mie-text);text-shadow:0 2px 6px #000;pointer-events:none}
+#miemie-hub-shell .mm-app .mm-launcher-image{width:100%;height:100%;display:block;border-radius:50%;overflow:hidden}
+#miemie-hub-shell .mm-launcher-image img{width:100%;height:100%;object-fit:cover;pointer-events:none}
+#miemie-hub-shell .ts-orb[data-launcher-orb]{touch-action:pan-y;cursor:pointer;box-shadow:var(--mie-orb-launcher-shadow)}
+#miemie-hub-shell .mm-hub-launcher-label{position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);font-size:11px;white-space:nowrap;text-shadow:0 2px 6px #000;pointer-events:none;transform-origin:50% 50%}
+@media(hover:hover){#miemie-hub-shell .mm-app:hover,#miemie-hub-shell .ts-orb[data-launcher-orb]:hover{transform:translateY(var(--mie-hover-lift));scale:var(--mie-hover-scale);filter:brightness(1.08);box-shadow:var(--mie-app-hover-shadow);border-color:var(--mie-app-hover-border)}}
+#miemie-hub-shell .mm-app:active,#miemie-hub-shell .ts-orb[data-launcher-orb]:active{transform:translateY(0);scale:var(--mie-press-scale);filter:brightness(1.12)}
+#meeme-combined-menu .mm-launcher-hint{position:absolute;bottom:max(16px,env(safe-area-inset-bottom));left:16px;right:16px;text-align:center;margin:0;pointer-events:none;font-size:12px;color:#ddd0edb3;opacity:0;transition:opacity var(--mie-motion-normal)}
+#meeme-combined-menu[data-open=true] .mm-launcher-hint{opacity:1}
+@media(max-width:480px){#miemie-hub-shell{--mie-blur:8px}#miemie-hub-shell .mm-app>span{font-size:24px}}
+
+#miemie-hub-shell .mm-app::before{content:'';position:absolute;inset:-6px;border:1px solid var(--mie-app-ring);border-radius:50%;opacity:0;transition:opacity var(--mie-motion-highlight);pointer-events:none}
+@media(hover:hover){#miemie-hub-shell .mm-app:hover::before{opacity:.3}}
+#miemie-hub-shell .mm-app:focus-visible::before{opacity:.3}
+#miemie-hub-shell .mm-app:focus-visible{transform:translateY(var(--mie-hover-lift));scale:var(--mie-hover-scale)}
+
+/* Hover must not add a second transform while the real Hub is flying. */
+#meeme-combined-menu[data-moving=true] .ts-orb[data-launcher-orb]{transform:none;scale:1;transition:none}
+
+/* Surface owns interaction while the retained launcher remains measurable. */
+#meeme-combined-menu .mm-honeycomb-scroll{transition:opacity var(--mie-motion-fast)}
+#meeme-combined-menu[data-surface=true] .mm-honeycomb-scroll,#meeme-combined-menu[data-surface=true] .mm-launcher-hint{opacity:0;pointer-events:none}
+
+/* Enlarge only System app artwork; cell geometry and Hub scale stay unchanged. */
+#miemie-hub-shell .mm-app:is(.mm-center,.mm-settings)>span{font-size:clamp(44px,9vw,56px);line-height:1}

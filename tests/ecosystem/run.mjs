@@ -78,7 +78,7 @@ async function fixture({legacy=false,cors=false,corrupt=false}={}) {
       if(url===repoAPI+'/releases/assets/'+metadataId){if(cors)throw TypeError('Development Fixture CORS failure');return response(metaBytes,url);}
       if(url===repoAPI+'/releases/assets/'+assetId){const bytes=Buffer.from(polisherBytes);if(corrupt)bytes[bytes.length-2]^=1;return response(bytes,url);}
     }
-    if(url==='https://registry.sheepsheeplab.com/api/catalog?page=1&pageSize=12&q=&source=')return response({items:[],hasMore:false},url);
+    if(url==='https://registry.sheepsheeplab.com/api/catalog?page=1&pageSize=12&q=&source='){if(registryOffline)throw TypeError('Development Fixture Registry offline');return response({items:[],hasMore:false},url);}
     if(url==='https://registry.sheepsheeplab.com/api/packages/github/asset')throw TypeError('Development Fixture Registry offline');
     if(url==='https://registry-fixture.invalid/api/catalog?page=1&pageSize=12&q=&source=') {
       if(registryOffline)throw TypeError('Development Fixture Registry offline');
@@ -123,7 +123,7 @@ async function fixture({legacy=false,cors=false,corrupt=false}={}) {
   const installed=()=>flat(trees).map(x=>x.script).find(x=>x.content.startsWith('// MieMie-Extension-Build:')||x.content.startsWith('// MieMie Polisher ·'));
   async function drain(){await reconcileQueue;await tick();if(h.__MieMiePolisherSource)await h.__MieMiePolisherSource.settled();await tick();}
   return {h,d,q,click,center,action,installed,drain,calls,backups,writes,errors,subscriptions,frames,actualLegacyId,actualHubId,initialLegacy:legacyScript,other,vars,worldbook,ctx,
-    trees:()=>clone(trees),registryOffline(){registryOffline=true;h.localStorage.setItem('miemie_registry_url_v1','https://registry-fixture.invalid');},
+    trees:()=>clone(trees),registryOffline(){registryOffline=true;},
     async reloadFromDisk(){await drain(); for(const id of [...frames.keys()])await stop(id); trees=JSON.parse(JSON.stringify(diskTrees)); await schedule(); await h.__MieMieHub.ready; await until(()=>h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'Polisher restarted from disk'); await drain();},
     async stopHub(){await stop(actualHubId);await drain();},
     async restartHub(){await schedule();await until(()=>h.__MieMieHub,'Hub restart');await h.__MieMieHub.ready;await until(()=>h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'Polisher recollected');await drain();},
@@ -136,7 +136,7 @@ try {
   const f=activeFixture=await fixture();
   await check('fresh built Hub opens merged center with Discover / Installed / Mine and no old manager launcher',async()=>{
     await f.center();assert.equal(f.q('[data-hub-app="extensions"]'),null);for(const tab of ['discover','installed','mine'])assert.ok(f.q('[data-center-tab="'+tab+'"]'));
-    await f.center('mine');assert.match(f.q('[data-hub-panel="extension-center"]').textContent,/使用 Discord 登录/);await f.center('discover');assert.equal(f.installed(),undefined);
+    await f.center('mine');assert.ok(f.q('[data-hub-panel="extension-center"] .mm-hub-header [data-action="registry:login"]'));await f.center('discover');assert.equal(f.installed(),undefined);
   });
   await check('author GitHub preview downloads verified package and installs real Polisher artifact without manual import',async()=>{
     f.q('[aria-label="GitHub Repository URL"]').value=repoURL;await f.action('github:preview');await until(()=>f.q('[data-action="package:install"]'),'package preview');await f.action('package:install');
@@ -145,9 +145,10 @@ try {
     assert.ok(f.calls.some(x=>x.url===repoAPI+'/releases/assets/'+assetId));assert.ok(f.calls.every(x=>x.url===f.h.location.origin+'/api/settings/get'||x.url.startsWith(repoAPI)||x.url==='https://registry.sheepsheeplab.com/api/catalog?page=1&pageSize=12&q=&source='));assert.equal(f.writes.length,1);assert.deepEqual(f.trees()[0],f.other);
   });
   await check('installed real artifact opens through Hub Launcher and physical enable/disable follows helper iframe lifetime',async()=>{
+    await f.center('installed');f.click('[data-shortcut="miemie.polisher"]');await tick();assert.equal(f.d.querySelectorAll('[data-miemie-polisher-native]').length,1);
     await f.h.__MieMieHub.open();f.click('[data-hub-app="miemie.polisher"]');await until(()=>f.q('#meeme-translation section')?.hidden===false,'Launcher open');
     await f.center('installed');await f.action('miemie.polisher:toggle');await until(()=>!f.h.__meemeTranslation01,'physical disable');await f.drain();assert.equal(f.installed().enabled,false);assert.equal(f.h.__MieMiePolisherSource,undefined);assert.equal(f.q('[data-miemie-polisher-standalone]'),null);
-    await f.center('installed');await f.action('miemie.polisher:toggle');await until(()=>f.h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'physical reenable');await f.drain();assert.equal(f.installed().enabled,true);assert.equal(f.d.querySelectorAll('#meeme-translation').length,1);
+    await f.center('installed');await f.action('miemie.polisher:toggle');await until(()=>f.h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'physical reenable');await f.drain();assert.equal(f.installed().enabled,true);assert.equal(f.d.querySelectorAll('#meeme-translation').length,1);assert.equal(f.d.querySelectorAll('[data-miemie-polisher-native]').length,1);
   });
   await check('installed version comparison reports the same author version without offering an update',async()=>{
     await f.center('installed');await f.action('miemie.polisher:check');await until(()=>f.q('[data-extension-id="miemie.polisher"]').textContent.includes('最新版本：'+metadata.version),'same version result');
@@ -156,7 +157,7 @@ try {
   await check('physical uninstall creates no backup and removes only target script; saved business data survives',async()=>{
     const before=clone(f.installed()),data=JSON.stringify(f.vars),key=f.h.localStorage.getItem('meeme_translation_key_v1');
     await f.center('installed');await f.action('miemie.polisher:uninstall');await until(()=>!f.installed(),'target physically removed');await f.drain();
-    assert.equal(f.backups.length,0);assert.equal(f.h.__MieMieHub.extensions.get('miemie.polisher'),null);assert.deepEqual(f.trees()[0],f.other);assert.equal(JSON.stringify(f.vars),data);assert.equal(f.h.localStorage.getItem('meeme_translation_key_v1'),key);checkTimeline(f.h);
+    assert.equal(f.backups.length,0);assert.equal(f.h.__MieMieHub.extensions.get('miemie.polisher'),null);assert.equal(f.q('[data-miemie-polisher-native]'),null);assert.equal(JSON.parse(f.h.localStorage.getItem('miemie_hub_shortcuts_v1'))['miemie.polisher'],undefined);assert.deepEqual(f.trees()[0],f.other);assert.equal(JSON.stringify(f.vars),data);assert.equal(f.h.localStorage.getItem('meeme_translation_key_v1'),key);checkTimeline(f.h);
   });
   await check('uninstalled Polisher can be reinstalled through the real center without an uninstall backup',async()=>{
     await f.center();f.q('[aria-label="GitHub Repository URL"]').value=repoURL;await f.action('github:preview');await until(()=>f.q('[data-action="package:install"]'),'reinstall preview');await f.action('package:install');
@@ -169,6 +170,7 @@ try {
     await u.center('installed');await until(()=>u.q('[data-action="miemie.polisher:check"]'),'legacy managed');assert.ok(u.q('[data-extension-id="miemie.polisher"]').textContent.includes(legacyVersion));assert.equal(u.installed().id,u.actualLegacyId);
   });
   await check('published baseline updates from author Release retaining instance metadata and external data',async()=>{
+    u.h.localStorage.setItem('miemie_hub_shortcuts_v1',JSON.stringify({'miemie.polisher':true}));await u.stopHub();await u.restartHub();await u.center('installed');
     const before=clone(u.installed()),vars=JSON.stringify(u.vars),key=u.h.localStorage.getItem('meeme_translation_key_v1'),worldbook=JSON.stringify(u.worldbook);
     await u.action('miemie.polisher:check');await until(()=>u.q('[data-action="miemie.polisher:update"]'),'newer package');await u.action('miemie.polisher:update');
     await until(()=>u.h.__MieMieHub.extensions.get('miemie.polisher')?.manifest.version===metadata.version&&u.h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'upgraded iframe activation');await u.drain();
@@ -178,6 +180,10 @@ try {
     assert.equal(u.q('[data-hub-app="miemie.polisher"] img').src,expectedIcon);assert.equal(u.q('#meeme-translation [data-tool-icon]').src,expectedIcon);
     await until(()=>u.q('[data-hub-panel="extension-center"]').textContent.includes('已重新读取宿主脚本'),'durable update confirmation');
   });
+  await check('Shortcut preference restores after real package update and Hub restart without duplicate launchers',async()=>{
+    assert.equal(u.d.querySelectorAll('[data-miemie-polisher-native]').length,1);await u.stopHub();await u.restartHub();assert.equal(u.d.querySelectorAll('[data-miemie-polisher-native]').length,1);assert.equal(u.d.querySelectorAll('[data-hub-app="miemie.polisher"]').length,1);
+    await u.center('installed');u.click('[data-shortcut="miemie.polisher"]');await tick();assert.equal(u.q('[data-miemie-polisher-native]'),null);
+  });
   await check('Helper reload retains saved Polisher name/version, same instance and user data',async()=>{
     const before=clone(u.installed()),vars=JSON.stringify(u.vars),key=u.h.localStorage.getItem('meeme_translation_key_v1');
     await u.reloadFromDisk();
@@ -186,8 +192,44 @@ try {
     assert.equal(u.d.querySelectorAll('#meeme-translation').length,1);assert.equal(JSON.stringify(u.vars),vars);assert.equal(u.h.localStorage.getItem('meeme_translation_key_v1'),key);
   });
   await check('Registry offline leaves real installed package, timeline and local settings usable',async()=>{
-    await u.h.__MieMieHub.open();u.click('[data-hub-app="settings"]');await tick();u.q('[data-hub-developer-settings]').open=true;const url=u.q('[aria-label="Registry 服务地址"]');url.value='https://registry-fixture.invalid';u.registryOffline();await u.action('registry:configure');await u.center('discover');await until(()=>u.q('[data-hub-panel="extension-center"]').textContent.includes('扩展目录无法连接'),'offline Catalog message');
+    await u.h.__MieMieHub.open();u.click('[data-hub-app="settings"]');await tick();assert.equal(u.q('[data-hub-developer-settings]'),null);u.registryOffline();await u.center('discover');await until(()=>u.q('[data-hub-panel="extension-center"]').textContent.includes('扩展目录无法连接'),'offline Catalog message');
     checkTimeline(u.h);assert.equal(u.h.__MieMieHub.extensions.get('miemie.polisher').enabled,true);await u.center('installed');assert.ok(u.q('[data-extension-id="miemie.polisher"]'));
+  });
+  await check('real Shortcut and Standalone artifacts produce identical native motion and narrow geometry',async()=>{
+    await u.center('installed');u.click('[data-shortcut="miemie.polisher"]');await tick();
+    assert.ok(u.q('[data-miemie-polisher-native]'));u.click('.ts-orb');await until(()=>u.q('#meeme-combined-menu').hidden,'Hub collapsed');
+    const proto=u.h.Element.prototype,previousAnimate=proto.animate,previousRect=proto.getBoundingClientRect;
+    let calls=[];
+    proto.getBoundingClientRect=function(){
+      if(this.matches?.('[data-miemie-polisher-native]'))return {left:850,top:350,width:64,height:64};
+      if(this.matches?.('#meeme-translation section'))return {left:100,top:50,width:600,height:650};
+      if(this.matches?.('[data-tool-icon]'))return {left:128,top:80,width:52,height:52};
+      if(this.matches?.('[data-polisher-header-hero]'))return {left:326,top:300,width:148,height:148};
+      return previousRect.call(this);
+    };
+    proto.animate=function(frames,options){
+      if(this.matches?.('#meeme-translation section,[data-polisher-header-hero],[data-polisher-surface-veil]'))calls.push({kind:this.tagName,frames,options});
+      return {finished:Promise.resolve(),cancel(){}};
+    };
+    async function cycle(){
+      calls=[];u.click('[data-miemie-polisher-native]');await until(()=>u.q('#meeme-translation section').dataset.surfaceState==='open','native open');
+      const panel=u.q('#meeme-translation section'),positions=[];
+      assert.equal(u.d.querySelectorAll('#meeme-translation').length,1);
+      for(const width of [1200,390,320]){
+        u.h.visualViewport.width=width;u.h.dispatchEvent(new u.h.Event('resize'));await tick();
+        positions.push(['left','top','width','height','max-height'].map(k=>panel.style.getPropertyValue(k)));
+        assert.equal(panel.style.maxHeight,'748px');assert.equal(panel.hidden,false);
+      }
+      u.click('#meeme-translation .mm-return');await until(()=>panel.hidden,'native close');
+      assert.equal(u.q('[data-miemie-polisher-native]').hidden,false);
+      const result=JSON.stringify({calls,positions});assert.equal(calls.length,4); // panel + hero + veil + close
+      u.h.visualViewport.width=1024;u.h.dispatchEvent(new u.h.Event('resize'));return result;
+    }
+    try{
+      const shortcut=await cycle();await u.stopHub();await until(()=>u.h.__MieMiePolisherSource.mode==='standalone','native handoff');
+      const standalone=await cycle();assert.equal(shortcut,standalone);
+    }finally{proto.animate=previousAnimate;proto.getBoundingClientRect=previousRect;}
+    await u.restartHub();
   });
   await check('upgraded Polisher restores one standalone launcher when only Hub stops',async()=>{
     const frame=u.frames.get(u.actualLegacyId).frame;await u.stopHub();await until(()=>u.h.__MieMiePolisherSource?.mode==='standalone','standalone after Hub');assert.equal(u.frames.get(u.actualLegacyId).frame,frame);assert.equal(u.d.querySelectorAll('[data-miemie-polisher-standalone]').length,1);assert.equal(u.d.querySelectorAll('#meeme-translation').length,1);u.click('[data-miemie-polisher-standalone]');await until(()=>u.q('#meeme-translation section').hidden===false,'standalone opens original UI');

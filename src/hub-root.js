@@ -1,3 +1,4 @@
+import {HUB_PRODUCT} from './product-identity.js';
 // The Shell owns its root and main orb. Retain the legacy dock storage key
 // for existing Hub positions; it contains no Extension business state.
 export function createHubRoot(host, assets) {
@@ -12,9 +13,13 @@ export function createHubRoot(host, assets) {
   const orb = root.querySelector('.ts-orb');
   orb.setAttribute('aria-controls', 'meeme-combined-menu');
   orb.querySelector('img').src = assets.icons.home;
+  orb.querySelector('img').alt = HUB_PRODUCT.name;
+  orb.title = HUB_PRODUCT.name + ' · 点击开关 / 拖动贴边';
+  orb.setAttribute('aria-label', HUB_PRODUCT.name + '：点击开关，拖动贴边');
   doc.documentElement.appendChild(root);
   const DOCK_KEY = 'meeme_timeline_dock_v1';
   let dock = {side: 'right', ratio: .72}, drag = null, suppressClick = false, disposed = false;
+  let borrowed = false;
   let onToggle = () => {}, beforeMove = () => {}, onPosition = () => {};
   try {
     const saved = JSON.parse(host.localStorage.getItem(DOCK_KEY));
@@ -22,23 +27,27 @@ export function createHubRoot(host, assets) {
   } catch (_) {}
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
   function viewport() { return {width: host.innerWidth, height: host.innerHeight}; }
-  function placeDock() {
-    if (disposed) return null;
+  function getDock() {
     const v = viewport();
     const margin = Math.min(10, Math.max(0, Math.floor(Math.min(v.width, v.height) / 10)));
     const size = Math.max(1, Math.min(64, v.width - 2 * margin, v.height - 2 * margin));
     const x = dock.side === 'left' ? margin : v.width - margin - size;
     const y = margin + clamp(dock.ratio, 0, 1) * Math.max(0, v.height - size - 2 * margin);
-    Object.assign(orb.style, {left: x + 'px', top: y + 'px', width: size + 'px', height: size + 'px'});
-    onPosition();
     return {x, y, size, margin};
+  }
+  function placeDock() {
+    if (disposed) return null;
+    const g = getDock();
+    if (!borrowed) Object.assign(orb.style, {position:'fixed',left:g.x+'px',top:g.y+'px',width:g.size+'px',height:g.size+'px'});
+    onPosition();
+    return g;
   }
   function rememberDock() {
     try { host.localStorage.setItem(DOCK_KEY, JSON.stringify(dock)); }
-    catch (_) { orb.title = '咩咩Hub · 本次位置未能保存'; }
+    catch (_) { orb.title = HUB_PRODUCT.name + ' · 本次位置未能保存'; }
   }
   function pointerDown(event) {
-    if (event.isPrimary === false || (event.button !== undefined && event.button !== 0)) return;
+    if (borrowed || event.isPrimary === false || (event.button !== undefined && event.button !== 0)) return;
     const g = placeDock();
     drag = {id: event.pointerId, startX: event.clientX, startY: event.clientY, ...g, moved: false};
     suppressClick = false;
@@ -88,7 +97,18 @@ export function createHubRoot(host, assets) {
   host.addEventListener('resize', resized);
   placeDock();
   return {
-    root, orb, placeDock,
+    root, orb, placeDock, getDock,
+    borrowOrb(container) {
+      borrowed = true; drag = null; suppressClick = false;
+      orb.dataset.launcherOrb = ''; orb.dataset.productLabel = HUB_PRODUCT.name;
+      orb.title = HUB_PRODUCT.name + ' · 点击收起 / 滑动浏览';
+      Object.assign(orb.style,{position:'relative',left:'0',top:'0',width:'100%',height:'100%'});
+      container.append(orb);
+    },
+    releaseOrb() {
+      if (!borrowed) return;
+      borrowed = false; delete orb.dataset.launcherOrb; orb.title = HUB_PRODUCT.name + ' · 点击开关 / 拖动贴边'; root.append(orb); placeDock();
+    },
     connect(callbacks) {
       onToggle = callbacks.onToggle;
       beforeMove = callbacks.beforeMove;

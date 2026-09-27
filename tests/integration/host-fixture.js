@@ -154,6 +154,38 @@ async function runTests() {
       assert(JSON.parse(localStorage.getItem('meeme_translation_key_v1')).key === 'fixture-test-key', '密钥变化');
       assert(JSON.parse(localStorage.getItem('meeme_timeline_dock_v1')).ratio === .72, '球位置变化');
     });
+    await check('Polisher Hub Surface 返回原蜂窝位置且保留同一业务面板', async () => {
+      await menu();const scroll=document.querySelector('.mm-honeycomb-scroll');scroll.scrollTop=110;
+      click('[data-hub-app="miemie.polisher"]');const panel=document.querySelector('#meeme-translation section');
+      await until(()=>panel.dataset.surfaceState==='open','Polisher Surface opened');
+      const before=JSON.stringify(variables);click('#meeme-translation .mm-return');
+      await until(()=>panel.hidden,'Polisher Surface closed');
+      assert(scroll.scrollTop===110,'Surface 返回时重置了蜂窝位置');
+      assert(panel===document.querySelector('#meeme-translation section')&&__MieMieHub.extensions.get('miemie.polisher').enabled,'关闭错误地清理了实例');
+      assert(JSON.stringify(variables)===before,'关闭改变了业务数据');
+      // Historical hidden controls must delegate to the same adapter capability.
+      document.querySelector('#meeme-translation [data-open]').click();
+      await until(()=>panel.dataset.surfaceState==='open','legacy control routed through showPanel');
+      document.querySelector('#meeme-translation [data-close]').click();
+      await until(()=>panel.hidden&&panel.dataset.surfaceState==='closed','legacy control routed through closePanel');
+      assert(scroll.scrollTop===110,'旧入口关闭后丢失蜂窝位置');
+    });
+    await check('Polisher 原生 Shortcut 默认关闭，与蜂窝共享面板并在停用与重载后按偏好恢复',async()=>{
+      assert(__MieMieHub.extensions.get('miemie.polisher').shortcutLauncherAvailable,'缺少通用 Shortcut capability');
+      assert(!document.querySelector('[data-miemie-polisher-native]'),'默认应关闭');
+      await manage();click('[data-shortcut="miemie.polisher"]');await waits(5);
+      const orb=document.querySelector('[data-miemie-polisher-native]'),panel=document.querySelector('#meeme-translation section'),before=JSON.stringify(variables);
+      assert(orb&&document.querySelector('[data-hub-app="miemie.polisher"]'),'两个入口应同时存在');
+      click('[data-hub-panel="extension-center"] .mm-return');await waits(5);click('.ts-orb');await waits(5);
+      orb.click();orb.click();await until(()=>panel.dataset.surfaceState==='open','Shortcut打开');
+      assert(document.querySelectorAll('#meeme-translation').length===1,'Shortcut 创建了第二实例');
+      click('#meeme-translation .mm-return');await until(()=>panel.hidden,'Shortcut关闭');
+      assert(document.querySelector('#meeme-combined-menu').hidden,'Shortcut关闭不应突然打开蜂窝');assert(JSON.stringify(variables)===before,'Shortcut 改变业务数据');
+      await __MieMieHub.extensions.disable('miemie.polisher');assert(!document.querySelector('[data-miemie-polisher-native]'),'停用应移除入口');
+      await __MieMieHub.extensions.enable('miemie.polisher');assert(document.querySelectorAll('[data-miemie-polisher-native]').length===1,'启用应恢复且只有一个');
+      await manage();click('[data-shortcut="miemie.polisher"]');await waits(5);assert(!document.querySelector('[data-miemie-polisher-native]'),'关闭开关仅移除原生入口');assert(document.querySelector('[data-hub-app="miemie.polisher"]'),'蜂窝入口被移除');
+      click('[data-hub-panel="extension-center"] .mm-return');await waits(5);
+    });
     await check('扩展中心与设置作为 Core 入口共存，版本与实际 Hub 一致', async () => {
       const ids = JSON.stringify(__MieMieHub.extensions.list().map(item => item.manifest.id));
       await menu();

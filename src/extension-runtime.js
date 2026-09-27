@@ -1,3 +1,4 @@
+import {HUB_PRODUCT} from './product-identity.js';
 // Local, cooperative extensions only. This is not a package loader or sandbox.
 export function createExtensionRuntime(options = {}) {
   const records = new Map();
@@ -10,7 +11,7 @@ export function createExtensionRuntime(options = {}) {
 
   function notify(kind, record) {
     try { options.onChange?.({kind, extension: snapshot(record)}); }
-    catch (error) { console.warn('[MieMie Hub] UI notification failed', error); }
+    catch (error) { console.warn('['+HUB_PRODUCT.englishName+'] UI notification failed', error); }
   }
   function snapshot(record) {
     return {
@@ -22,6 +23,7 @@ export function createExtensionRuntime(options = {}) {
       error: record.error,
       launcherAvailable: record.state === 'enabled' && record.session?.launcherAvailable === true,
       launcherError: record.launcherError,
+      shortcutLauncherAvailable: record.state === 'enabled' && !!record.session?.hasShortcut && !!record.session?.launcherAvailable,
     };
   }
   function validate(manifest) {
@@ -50,7 +52,7 @@ export function createExtensionRuntime(options = {}) {
   }
   function launcherFailure(record, message) {
     record.launcherError = message;
-    try { console.warn('[MieMie Hub] ' + record.manifest.id + ' · ' + message); } catch (_) {}
+    try { console.warn('['+HUB_PRODUCT.englishName+'] ' + record.manifest.id + ' · ' + message); } catch (_) {}
     notify('launcher', record);
     return failResult(message);
   }
@@ -114,10 +116,28 @@ export function createExtensionRuntime(options = {}) {
         session.cleanups.push(detach);
         return true;
       },
+      registerShortcutLauncher(provider) {
+        if (!current(record,session)) return false;
+        if (!session.hasPanel || !record.manifest.contributes?.launcher) throw Error('Shortcut 需要主面板和 Launcher。');
+        if (session.hasShortcut || typeof provider?.mount !== 'function') throw Error('Shortcut capability 无效或重复。');
+        const mount=provider.mount;
+        const detach=options.onShortcut?.(record.manifest.id, context=>mount(context));
+        if(typeof detach!=='function')throw Error('Hub 未提供 Shortcut capability。');
+        session.hasShortcut=true;
+        // Revoke presentation immediately, before asynchronous business teardown.
+        session.controller.signal.addEventListener('abort',detach,{once:true});
+        session.cleanups.push(()=>{session.controller.signal.removeEventListener('abort',detach);detach();});
+        if(record.state==='enabled')notify('launcher',record);
+        return true;
+      },
       showPanel() {
         if (!current(record, session) || record.state !== 'enabled') return false;
         if (!session.hasPanel) throw Error('扩展尚未挂载面板。');
         return options.onShowPanel?.(record.manifest.id);
+      },
+      closePanel() {
+        if (!current(record,session) || record.state !== 'enabled' || !session.hasPanel) return false;
+        return options.onClosePanel?.(record.manifest.id) ?? false;
       },
       onCleanup(fn) {
         if (typeof fn !== 'function') throw Error('清理回调必须是函数。');

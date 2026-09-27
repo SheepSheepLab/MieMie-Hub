@@ -65,11 +65,11 @@ test('default Registry URL is public build configuration and can be overridden w
  const empty=createRegistryClient();assert.equal(empty.getBase(),'');empty.dispose();assert.throws(()=>createRegistryClient({defaultBaseURL:'https://secret@registry.example'}));
 });
 
-function pollingFixture({readyAfter=2,timeout=300,complete,me}={}) {
+function pollingFixture({readyAfter=2,timeout=300,requestTimeout=200,complete,me}={}) {
  const host=new EventTarget();host.location={origin:'http://127.0.0.1:8000'};host.btoa=x=>Buffer.from(x,'binary').toString('base64');
  const popup={closed:true,location:{href:''},close(){}};host.open=()=>popup;
  const requests=[],changes=[];let count=0,challenge;
- const client=createRegistryClient({host,crypto:webcrypto,loginPollMs:5,loginTimeoutMs:timeout,timeoutMs:200,onChange:x=>changes.push(x),fetch:async(url,init)=>{
+ const client=createRegistryClient({host,crypto:webcrypto,loginPollMs:5,loginTimeoutMs:timeout,timeoutMs:requestTimeout,onChange:x=>changes.push(x),fetch:async(url,init)=>{
   requests.push({url,init});assert.equal(init.credentials,'omit');assert.equal(init.mode,'cors');
   if(url.endsWith('/start')){challenge=JSON.parse(init.body).codeChallenge;return json({requestId:'r'.repeat(43),authorizationUrl:'https://registry.example/api/auth/authorize?requestId='+'r'.repeat(43),handoff:'poll-v1'});}
   if(url.endsWith('/complete')){const body=JSON.parse(init.body);assert.equal(Buffer.from(await webcrypto.subtle.digest('SHA-256',new TextEncoder().encode(body.codeVerifier))).toString('base64url'),challenge);assert.equal(init.headers.Authorization,undefined);if(complete)return complete();return ++count<readyAfter?json({status:'pending'},202):json({token:'fixture-session',profile:{displayName:'Old'},expiresAt:new Date(Date.now()+60000).toISOString()});}
@@ -118,4 +118,34 @@ test('authenticated status preserves Owner and explicit banned; old servers neve
   flags={canSubmit:false};await f.client.me();assert.equal(f.client.getIdentity().banned,false);assert.equal(f.client.getIdentity().canSubmit,false);
   flags={banned:'true',isAdmin:'true'};await f.client.me();assert.equal(f.client.getIdentity().banned,false);assert.equal(f.client.getIdentity().isAdmin,false);
  }finally{f.client.dispose();}
+});
+
+
+test('temporary authorization polling and profile network failures recover without early signed-in state',async()=>{
+ let polls=0,profiles=0;const f=pollingFixture({complete:()=>{
+  if(++polls===1)throw new TypeError('Failed to fetch');
+  return polls===2?json({status:'pending'},202):json({token:'fixture-session',profile:{displayName:'Exchange'}});
+ },me:()=>{assert.equal(f.client.getIdentity(),null);if(++profiles===1)throw new TypeError('Network lost');return json({profile:{displayName:'Verified'}});}});
+ try{const identity=await f.client.login();assert.equal(identity.profile.displayName,'Verified');assert.equal(polls,3);assert.equal(profiles,2);assert.equal(f.changes.filter(Boolean).length,1);}finally{f.client.dispose();}
+});
+test('persistent transport failure is bounded and reports the failing login stage',async()=>{
+ const f=pollingFixture({complete:()=>{throw new TypeError('secret raw network diagnostic');}});
+ try{await assert.rejects(f.client.login(),error=>{assert.match(error.message,/接收授权结果失败/);assert.doesNotMatch(error.message,/secret|codeVerifier|fixture-session/);return true;});assert.equal(f.requests.filter(r=>r.url.endsWith('/complete')).length,3);assert.equal(f.client.getIdentity(),null);}finally{f.client.dispose();}
+ const g=pollingFixture({readyAfter:1,me:()=>{throw new TypeError('Failed to fetch');}});
+ try{await assert.rejects(g.client.login(),/确认账号状态失败/);assert.equal(g.requests.filter(r=>r.url.endsWith('/me')).length,3);assert.ok(g.changes.every(x=>x===null));await assert.rejects(g.client.api('/api/submissions',{authenticated:true}),/请先/);}finally{g.client.dispose();}
+});
+test('consumed handoffs and rejected sessions are never retried or accepted as logged in',async()=>{
+ let n=0;const f=pollingFixture({complete:()=>{if(++n===1)throw new TypeError('response lost');return json({error:{message:'登录结果已使用，请重新登录'}},400);}});
+ try{await assert.rejects(f.client.login(),/登录结果已使用/);assert.equal(n,2);assert.equal(f.client.getIdentity(),null);}finally{f.client.dispose();}
+ const g=pollingFixture({readyAfter:1,me:()=>json({error:'denied'},403)});
+ try{await assert.rejects(g.client.login(),/确认账号状态失败.*denied/);assert.equal(g.requests.filter(r=>r.url.endsWith('/me')).length,1);assert.equal(g.client.getIdentity(),null);}finally{g.client.dispose();}
+});
+test('logout during profile retry cancels future attempts and cannot publish stale identity',async()=>{
+ let attempts=0;const f=pollingFixture({readyAfter:1,me:()=>{attempts++;throw new TypeError('offline');}});
+ try{const pending=f.client.login();while(!attempts)await tick();await f.client.logout();await assert.rejects(pending,/取消|上下文/);await new Promise(r=>setTimeout(r,20));assert.equal(attempts,1);assert.equal(f.client.getIdentity(),null);assert.ok(f.changes.every(x=>x===null));}finally{f.client.dispose();}
+});
+
+test('a timed-out poll is retried rather than mistaken for deliberate cancellation',async()=>{
+ let calls=0;const f=pollingFixture({timeout:1000,requestTimeout:30,complete:()=>++calls===1?new Promise(()=>{}):json({token:'fixture-session',profile:{displayName:'Exchange'}})});
+ try{const result=await f.client.login();assert.equal(calls,2);assert.equal(result.profile.displayName,'Current Fixture');assert.equal(f.changes.filter(Boolean).length,1);}finally{f.client.dispose();}
 });

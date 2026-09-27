@@ -1,18 +1,19 @@
+import {createShortcutLaunchers} from './shortcut-launchers.js';
+import {HUB_COPY} from './ui-copy.js';
+import {HUB_PRODUCT} from './product-identity.js';
+import {createHoneycombLauncher} from './honeycomb-launcher.js';
+import {createSurfaceController} from './surface-controller.js';
 export function createHubUI(host, shell, assets, runtime, localSources, hubVersion, selfUpdater, ecosystemOptions) {
   const doc = host.document, orb = shell.orb, icons = assets.icons;
-  const extensionPanels = new Map();
+  const extensionPanels = new Map(), messages = new Map();
   const root = doc.createElement('div'); root.id = 'meeme-combined-menu';
   const style = doc.createElement('style'); style.textContent = assets.menuStyles + '\n' + assets.hubStyles;
-  root.appendChild(style); root.insertAdjacentHTML('beforeend', assets.effectsHTML);
-  doc.documentElement.appendChild(root);
-  let state = 'closed', disposed = false, serial = 0, activeExtension = null, lastError = '';
+  root.appendChild(style); shell.root.appendChild(root);
+  const launcher = createHoneycombLauncher({host, root, shell, title: HUB_PRODUCT.name + ' 应用'});
+  let disposed = false, lastError = '';
+  let surface;
+  const shortcuts=createShortcutLaunchers({host,runtime,launch:(id,open,origin)=>surface.launch(id,open,origin),onChange:()=>ecosystem.refresh(),onError:error=>ecosystem.report(error)});
   let menuButtons = [];
-  const animations = new Set(), splashes = new Map();
-  function addSplash(p) {
-    const splash = doc.createElement('div'); splash.className = 'mm-splash'; splash.hidden = true;
-    splash.setAttribute('aria-hidden', 'true'); splash.innerHTML = '<div class="mm-splash-backdrop"></div><img alt="">';
-    p.appendChild(splash); splashes.set(p, splash);
-  }
   function makePanel(title, subtitle) {
     const panel = doc.createElement('section'); panel.className = 'mm-hub-panel'; panel.hidden = true; panel.inert = true; panel.tabIndex = -1;
     panel.setAttribute('aria-label', title);
@@ -22,23 +23,19 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     heading.textContent = title; sub.textContent = subtitle; text.append(heading, sub); header.append(img, text);
     const body = doc.createElement('div'); body.className = 'mm-hub-body';
     panel.append(header, body); shell.root.appendChild(panel); returnButton(panel);
-    return {panel, body, heading};
+    return {panel, body, heading, header};
   }
-  const message = makePanel('扩展消息', '咩咩Hub Extension');
+  const message = makePanel('扩展消息', HUB_PRODUCT.englishName + ' Extension');
   // Core panels have no Extension registration, Manifest or lifecycle.
-  const center = makePanel('咩咩Hub · 扩展中心', '发现更多咩咩工具');
+  const center = makePanel(HUB_PRODUCT.name + ' · '+HUB_COPY.extensionCenter, '发现更多工具');
   const manager = {panel: center.panel, body: center.body};
-  const settings = makePanel('咩咩Hub · 设置', 'Hub 版本与更新');
+  const settings = makePanel(HUB_PRODUCT.name + ' · '+HUB_COPY.settings, 'Hub 版本与更新');
   message.panel.dataset.hubPanel = 'message';
   center.panel.dataset.hubPanel = 'extension-center'; settings.panel.dataset.hubPanel = 'settings';
   const panels = new Set([manager.panel, message.panel, center.panel, settings.panel]);
-  function panelFor(next) {
-    if (next === 'extension-center') return center.panel;
-    if (next === 'settings') return settings.panel;
-    return next === 'extensions' ? manager.panel : next === 'extension' ? message.panel : extensionPanels.get(next)?.panel;
-  }
 
-  const ecosystem = createExtensionCenter({host, body: center.body, runtime, sources: localSources, ...ecosystemOptions, refreshLaunchers: renderMenu});
+  const account = doc.createElement('div'); account.className = 'mm-header-account'; center.header.append(account);
+  const ecosystem = createExtensionCenter({host, body: center.body, accountContainer: account, runtime, shortcuts, sources: localSources, ...ecosystemOptions, refreshLaunchers: renderMenu});
 
   const versionCard = doc.createElement('div'); versionCard.className = 'mm-system-card';
   const versionTitle = doc.createElement('h2'); versionTitle.textContent = 'Hub 版本';
@@ -100,83 +97,57 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   const backupNote = doc.createElement('p'); backupNote.className = 'mm-hub-note'; backupNote.dataset.hubBackupNote = '';
   backupNote.textContent = '已请求浏览器下载旧 Hub 恢复文件，请确认文件已保存。若新版无法启动，可在酒馆助手中恢复原条目的 content。';
   versionCard.append(versionTitle, updateTestNote, versionDetails, updateError, actions, updateNote, backupNote); settings.body.appendChild(versionCard);
-  const developerSettings = createRegistryDeveloperSettings({host, body: settings.body, registry: ecosystemOptions.registry});
   const unsubscribeUpdate = selfUpdater?.subscribe(next => {installation = next; showInstallation = next.status !== 'idle'; renderUpdatePanel();});
   renderUpdateState(updateChecker.getState());
 
   function place() {
     if (disposed) return;
-    const r = orb.getBoundingClientRect(), v = host.visualViewport;
+    const v = host.visualViewport;
     const w = v?.width || host.innerWidth, h = v?.height || host.innerHeight, ox = v?.offsetLeft || 0, oy = v?.offsetTop || 0;
-    const left = r.left + r.width / 2 < ox + w / 2, dir = left ? 1 : -1;
-    const available = left ? ox + w - (r.left + r.width / 2) : r.left + r.width / 2 - ox;
-    const columns = menuButtons.length > 2 && available >= 198 ? 2 : 1;
-    const rows = Math.ceil(menuButtons.length / columns);
-    const step = rows > 1 ? Math.min(84, Math.max(48, (h - 84) / (rows - 1))) : 0;
-    const half = (rows - 1) * step / 2;
-    const cy = Math.max(oy + 30 + half, Math.min(oy + h - 52 - half, r.top + r.height / 2));
-    menuButtons.forEach((b, i) => {
-      const col = Math.floor(i / rows), row = i % rows;
-      const targetX = Math.max(ox + 38, Math.min(ox + w - 38, r.left + r.width / 2 + dir * (78 + col * 88)));
-      b.style.left = r.left + r.width / 2 - 22 + 'px'; b.style.top = r.top + r.height / 2 - 22 + 'px';
-      b.style.setProperty('--mm-x', targetX - r.left - r.width / 2 + 'px');
-      b.style.setProperty('--mm-y', cy + row * step - half - r.top - r.height / 2 + 'px');
-    });
-    const pw = Math.max(1, Math.min(520, w - 20)), space = left ? ox + w - r.right - 22 : r.left - ox - 22;
-    let x, y, ph;
-    if (space >= pw) { x = left ? r.right + 12 : r.left - pw - 12; ph = Math.min(740, h - 20); y = Math.max(oy + 10, Math.min(oy + h - ph - 10, r.top + r.height / 2 - ph / 2)); }
-    else {
-      x = ox + (w - pw) / 2;
-      const above = r.top - oy - 16, below = oy + h - r.bottom - 16;
-      ph = Math.min(h - 20, Math.max(100, Math.min(740, Math.max(above, below))));
-      y = above >= below ? Math.max(oy + 10, r.top - ph - 12) : Math.min(oy + h - ph - 10, r.bottom + 12);
+    const theme = host.getComputedStyle(shell.root), safe = edge => parseFloat(theme.getPropertyValue('--mie-safe-' + edge)) || 0;
+    const top = Math.max(16,safe('top')), bottom = Math.max(16,safe('bottom')), left = Math.max(12,safe('left')), right = Math.max(12,safe('right'));
+    for (const p of panels) {
+      if(surface?.placeNative(p))continue;
+      const pw = Math.max(1, Math.min(p === center.panel ? 920 : 600, w - left - right)), ph = Math.max(1, Math.min(780, h - top - bottom));
+      const anchor=surface?.floatingAnchor(p),clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
+      const x=anchor?clamp(anchor.left+anchor.width/2>ox+w/2?anchor.left-pw-12:anchor.left+anchor.width+12,ox+left,ox+w-right-pw):ox+left+(w-left-right-pw)/2;
+      const y=anchor?clamp(anchor.top+anchor.height/2-ph/2,oy+top,oy+h-bottom-ph):oy+top+(h-top-bottom-ph)/2;
+      for (const [key,value] of Object.entries({position:'fixed',left:x+'px',top:y+'px',right:'auto',bottom:'auto',width:pw+'px',height:ph+'px',maxHeight:ph+'px'})) p.style.setProperty(key.replace(/[A-Z]/g,m=>'-'+m.toLowerCase()),value,'important');
     }
-    for (const p of panels) for (const [key, value] of Object.entries({position: 'fixed', left: x + 'px', top: y + 'px', right: 'auto', bottom: 'auto', width: pw + 'px', maxHeight: ph + 'px', height: ph + 'px'})) p.style.setProperty(key.replace(/[A-Z]/g, m => '-' + m.toLowerCase()), value, 'important');
+    launcher.resize();
   }
-  function menuVisible(on) {
-    root.dataset.open = String(on); root.inert = !on;
-    orb.classList.toggle('mm-jelly-open', on);
-    orb.setAttribute('aria-expanded', String(state !== 'closed'));
-    orb.setAttribute('aria-label', state === 'closed' ? '展开咩咩Hub菜单' : '关闭咩咩Hub菜单');
+  function updateOrbState() {
+    orb.setAttribute('aria-expanded', String(surface.state !== 'closed'));
+    orb.setAttribute('aria-label', (surface.state === 'closed' ? '展开' : '关闭') + HUB_PRODUCT.name + '菜单');
   }
-  function hideWindows() {
-    for (const p of panels) { p.hidden = true; p.inert = true; }
+  function renderMessage(id){
+    const entry=messages.get(id);if(!entry)return;
+    message.heading.textContent=entry.title;message.panel.setAttribute('aria-label',entry.title);
+    const p=doc.createElement('p');p.className='mm-extension-message-text';p.textContent=entry.text;message.body.replaceChildren(p);
   }
-  /* LEGACY_ANIMATIONS */
-
-  async function change(next) {
-    if (disposed) return;
-    if (next === 'extensions') {void ecosystem.activate('installed'); next = 'extension-center';}
-    else if (next === 'extension-center') void ecosystem.activate();
-    const id = ++serial, previous = state; state = next;
-    cancelAnimations(); menuVisible(false); orb.classList.toggle('mm-tool-active', next !== 'closed');
-    const p = panelFor(next);
-    if (p) {
-      hideWindows();
-      p.hidden = false; p.inert = false; p.style.opacity = '1'; p.style.transform = 'none'; place(); p.scrollTop = 0;
-      const art = extensionPanels.get(next)?.icon;
-      const splash = art ? prepareSplash(p, art) : null;
-      await animate(p, [collapsed(p), {transform: 'none', opacity: 1}], 440, 'cubic-bezier(.16,1,.3,1)');
-      if (id !== serial || disposed) return;
-      if (splash) await landSplash(p, splash, id);
-      if (id !== serial || disposed) return;
-      if (p.tabIndex === -1) p.focus({preventScroll: true});
-    } else {
-      const old = panelFor(previous);
-      if (old && !old.hidden) { old.inert = true; await animate(old, [{transform: 'none', opacity: 1}, collapsed(old)], 340, 'cubic-bezier(.55,0,.85,.35)'); }
-      if (id !== serial || disposed) return;
-      hideWindows(); place(); menuVisible(next === 'menu');
-      if (next === 'menu') menuButtons[0]?.focus({preventScroll: true}); else orb.focus({preventScroll: true});
-    }
+  const systemSurfaces={
+    'extension-center':{owner:'extension-center',panel:center.panel},
+    settings:{owner:'settings',panel:settings.panel},
+  };
+  surface=createSurfaceController({host,shell,root,launcher,panels,place,
+    resolve:key=>systemSurfaces[key]||extensionPanels.get(key)||(key.startsWith('message:')?messages.get(key.slice(8)):undefined),
+    onState:updateOrbState,onError:error=>{lastError=error.message;ecosystem.report(lastError);},
+  });
+  function go(next){
+    if(next==='extensions'){void ecosystem.activate('installed');next='extension-center';}
+    else if(next==='extension-center')void ecosystem.activate();
+    return surface.go(next);
   }
-  function go(next) {
-    return change(next).catch(error => {
-      lastError = error.message; state = 'extensions'; cancelAnimations(); hideWindows(); renderManager();
-      manager.panel.hidden = false; manager.panel.inert = false; place(); menuVisible(false);
-    });
+  const viewportKey=()=>{const v=host.visualViewport;return [v?.width||host.innerWidth,v?.height||host.innerHeight,v?.offsetLeft||0,v?.offsetTop||0].join(':');};
+  let lastViewport=viewportKey();
+  function resized(){
+    const next=viewportKey();
+    // Dock/layout notifications also arrive here; they must not finish a flight.
+    if(next!==lastViewport){lastViewport=next;surface.resize();}
+    place();
   }
   function returnButton(panel, old) {
-    const b = doc.createElement('button'); b.type = 'button'; b.className = 'mm-return'; b.textContent = '返回'; b.onclick = () => go('menu');
+    const b = doc.createElement('button'); b.type = 'button'; b.className = 'mm-return'; b.textContent = HUB_COPY.back; b.onclick = () => go('menu');
     if (old) old.hidden = true;
     panel.appendChild(b);
   }
@@ -185,48 +156,55 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     const focused = doc.activeElement?.dataset?.hubApp;
     for (const b of menuButtons) b.remove();
     const apps = [
-      {id: 'extension-center', title: '扩展中心', icon: '🧩', className: 'mm-center', open: () => go('extension-center')},
-      {id: 'settings', title: '设置', icon: '⚙️', className: 'mm-settings', open: () => go('settings')},
+      {id: 'extension-center', title: HUB_COPY.extensionCenter, icon: '🧩', className: 'mm-center', open: () => go('extension-center')},
+      {id: 'settings', title: HUB_COPY.settings, icon: '⚙️', className: 'mm-settings', open: () => go('settings')},
       ...runtime.list().filter(x => x.launcherAvailable).map(x => ({
         id: x.manifest.id, title: x.manifest.contributes.launcher.title, icon: x.manifest.contributes.launcher.icon || '🧩', className: 'mm-extension',
         open: async () => { const result = await runtime.open(x.manifest.id); if (result.ok) lastError = ''; else if (!result.cancelled) { lastError = result.error; await go('extensions'); } },
       })),
     ];
     menuButtons = apps.map(app => {
-      const b = doc.createElement('button'); b.type = 'button'; b.className = 'mm-small ' + app.className; b.dataset.hubApp = app.id; b.setAttribute('aria-label', app.title);
+      const b = doc.createElement('button'); b.type = 'button'; b.className = 'mm-app ' + app.className; b.dataset.hubApp = app.id; b.setAttribute('aria-label', app.title); b.title = app.title;
       const icon = doc.createElement('span'), label = doc.createElement('small'); icon.textContent = app.icon;
       const art = extensionPanels.get('panel:' + app.id)?.icon;
       if (typeof art === 'string' && /^(?:data:image\/(?:png|webp|jpeg);base64,|https:\/\/)/.test(art)) {const img = doc.createElement('img'); img.src = art; img.alt = ''; img.referrerPolicy = 'no-referrer'; img.onerror = () => {img.remove(); icon.textContent = app.icon;}; icon.replaceChildren(img); icon.className = 'mm-launcher-image';}
       label.textContent = app.title; b.append(icon, label);
-      b.onclick = () => { void Promise.resolve().then(app.open).catch(error => { lastError = error.message; void go('extensions'); }); };
-      root.appendChild(b); return b;
+      b.onclick = () => {
+        void surface.launch(app.id,app.open).catch(error=>{lastError=error.message;void go('extensions');});
+      };
+      return b;
     });
-    place();
-    if (state === 'menu' && focused) (menuButtons.find(b => b.dataset.hubApp === focused) || menuButtons[0])?.focus({preventScroll: true});
+    launcher.setItems(menuButtons); place();
+    if (surface.state === 'menu' && focused) (menuButtons.find(b => b.dataset.hubApp === focused) || menuButtons[0])?.focus({preventScroll: true});
   }
-  function renderManager() {void ecosystem.activate('installed'); if (lastError) ecosystem.report(lastError);}
   function key(e) {
-    if (e.key === 'Escape' && state !== 'closed') { e.preventDefault(); e.stopImmediatePropagation(); void go(state === 'menu' ? 'closed' : 'menu'); }
+    if (e.key === 'Tab' && surface.state === 'menu') {
+      const items = [orb, ...menuButtons], index = items.indexOf(doc.activeElement);
+      e.preventDefault(); items[(index + (e.shiftKey ? items.length - 1 : 1)) % items.length]?.focus({preventScroll:true});
+    }
+    if (e.key === 'Escape' && surface.state !== 'closed') { e.preventDefault(); e.stopImmediatePropagation(); void (surface.state === 'menu' ? go('closed') : surface.close(surface.state)); }
   }
   doc.addEventListener('keydown', key, true);
-  host.visualViewport?.addEventListener('resize', place); host.visualViewport?.addEventListener('scroll', place);
-  shell.connect({onToggle: () => go(state === 'closed' ? 'menu' : 'closed'), beforeMove: () => {}, onPosition: place});
-  renderMenu(); menuVisible(false);
+  host.visualViewport?.addEventListener('resize', resized); host.visualViewport?.addEventListener('scroll', resized);
+  host.addEventListener('orientationchange',resized);
+  shell.connect({onToggle: () => go(surface.state === 'closed' ? 'menu' : 'closed'), beforeMove: () => {}, onPosition: resized});
+  renderMenu(); updateOrbState();
   return {
-    open: () => go('menu'), toggle: () => go(state === 'closed' ? 'menu' : 'closed'), back: () => go('menu'),
+    open: () => go('menu'), toggle: () => go(surface.state === 'closed' ? 'menu' : 'closed'), back: () => surface.close(surface.state),
+    registerShortcut:(id,mount)=>shortcuts.register(id,mount),
+    forgetShortcut:id=>shortcuts.forget(id),
+    runtimeChanged(event,preservePreference=false){if(event.kind==='uninstall'&&!preservePreference)shortcuts.forget(event.extension.manifest.id);shortcuts.sync();this.refresh();},
     refresh() { if (!disposed) { renderMenu(); ecosystem.refresh(); } },
     showMessage(id, title, text) {
       if (disposed) return;
-      activeExtension = id; message.heading.textContent = title; message.panel.setAttribute('aria-label', title);
-      message.body.replaceChildren(); const p = doc.createElement('p'); p.className = 'mm-extension-message-text'; p.textContent = text; message.body.appendChild(p);
-      void go('extension');
+      const entry=messages.get(id);
+      if(entry){entry.title=title;entry.text=text;}
+      else messages.set(id,{owner:id,panel:message.panel,title,text,prepare:()=>renderMessage(id)});
+      return go('message:'+id);
     },
     closeMessage(id) {
-      const key = 'panel:' + id;
-      if (state === key) void go('extensions');
-      if (activeExtension !== id) return;
-      activeExtension = null; message.body.replaceChildren();
-      if (state === 'extension') void go('extensions');
+      const visible=surface.state==='message:'+id;surface.revoke(id);messages.delete(id);
+      if(visible)message.body.replaceChildren();
     },
     attachPanel(id, title, panel, presentation) {
       if (disposed || !panel || panel.nodeType !== 1 || panel.ownerDocument !== doc || !panel.isConnected) throw Error('请先创建并挂载扩展面板。');
@@ -234,23 +212,25 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
       if (extensionPanels.has(key)) throw Error('扩展面板已经挂载。');
       const icon = presentation.icon;
       panel.hidden = true; panel.inert = true;
-      extensionPanels.set(key, {panel, icon}); panels.add(panel);
-      if (icon) addSplash(panel);
+      extensionPanels.set(key, {panel, icon, owner:id}); panels.add(panel);
+
       place();
       return () => {
-        if (state === key) { ++serial; cancelAnimations(); state = 'extensions'; renderManager(); manager.panel.hidden = false; manager.panel.inert = false; }
+        surface.revoke(id);
         panels.delete(panel); extensionPanels.delete(key);
-        splashes.get(panel)?.remove(); splashes.delete(panel); panel.hidden = true; panel.inert = true;
+        panel.hidden = true; panel.inert = true;panel.dataset.surfaceState='closed';
       };
     },
-    showPanel(id) { if (extensionPanels.has('panel:' + id)) return go('panel:' + id); return false; },
+    showPanel(id) {return surface.go('panel:'+id);},
+    closePanel(id) {return surface.close('panel:'+id);},
     report(error) { lastError = error; ecosystem.report(error); },
     dispose() {
       if (disposed) return;
-      disposed = true; ++serial; cancelAnimations(); doc.removeEventListener('keydown', key, true);
+      disposed = true; surface.dispose();shortcuts.dispose();messages.clear(); doc.removeEventListener('keydown', key, true);
       updateChecker.dispose();
-      unsubscribeUpdate?.(); selfUpdater?.dispose(); developerSettings.dispose(); ecosystem.dispose();
-      host.visualViewport?.removeEventListener('resize', place); host.visualViewport?.removeEventListener('scroll', place);
+      unsubscribeUpdate?.(); selfUpdater?.dispose(); ecosystem.dispose(); launcher.dispose();
+      host.visualViewport?.removeEventListener('resize', resized); host.visualViewport?.removeEventListener('scroll', resized);
+      host.removeEventListener('orientationchange',resized);
       checkUpdateButton.onclick = null;
       installButton.onclick = null; confirmButton.onclick = null;
       root.remove(); manager.panel.remove(); message.panel.remove(); center.panel.remove(); settings.panel.remove();
