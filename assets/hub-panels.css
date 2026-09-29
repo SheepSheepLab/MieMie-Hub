@@ -56,7 +56,7 @@
 #miemie-hub-shell .mm-identity-badge{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;border:1px solid var(--mie-badge-border);border-radius:8px;background:var(--mie-badge-fill);color:var(--mie-badge-text);padding:5px 9px;font-size:var(--mie-font-small);line-height:1.5;align-self:start}
 #miemie-hub-shell .mm-identity-badge[data-classification=official]{border-color:var(--mie-official-border);background:var(--mie-official-fill);color:var(--mie-official-text)}
 #miemie-hub-shell .mm-catalog-meta{display:grid;grid-template-columns:auto auto;gap:4px 10px;font-size:var(--mie-font-small);color:var(--mie-text-muted)}
-#miemie-hub-shell .mm-catalog-description{font-size:15px;line-height:1.6;color:var(--mie-description)}
+#miemie-hub-shell .mm-catalog-description{font-size:14px;line-height:1.6;color:var(--mie-description)}
 @media(max-width:600px){
  #miemie-hub-shell .mm-hub-header{padding:12px;gap:var(--mie-space-2);flex-wrap:wrap}
  #miemie-hub-shell .mm-hub-header>img{width:32px;height:32px}
@@ -170,3 +170,21 @@
 #miemie-hub-shell .mm-shortcut-toggle input:disabled{cursor:default}
 #miemie-hub-shell .mm-shortcut-toggle input:disabled+.mm-switch-track{opacity:.45;box-shadow:none}
 #miemie-hub-shell .mm-extension-actions>*{min-width:0;max-width:100%;overflow-wrap:anywhere}
+
+/* Submission choices keep their native values, with a themed, keyboardable menu. */
+#miemie-hub-shell .mm-form-select{position:relative;min-width:0;width:100%}
+#miemie-hub-shell .mm-form-select select[hidden]{display:none!important}
+#miemie-hub-shell .mm-form-select-trigger{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;width:100%;min-height:var(--mie-control-height);padding:10px 12px;background:var(--mie-bg);color:var(--mie-text);border:1px solid var(--mie-border);border-radius:var(--mie-radius-control);font:inherit}
+#miemie-hub-shell .mm-form-select-trigger::after{content:'⌄';color:var(--mie-accent);flex:none}
+#miemie-hub-shell .mm-form-select-trigger[aria-expanded=true]{border-color:var(--mie-accent);box-shadow:var(--mie-glow)}
+#miemie-hub-shell .mm-form-select-menu{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:5;overflow:auto;padding:6px;background:var(--mie-surface-strong);border:1px solid var(--mie-accent);border-radius:var(--mie-radius-control);box-shadow:var(--mie-shadow);overscroll-behavior:contain}
+#miemie-hub-shell .mm-form-select-menu[data-side=above]{top:auto;bottom:calc(100% + 4px)}
+#miemie-hub-shell .mm-form-select-menu [role=option]{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:10px 12px;border:1px solid transparent;border-radius:var(--mie-radius-control);background:transparent;color:var(--mie-text);font:inherit;text-align:left;white-space:normal}
+#miemie-hub-shell .mm-form-select-menu [role=option]::before{content:'✓';visibility:hidden;flex:none}
+#miemie-hub-shell .mm-form-select-menu [aria-selected=true]{background:var(--mie-selected-fill);color:var(--mie-selected-text)}
+#miemie-hub-shell .mm-form-select-menu [aria-selected=true]::before{visibility:visible}
+#miemie-hub-shell .mm-form-select-menu [role=option]:is(:hover,:focus-visible){border-color:var(--mie-accent);background:var(--mie-selected-fill);outline:none}
+#miemie-hub-shell .mm-submission-form select[data-distribution]:disabled{opacity:.65;cursor:not-allowed;color:var(--mie-text-muted);background-color:var(--mie-bg)}
+#miemie-hub-shell .mm-github-inspect-row{display:flex;gap:var(--mie-space-2);align-items:center;min-width:0}
+#miemie-hub-shell .mm-github-inspect-row input{flex:1;min-width:0;width:0}
+#miemie-hub-shell .mm-github-inspect-row button{flex:none;min-height:44px;padding:10px;white-space:nowrap;font-size:var(--mie-font-small)}

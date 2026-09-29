@@ -35,7 +35,8 @@ export function createHoneycombLauncher({host, root, shell, title}) {
   root.setAttribute('role','dialog'); root.setAttribute('aria-label',title); root.setAttribute('aria-modal','true');
   scroll.setAttribute('aria-label', title); scroll.tabIndex = -1;
   const hint = doc.createElement('p'); hint.className = 'mm-launcher-hint'; hint.textContent = '上下滑动浏览 · 点击主图标收起';
-  scroll.append(canvas); root.append(scroll, hint); root.dataset.open = 'false'; root.inert = true; root.hidden = true;
+  const ripple=doc.createElement('div');ripple.className='mm-launcher-ripple';ripple.setAttribute('aria-hidden','true');
+  scroll.append(canvas); root.append(ripple, scroll, hint); root.dataset.open = 'false'; root.inert = true; root.hidden = true;
   let buttons = [], cells = [], hubLabel, geometry, width = 0, height = 0, active = false, disposed = false;
   let x = 0, drag = null, suppressClick = false, frame = 0, lastTime = 0, generation = 0, restoringFocus = false;
   const flights = new Set();
@@ -50,6 +51,7 @@ export function createHoneycombLauncher({host, root, shell, title}) {
       const dy=honeycombPosition(distance,height)-distance, dx=slot.x*(edge-1)*LAUNCHER_TUNING.horizontalCompression;
       const scale = edge * (i === 0 ? LAUNCHER_TUNING.hubScale : 1);
       if(root.dataset.open==='true')cell.style.opacity='1';
+      cell.style.filter='';
       cell.style.transform = 'translateX(' + (x+dx).toFixed(2) + 'px) translateY('+dy.toFixed(2)+'px) scale(' + scale.toFixed(4) + ')';
     });
   }
@@ -98,33 +100,59 @@ export function createHoneycombLauncher({host, root, shell, title}) {
   }
   // Measure only at transition boundaries. Scrolling still uses cached geometry.
   const center = rect => ({x:rect.left+rect.width/2,y:rect.top+rect.height/2,size:rect.width});
-  const ease = t => {t=Math.max(0,Math.min(1,t));return t*t*t*(t*(t*6-15)+10);};
   const mix = (a,b,t) => a+(b-a)*t;
+  const ease = t => {t=Math.max(0,Math.min(1,t));return t*t*t*(t*(t*6-15)+10);};
   function positions() {
-    return cells.map(cell => ({...center(cell.getBoundingClientRect()),opacity:Number(host.getComputedStyle(cell).opacity)||0}));
+    const bounds=root.getBoundingClientRect();
+    return cells.map((cell,i) => {
+      const rect=cell.getBoundingClientRect(),slot=geometry.items[i],distance=slot.y-scroll.scrollTop,edge=honeycombScale(distance,height);
+      const fallback={x:bounds.left+width/2+slot.x*(1+(edge-1)*LAUNCHER_TUNING.horizontalCompression)+x,y:bounds.top+height/2+honeycombPosition(distance,height),size:geometry.size*edge*(i?1:LAUNCHER_TUNING.hubScale)};
+      return {...(rect.width>0?center(rect):fallback),opacity:Number(host.getComputedStyle(cell).opacity)||0};
+    });
   }
-  // One motion sequence: every child expands from / contracts into the MOVING Hub.
-  // Quintic position curves avoid the velocity break of two sequential flights.
-  function travel(cell, index, start, end, hubStart, hubEnd, opening, duration, bounds) {
+  // B: a fixed central Hub, with a small radial stagger. Geometry and ownership
+  // stay with the existing canvas; interrupted flights start at their visible rect.
+  function openTravel(cell, index, start, end, bounds) {
+    const p=geometry.items[index];
+    const origin={x:bounds.left+width/2+p.x,y:bounds.top+height/2+p.y-scroll.scrollTop};
+    const frame=(point,blur=0)=>({transform:'translate('+(point.x-origin.x)+'px,'+(point.y-origin.y)+'px) scale('+point.size/geometry.size+')',opacity:point.opacity,filter:'blur('+blur+'px)'});
+    let frames;
+    if (!index) frames=[frame(start),frame(end)];
+    else {
+      const middle={x:mix(start.x,end.x,LAUNCHER_TUNING.bloomMidpoint),y:mix(start.y,end.y,LAUNCHER_TUNING.bloomMidpoint),size:end.size*LAUNCHER_TUNING.bloomMidScale,opacity:.9};
+      const over={x:mix(start.x,end.x,LAUNCHER_TUNING.bloomOvershoot),y:mix(start.y,end.y,LAUNCHER_TUNING.bloomOvershoot),size:end.size*LAUNCHER_TUNING.bloomOvershoot,opacity:1};
+      frames=[frame(start,start.opacity?0:LAUNCHER_TUNING.bloomBlur),{...frame(middle,1),offset:.34},{...frame(over),offset:.83},frame(end)];
+    }
+    const delay=index?Math.min((index-1)*LAUNCHER_TUNING.bloomStaggerMs,LAUNCHER_TUNING.bloomStaggerMaxMs):0;
+    return fly(cell,frames,delay,index?LAUNCHER_TUNING.openMs:LAUNCHER_TUNING.hubEnterMs);
+  }
+  // Preserve the released close path: children collect into the moving Hub as
+  // the same real orb returns to its saved Dock, with the original quintic curve.
+  function closeTravel(cell,index,start,end,hubStart,hubEnd,bounds) {
     const p=geometry.items[index];
     const origin={x:bounds.left+width/2+p.x,y:bounds.top+height/2+p.y-scroll.scrollTop};
     const frames=Array.from({length:25},(_,step)=>{
-      const t=step/24,move=ease(t),fan=index===0?move:ease(opening?(t-LAUNCHER_TUNING.fanDelay-Math.min(index*LAUNCHER_TUNING.fanStagger,LAUNCHER_TUNING.fanStaggerMax))/LAUNCHER_TUNING.fanOpenSpan:t/LAUNCHER_TUNING.fanCloseSpan);
+      const t=step/24,move=ease(t),fan=index===0?move:ease(t/LAUNCHER_TUNING.fanCloseSpan);
       const anchor={x:mix(hubStart.x,hubEnd.x,move),y:mix(hubStart.y,hubEnd.y,move)};
       const px=anchor.x+mix(start.x-hubStart.x,end.x-hubEnd.x,fan),py=anchor.y+mix(start.y-hubStart.y,end.y-hubEnd.y,fan);
       return {transform:'translate('+(px-origin.x)+'px,'+(py-origin.y)+'px) scale('+mix(start.size,end.size,fan)/geometry.size+')',opacity:mix(start.opacity,end.opacity,fan)};
     });
-    return fly(cell,frames,0,duration,'linear');
+    return fly(cell,frames,0,LAUNCHER_TUNING.closeMs,'linear');
+  }
+
+  function bloom(center,bounds) {
+    Object.assign(ripple.style,{left:center.x-bounds.left+'px',top:center.y-bounds.top+'px',width:center.size+'px',height:center.size+'px'});
+    return fly(ripple,[{transform:'translate(-50%,-50%) scale('+LAUNCHER_TUNING.rippleStartScale+')',opacity:0},{transform:'translate(-50%,-50%) scale(1.4)',opacity:.4,offset:.23},{transform:'translate(-50%,-50%) scale('+LAUNCHER_TUNING.rippleEndScale+')',opacity:0}],0,LAUNCHER_TUNING.rippleMs);
   }
   async function open({preserve=false}={}) {
     if (disposed || (active && root.dataset.open === 'true')) return;
-    const id=++generation,from=center(shell.orb.getBoundingClientRect()),previous=active?positions():null;
-    const labelStart=active?{transform:host.getComputedStyle(hubLabel).transform,opacity:host.getComputedStyle(hubLabel).opacity}:null;
+    const id=++generation,previous=active?positions():null;
     stopFlights();active=true;x=0;root.hidden=false;root.dataset.open='true';root.dataset.moving='true';root.inert=false;
     shell.borrowOrb(cells[0]);hubLabel.textContent=shell.orb.dataset.productLabel||title;layout(!preserve);
     const target=positions(),hubEnd=target[0],bounds=root.getBoundingClientRect();
-    await Promise.all([...cells.map((cell,i)=>travel(cell,i,previous?.[i]||{...from,size:i?geometry.size*LAUNCHER_TUNING.collapsedScale:from.size,opacity:i?0:1},target[i],previous?.[0]||from,hubEnd,true,LAUNCHER_TUNING.openMs,bounds)),
-      fly(hubLabel,[labelStart||{transform:'translate(-50%,-'+(geometry.size/2+8)+'px) scale('+LAUNCHER_TUNING.labelCollapsedScale+')',opacity:0},{transform:'translate(-50%,0) scale(1)',opacity:1}],0,LAUNCHER_TUNING.openMs)]);
+    // The Hub name appears with its icon immediately, without a separate reveal.
+    Object.assign(hubLabel.style,{transform:'translate(-50%,0) scale(1)',opacity:1});
+    await Promise.all([bloom(hubEnd,bounds),...cells.map((cell,i)=>openTravel(cell,i,previous?.[i]||{...hubEnd,size:i?geometry.size*LAUNCHER_TUNING.collapsedScale:hubEnd.size,opacity:i?0:1},target[i],bounds))]);
     if(id===generation&&active){root.dataset.moving='false';draw();shell.orb.focus({preventScroll:true});}
   }
   async function close() {
@@ -134,7 +162,7 @@ export function createHoneycombLauncher({host, root, shell, title}) {
     if(frame){cancelRAF(frame);frame=0;}
     const bounds=root.getBoundingClientRect(),dock=shell.getDock(),end={x:dock.x+dock.size/2,y:dock.y+dock.size/2,size:dock.size,opacity:1};
     root.dataset.open='false';
-    await Promise.all([...cells.map((cell,i)=>travel(cell,i,start[i],i?{...end,size:geometry.size*LAUNCHER_TUNING.collapsedScale,opacity:0}:end,start[0],end,false,LAUNCHER_TUNING.closeMs,bounds)),
+    await Promise.all([...cells.map((cell,i)=>closeTravel(cell,i,start[i],i?{...end,size:geometry.size*LAUNCHER_TUNING.closeCollapsedScale,opacity:0}:end,start[0],end,bounds)),
       fly(hubLabel,[labelStart,{transform:'translate(-50%,-'+(geometry.size/2+8)+'px) scale('+LAUNCHER_TUNING.labelCollapsedScale+')',opacity:0}],0,LAUNCHER_TUNING.labelCloseMs)]);
     if(id!==generation)return;
     active=false;root.hidden=true;root.dataset.moving='false';shell.releaseOrb();x=0;draw();
@@ -194,7 +222,7 @@ export function createHoneycombLauncher({host, root, shell, title}) {
   const listeners={scroll:schedule,pointerdown:down,pointermove:move,pointerup:end,pointercancel:end,lostpointercapture:end,focusin:focus};
   for(const [name,fn]of Object.entries(listeners))scroll.addEventListener(name,fn);
   scroll.addEventListener('click',click,true);
-  return {open,close,setItems,capture,resume,originRect,originElement:origin=>buttons.find(b=>b.dataset.hubApp===origin?.id&&b.isConnected),highlight,suspend(){root.dataset.surface='true';root.inert=true;},resize:()=>layout(),
-    dispose(){disposed=true;++generation;stopFlights();if(frame)cancelRAF(frame);for(const[name,fn]of Object.entries(listeners))scroll.removeEventListener(name,fn);scroll.removeEventListener('click',click,true);shell.releaseOrb();scroll.remove();hint.remove();},
+  return {open,close,setItems,capture,resume,originRect,originElement:origin=>buttons.find(b=>b.dataset.hubApp===origin?.id&&b.isConnected),highlight,suspend(){root.dataset.surface='true';root.inert=true;},resize(){stopFlights();layout();},
+    dispose(){disposed=true;++generation;stopFlights();if(frame)cancelRAF(frame);for(const[name,fn]of Object.entries(listeners))scroll.removeEventListener(name,fn);scroll.removeEventListener('click',click,true);shell.releaseOrb();scroll.remove();hint.remove();ripple.remove();},
   };
 }

@@ -158,6 +158,7 @@ async function runTests() {
       await menu();const scroll=document.querySelector('.mm-honeycomb-scroll');scroll.scrollTop=110;
       click('[data-hub-app="miemie.polisher"]');const panel=document.querySelector('#meeme-translation section');
       await until(()=>panel.dataset.surfaceState==='open','Polisher Surface opened');
+      assert(panel.querySelector('.mm-tool-titles > strong').textContent==='咩咩润色工具 '+__MieMieHub.extensions.get('miemie.polisher').manifest.version,'Hub 面板正式标题不一致');
       const before=JSON.stringify(variables);click('#meeme-translation .mm-return');
       await until(()=>panel.hidden,'Polisher Surface closed');
       assert(scroll.scrollTop===110,'Surface 返回时重置了蜂窝位置');
@@ -178,6 +179,7 @@ async function runTests() {
       assert(orb&&document.querySelector('[data-hub-app="miemie.polisher"]'),'两个入口应同时存在');
       click('[data-hub-panel="extension-center"] .mm-return');await waits(5);click('.ts-orb');await waits(5);
       orb.click();orb.click();await until(()=>panel.dataset.surfaceState==='open','Shortcut打开');
+      assert(panel.querySelector('.mm-tool-titles > strong').textContent==='咩咩润色工具 '+__MieMieHub.extensions.get('miemie.polisher').manifest.version,'Shortcut 正式标题不一致');
       assert(document.querySelectorAll('#meeme-translation').length===1,'Shortcut 创建了第二实例');
       click('#meeme-translation .mm-return');await until(()=>panel.hidden,'Shortcut关闭');
       assert(document.querySelector('#meeme-combined-menu').hidden,'Shortcut关闭不应突然打开蜂窝');assert(JSON.stringify(variables)===before,'Shortcut 改变业务数据');

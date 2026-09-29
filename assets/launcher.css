@@ -36,3 +36,7 @@
 
 /* Enlarge only System app artwork; cell geometry and Hub scale stay unchanged. */
 #miemie-hub-shell .mm-app:is(.mm-center,.mm-settings)>span{font-size:clamp(44px,9vw,56px);line-height:1}
+
+/* Presentation-only wave underneath the unchanged honeycomb canvas. */
+#meeme-combined-menu .mm-launcher-ripple{position:absolute;pointer-events:none;border:1px solid var(--mie-highlight);border-radius:50%;box-shadow:var(--mie-glow);opacity:0;will-change:transform,opacity}
+#meeme-combined-menu[data-surface=true] .mm-launcher-ripple{visibility:hidden}

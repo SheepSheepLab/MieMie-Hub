@@ -103,20 +103,28 @@ test('position compression follows the scale curve continuously, preserves order
   const edge=height/2;assert.ok(honeycombPosition(edge,height)<edge*.81);assert.ok(honeycombPosition(edge+72,height)-honeycombPosition(edge,height)<36);assert.ok(honeycombPosition(height*2,height)>height/2);
  }
 });
-test('opening originates at Dock, closing collects labels along one uninterrupted Hub flight',async t=>{
+test('B opens from the center with an immediate Hub title; released close motion returns to Dock',async t=>{
  const f=fixture(t),pending=new Set(),calls=[];
  f.shell.orb.getBoundingClientRect=()=>({left:18,top:200,width:64,height:64});
  f.host.Element.prototype.animate=function(frames,options){let finish;const a={finished:new Promise(r=>finish=r),cancel(){pending.delete(a);finish();}};calls.push({el:this,frames,options});pending.add(a);return a;};
  async function settle(){for(let i=0;i<16;i++){for(const a of [...pending])a.cancel();await Promise.resolve();}}
  const opening=f.launcher.open();const child=calls.find(c=>c.el.querySelector('[data-hub-app]')),p=child.el;
  const shift=child.frames[0].transform.match(/translate\(([-.\d]+)px,([-.\d]+)px\)/);assert.ok(shift);
- assert.equal(parseFloat(p.style.left)+parseFloat(p.style.width)/2+Number(shift[1]),50);
- assert.equal(parseFloat(p.style.top)+parseFloat(p.style.height)/2-f.scroll.scrollTop+Number(shift[2]),232);
+ assert.equal(parseFloat(p.style.left)+parseFloat(p.style.width)/2+Number(shift[1]),195);
+ assert.equal(parseFloat(p.style.top)+parseFloat(p.style.height)/2-f.scroll.scrollTop+Number(shift[2]),370);
+ const wave=calls.find(c=>c.el.classList.contains('mm-launcher-ripple'));assert.ok(wave);assert.equal(wave.frames.at(-1).opacity,0);assert.match(wave.frames.at(-1).transform,/scale\(3.9\)/);
+ const main=calls.find(c=>c.el.matches('[data-hub-cell]'));assert.equal(main.frames[0].transform,main.frames.at(-1).transform,'Hub appears at center instead of flying from dock');
+ assert.equal(main.frames[0].opacity,1);assert.equal(main.frames.at(-1).opacity,1);
+ const title=f.root.querySelector('.mm-hub-launcher-label');assert.equal(title.style.opacity,'1');assert.equal(title.style.transform,'translate(-50%,0) scale(1)');assert.ok(!calls.some(c=>c.el===title),'no independent title reveal');
  await settle();await opening;calls.length=0;
+ const dock=f.shell.getDock();
  const closing=f.launcher.close(),label=f.root.querySelector('.mm-hub-launcher-label');assert.equal(label.style.opacity,'0');assert.match(label.style.transform,/scale\(0?\.05\)/);
- const hubFlight=calls.find(c=>c.el.matches('[data-hub-cell]'));assert.ok(hubFlight,'Hub moves while children collect, without a second sequential flight');
- assert.equal(hubFlight.options.duration,440);assert.equal(hubFlight.options.delay,0);
- for(const c of calls.filter(c=>c.el.querySelector('[data-hub-app]'))){assert.equal(c.options.duration,440);assert.equal(c.frames[18].opacity,0,'children reach the moving Hub before its return ends');}
+ const hubFlight=calls.find(c=>c.el.matches('[data-hub-cell]'));assert.ok(hubFlight,'the real Hub flies back to its Dock');
+ assert.equal(hubFlight.options.duration,440);assert.equal(hubFlight.options.delay,0);assert.equal(hubFlight.options.easing,'linear');assert.equal(hubFlight.frames.length,25);assert.equal(hubFlight.frames.at(-1).opacity,1);
+ const point=(c,frame)=>{const xy=frame.transform.match(/translate\(([-.\d]+)px,([-.\d]+)px\)/);return {x:parseFloat(c.el.style.left)+parseFloat(c.el.style.width)/2+Number(xy[1]),y:parseFloat(c.el.style.top)+parseFloat(c.el.style.height)/2-f.scroll.scrollTop+Number(xy[2])};};
+ const end=point(hubFlight,hubFlight.frames.at(-1));assert.equal(end.x,dock.x+dock.size/2);assert.equal(end.y,dock.y+dock.size/2);
+ const start=point(hubFlight,hubFlight.frames[0]),half=point(hubFlight,hubFlight.frames[12]);assert.equal(half.x,(start.x+end.x)/2);assert.equal(half.y,(start.y+end.y)/2);
+ for(const c of calls.filter(c=>c.el.querySelector('[data-hub-app]'))){assert.equal(c.options.duration,440);assert.equal(c.options.delay,0);assert.equal(c.frames.length,25);assert.equal(c.frames.at(-1).opacity,0,'children collect into the moving Hub');const target=point(c,c.frames.at(-1));assert.ok(Math.abs(target.x-end.x)<1e-8&&Math.abs(target.y-end.y)<1e-8);assert.ok(Math.abs(Number(c.frames.at(-1).transform.match(/scale\(([^)]+)\)/)[1])-.04)<1e-8);}
  assert.equal(calls.filter(c=>c.el.matches('[data-hub-cell]')).length,1);
  assert.ok(calls.filter(c=>c.el.querySelector('[data-hub-app]')).every(c=>c.frames.at(-1).opacity===0));
  await settle();await closing;assert.ok(calls.some(c=>c.el.matches('[data-hub-cell]')));assert.equal(f.shell.orb.parentElement,f.shell.root);assert.equal(f.root.hidden,true);

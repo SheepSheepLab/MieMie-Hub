@@ -5,7 +5,7 @@ const discord={...github,id:'dev-discord',sourceType:'discord',sourceUrl:'https:
 function fixture(t,{identity=null,request,defaultBase='',storedBase='https://registry.example',shortcuts}={}){
  const dom=new JSDOM('<header id="account"></header><div id="body"></div>',{url:'https://tavern.example'}),host=dom.window,body=host.document.querySelector('#body');if(storedBase!==null)host.localStorage.setItem('miemie_registry_url_v1',storedBase);
  const calls=[],listeners=new Set();const notify=()=>{for(const listener of listeners)listener(who);};let base=defaultBase,who=identity,records=[{manifest:{id:'fixture.background',name:'Background Development Fixture',version:'1.0.0'},enabled:true,launcherAvailable:false,state:'enabled'}];
- const registry={setBase(v){if(base!==v){base=v;notify();}},getBase:()=>base,getDefaultBase:()=>defaultBase,getIdentity:()=>who,subscribe(listener){listeners.add(listener);return()=>listeners.delete(listener);},setIdentity(value){who=value;notify();},async login(){who={profile:{displayName:'Development Submitter'}};notify();},async logout(){who=null;notify();},dispose(){calls.push('registry.dispose');},async api(path,options){calls.push({path,options});if(request)return request(path,options);if(path.startsWith('/api/catalog'))return {items:[github,discord],hasMore:false};if(path==='/api/submissions'&&!options?.method)return {items:[github]};return {ok:true};}};
+ const registry={setBase(v){if(base!==v){base=v;notify();}},getBase:()=>base,getDefaultBase:()=>defaultBase,getIdentity:()=>who,subscribe(listener){listeners.add(listener);return()=>listeners.delete(listener);},setIdentity(value){who=value;notify();},async login(){who={profile:{displayName:'Development Submitter'}};notify();},async logout(){who=null;notify();},dispose(){calls.push('registry.dispose');},async api(path,options){calls.push({path,options});if(request)return request(path,options);if(path.startsWith('/api/catalog'))return {items:[github,discord],hasMore:false};if(path.startsWith('/api/github/preview'))return {compatibility:'installable'};if(path==='/api/submissions'&&!options?.method)return {items:[github]};return {ok:true};}};
  const runtime={list:()=>records,get:id=>records.find(x=>x.manifest.id===id),open:async id=>{calls.push('open:'+id);return {ok:true};},disable:async id=>{records.find(x=>x.manifest.id===id).enabled=false;},enable:async id=>{records.find(x=>x.manifest.id===id).enabled=true;},uninstall:async id=>{records=records.filter(x=>x.manifest.id!==id);}};
  const packages={async listInstalled(){return [];},async inspect(url){calls.push('inspect:'+url);return {installable:true,id:'fixture.package',manifest:{name:'Development Fixture'},version:'1.0.1'};},async install(candidate){calls.push('install:'+candidate.id);},dispose(){calls.push('packages.dispose');}};
  const account=host.document.querySelector('#account');const center=createExtensionCenter({host,body,accountContainer:account,runtime,shortcuts,sources:{list:()=>[],register:async()=>{}},packages,registry});
@@ -15,7 +15,7 @@ function fixture(t,{identity=null,request,defaultBase='',storedBase='https://reg
 }
 test('discover keeps ordinary-user actions even for owner; source paths and install capability remain distinct',async t=>{const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}}});await f.center.activate('discover');assert.equal(f.body.querySelector('script'),null);assert.match(f.body.textContent,/Fixture Author/);assert.match(f.body.textContent,/Development Submitter/);assert.equal([...f.body.querySelectorAll('button')].some(b=>/编辑|下架/.test(b.textContent)),false);assert.equal(f.body.querySelector('[data-catalog-id="dev-discord"] a').href,discord.sourceUrl);assert.equal(f.body.querySelector('[data-catalog-id="dev-discord"] button'),null);await f.click('安装');assert.ok(f.calls.includes('inspect:'+github.sourceUrl));assert.ok(f.calls.includes('install:fixture.package'));assert.equal(f.center.getActive(),'installed');});
 test('Registry offline is isolated from installed background lifecycle and Core-facing local UI',async t=>{const f=fixture(t,{request:()=>{throw Error('offline');}});await f.center.activate('discover');assert.match(f.body.textContent,/扩展目录无法连接/);await f.center.activate('installed');assert.match(f.body.textContent,/Background Development Fixture/);assert.equal([...f.body.querySelectorAll('button')].some(b=>b.textContent==='打开'),false);await f.click('停用');assert.equal(f.runtime.list()[0].enabled,false);await f.click('启用');assert.equal(f.runtime.list()[0].enabled,true);await f.click('Runtime 注销');assert.equal(f.runtime.list().length,0);});
-test('mine login and editing controls stay separate; admin-hidden records cannot claim relisting',async t=>{const f=fixture(t,{request:()=>({items:[{...github,moderation:'hidden',moderationReason:'Development moderation fixture'}]})});await f.center.activate('mine');assert.match(f.body.textContent,/使用右上角 Discord 登录入口后/);await f.click('Discord 登录');assert.ok([...f.body.querySelectorAll('button')].some(x=>x.textContent==='编辑'));assert.equal([...f.body.querySelectorAll('button')].some(x=>x.textContent==='下架'||x.textContent==='重新上架'),false);assert.match(f.body.textContent,/hidden/);assert.equal([...f.body.querySelectorAll('button')].some(x=>x.textContent==='管理员管理'),false);await f.click('编辑');const input=f.body.querySelector('[name="name"]');input.value='New fixture name';const form=f.body.querySelector('form');form.dispatchEvent(new f.host.Event('submit',{bubbles:true,cancelable:true}));await tick();assert.ok(f.calls.some(x=>x.path==='/api/submissions/dev-github'&&x.options.method==='PATCH'&&x.options.body.name==='New fixture name'));});
+test('mine login and editing controls stay separate; admin-hidden records cannot claim relisting',async t=>{const f=fixture(t,{request:path=>path.startsWith('/api/github/preview')?{compatibility:'installable'}:{items:[{...github,moderation:'hidden',moderationReason:'Development moderation fixture'}]}});await f.center.activate('mine');assert.match(f.body.textContent,/使用右上角 Discord 登录入口后/);await f.click('Discord 登录');assert.ok([...f.body.querySelectorAll('button')].some(x=>x.textContent==='编辑'));assert.equal([...f.body.querySelectorAll('button')].some(x=>x.textContent==='下架'||x.textContent==='重新上架'),false);assert.match(f.body.textContent,/hidden/);assert.equal([...f.body.querySelectorAll('button')].some(x=>x.textContent==='管理员管理'),false);await f.click('编辑');await f.click('读取 GitHub 资料');const input=f.body.querySelector('[name="name"]');input.value='New fixture name';const form=f.body.querySelector('form');if(form.querySelector('[name=sourceType]').value==='github'&&form.querySelector('[name=type]').value==='tavern_extension')await f.click('读取 GitHub 资料');form.dispatchEvent(new f.host.Event('submit',{bubbles:true,cancelable:true}));await tick();assert.ok(f.calls.some(x=>x.path==='/api/submissions/dev-github'&&x.options.method==='PATCH'&&x.options.body.name==='New fixture name'));});
 test('slow mine response cannot replace an open submission form',async t=>{let resolve;const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}},request:()=>new Promise(r=>{resolve=r;})});const pending=f.center.activate('mine');await tick();await f.click('提交扩展');resolve({items:[github]});await pending;assert.ok(f.body.querySelector('[data-submission-form]'));assert.equal(f.body.querySelectorAll('article').length,0);});
 test('Catalog pagination/search use optional authorized API and late previous tab results are discarded',async t=>{let resolve;const f=fixture(t,{request:()=>new Promise(r=>{resolve=r;})});const pending=f.center.activate('discover');await tick();await f.center.activate('installed');resolve({items:[github],hasMore:true});await pending;assert.equal(f.body.querySelector('[data-catalog-id]'),null);assert.match(f.body.textContent,/Background Development Fixture/);assert.ok(f.calls[0].path.startsWith('/api/catalog?page=1&pageSize=12'));});
 
@@ -31,17 +31,17 @@ test('official default supports discovery and Discord login without address cont
 test('existing local override is retained without exposing a center configuration form',async t=>{
  const f=fixture(t,{defaultBase:'https://official-registry.example',storedBase:'http://127.0.0.1:8787'});await f.center.activate('mine');assert.equal(f.registry.getBase(),'http://127.0.0.1:8787');assert.equal(f.body.querySelector('input'),null);
 });
-test('Discord submission defaults public and derives guild restriction from the source URL on the server',async t=>{
+test('GitHub defaults public; Discord source enforces guild-only without auxiliary fields',async t=>{
  const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}}});await f.center.activate('mine');await f.click('提交扩展');const form=f.body.querySelector('[data-submission-form]');const field=name=>form.querySelector('[name="'+name+'"]');assert.equal(field('visibility').value,'public');
- field('sourceType').value='discord';field('sourceType').dispatchEvent(new f.host.Event('change'));field('visibility').value='discord_guild';field('visibility').dispatchEvent(new f.host.Event('change'));
+ field('sourceType').value='discord';field('sourceType').dispatchEvent(new f.host.Event('change'));assert.equal(field('visibility').closest('label').hidden,true);assert.equal(field('visibilitySourceUrl').disabled,true);assert.equal(field('githubUrl').closest('label').hidden,true);assert.equal(field('discordPostUrl').closest('label').hidden,true);assert.match(form.textContent,/🔒 Discord 来源项目仅对原帖所在服务器成员显示/);
  assert.equal(field('discordUrl').required,true);assert.equal(field('githubUrl').required,false);for(const[key,value]of Object.entries({name:'Development Guild Fixture',author:'Fixture Author',description:'Test Data',discordUrl:'https://discord.com/channels/111111111111111111/222222222222222222/333333333333333333',tags:'test, development'}))field(key).value=value;
- field('discordUrl').dispatchEvent(new f.host.Event('input'));form.dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();const sent=f.calls.find(x=>x.path==='/api/submissions'&&x.options?.method==='POST').options.body;
- assert.equal(sent.visibility,'discord_guild');assert.equal(sent.sourceType,'discord');assert.deepEqual(sent.tags,['test','development']);assert.equal(sent.visibilitySourceUrl,sent.discordUrl);assert.equal(sent.visibilityGuildId,undefined);assert.equal(sent.ownerDiscordUserId,undefined);
+ field('discordUrl').dispatchEvent(new f.host.Event('input'));if(form.querySelector('[name=sourceType]').value==='github'&&form.querySelector('[name=type]').value==='tavern_extension')await f.click('读取 GitHub 资料');form.dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();const sent=f.calls.find(x=>x.path==='/api/submissions'&&x.options?.method==='POST').options.body;
+ assert.equal(sent.visibility,'discord_guild');assert.equal(sent.sourceType,'discord');assert.deepEqual(sent.tags,['test','development']);assert.equal(sent.visibilitySourceUrl,sent.sourceUrl);assert.equal(sent.visibilityGuildId,undefined);assert.equal(sent.ownerDiscordUserId,undefined);
 });
 test('GitHub restricted submission sends an explicit Discord post while editing cannot change owner',async t=>{
  const own={...github,visibility:'discord_guild',visibilitySourceUrl:'https://discord.com/channels/111111111111111111/222222222222222222/333333333333333333',tags:['development'],ownerDiscordUserId:'not-for-client-edit'};
- const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}},request:()=>({items:[own]})});await f.center.activate('mine');await f.click('编辑');const form=f.body.querySelector('form'),field=name=>form.querySelector('[name="'+name+'"]');assert.equal(field('visibility').value,'discord_guild');assert.equal(field('visibilitySourceUrl').value,own.visibilitySourceUrl);assert.equal(field('visibilitySourceUrl').required,true);assert.equal(field('discordUrl').value,'');assert.equal(field('discordUrl').required,false);assert.equal(field('ownerDiscordUserId'),null);
- field('githubUrl').value='https://github.com/example/changed';field('description').value='Changed Test Data';form.dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();const payload=f.calls.find(x=>x.options?.method==='PATCH').options.body;assert.equal(payload.visibilitySourceUrl,own.visibilitySourceUrl);assert.equal(payload.sourceUrl,'https://github.com/example/changed');assert.equal(payload.ownerDiscordUserId,undefined);
+ const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}},request:path=>path.startsWith('/api/github/preview')?{compatibility:'installable'}:{items:[own]}});await f.center.activate('mine');await f.click('编辑');const form=f.body.querySelector('form'),field=name=>form.querySelector('[name="'+name+'"]');assert.equal(field('visibility').value,'discord_guild');assert.equal(field('visibilitySourceUrl').value,own.visibilitySourceUrl);assert.equal(field('visibilitySourceUrl').required,true);assert.equal(field('discordUrl').value,'');assert.equal(field('discordUrl').required,false);assert.equal(field('ownerDiscordUserId'),null);
+ field('githubUrl').value='https://github.com/example/changed';field('description').value='Changed Test Data';if(form.querySelector('[name=sourceType]').value==='github'&&form.querySelector('[name=type]').value==='tavern_extension')await f.click('读取 GitHub 资料');form.dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();const payload=f.calls.find(x=>x.options?.method==='PATCH').options.body;assert.equal(payload.visibilitySourceUrl,own.visibilitySourceUrl);assert.equal(payload.sourceUrl,'https://github.com/example/changed');assert.equal(payload.ownerDiscordUserId,undefined);
 });
 test('GitHub preview only prefills current source and never auto-creates a Catalog entry',async t=>{
  let finish;const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}},request:path=>path.startsWith('/api/github/preview')?new Promise(r=>{finish=r;}):{items:[]}});await f.center.activate('mine');await f.click('提交扩展');const form=f.body.querySelector('form'),url=form.querySelector('[name="githubUrl"]'),name=form.querySelector('[name="name"]');url.value='https://github.com/example/first';await f.click('读取 GitHub 资料');url.value='https://github.com/example/second';finish({manifest:{name:'Stale Repository',author:'Old',description:'Old'}});await tick();assert.equal(name.value,'');assert.ok(!f.calls.some(x=>x.options?.method==='POST'&&x.path==='/api/submissions'));
@@ -90,9 +90,9 @@ test('Hub never exposes management operations even when identity is Owner/Admin'
 });
 test('submission form separates product/distribution/platforms and Web URL while preserving source and ownership rules',async t=>{
  const f=fixture(t,{identity:{profile:{displayName:'Fixture'}}});await f.center.activate('mine');await f.click('提交扩展');const form=f.body.querySelector('form'),field=n=>form.querySelector(`[name="${n}"]`);
- assert.equal(field('classification'),null);field('type').value='web_tool';field('type').dispatchEvent(new f.host.Event('change'));assert.equal(field('distribution').value,'open_url');assert.equal(field('websiteUrl').required,true);
+ assert.equal(field('classification'),null);field('type').value='web_tool';field('type').dispatchEvent(new f.host.Event('change'));assert.equal(field('distribution').disabled,true);assert.match(form.querySelector('[data-distribution]').textContent,/打开链接/);assert.equal(field('websiteUrl').required,true);
  for(const [k,v]of Object.entries({name:'Web Test',author:'Fixture',description:'Test',githubUrl:'https://github.com/example/web',websiteUrl:'https://author.example/tool',platforms:'web'}))field(k).value=v;
- form.dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();const sent=f.calls.find(x=>x.options?.method==='POST').options.body;assert.equal(sent.type,'web_tool');assert.equal(sent.distribution,'open_url');assert.deepEqual(sent.platforms,['web']);assert.equal(sent.classification,undefined);
+ if(form.querySelector('[name=sourceType]').value==='github'&&form.querySelector('[name=type]').value==='tavern_extension')await f.click('读取 GitHub 资料');form.dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();const sent=f.calls.find(x=>x.options?.method==='POST').options.body;assert.equal(sent.type,'web_tool');assert.equal(sent.distribution,undefined);assert.deepEqual(sent.platforms,['web']);assert.equal(sent.classification,undefined);
 });
 
 test('legacy and self-claimed catalog items show community; only explicit server classification shows official',async t=>{
@@ -161,16 +161,16 @@ test('catalog title carries version, installed is a noninteractive status and su
 
 test('public project links and private visibility evidence remain independent',async t=>{
  const f=fixture(t,{identity:{profile:{displayName:'Fixture'}}});await f.center.activate('mine');await f.click('提交扩展');const form=f.body.querySelector('form'),field=n=>form.querySelector(`[name="${n}"]`);
- assert.equal(field('sourceUrl'),null);assert.equal(field('discordUrl').parentElement.hidden,false);assert.equal(field('discordUrl').required,false);
- for(const[k,v]of Object.entries({name:'Test',author:'Author',description:'Test description',githubUrl:'https://github.com/example/new',discordUrl:'https://discord.com/channels/111111111111111111/222222222222222222'}))field(k).value=v;
+ assert.equal(field('sourceUrl'),null);assert.equal(field('discordPostUrl').parentElement.hidden,false);assert.equal(field('discordUrl').required,false);
+ for(const[k,v]of Object.entries({name:'Test',author:'Author',description:'Test description',githubUrl:'https://github.com/example/new',discordPostUrl:'https://discord.com/channels/111111111111111111/222222222222222222'}))field(k).value=v;
  field('visibility').value='discord_guild';field('visibility').dispatchEvent(new f.host.Event('change'));assert.equal(field('discordUrl').required,false);assert.equal(field('visibilitySourceUrl').required,true);field('visibilitySourceUrl').value='https://discord.com/channels/333333333333333333/444444444444444444';
- form.dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();const sent=f.calls.find(x=>x.options?.method==='POST').options.body;assert.equal(sent.githubUrl,sent.sourceUrl);assert.notEqual(sent.discordUrl,sent.visibilitySourceUrl);assert.equal(sent.visibilitySourceUrl,field('visibilitySourceUrl').value);
+ if(form.querySelector('[name=sourceType]').value==='github'&&form.querySelector('[name=type]').value==='tavern_extension')await f.click('读取 GitHub 资料');form.dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();const sent=f.calls.find(x=>x.options?.method==='POST').options.body;assert.equal(sent.sourceUrl,'https://github.com/example/new');assert.equal(sent.githubUrl,undefined);assert.notEqual(sent.discordPostUrl,sent.visibilitySourceUrl);assert.equal(sent.visibilitySourceUrl,field('visibilitySourceUrl').value);
 });
 test('catalog shows both project links with explicit absent placeholders and safe URL handling',async t=>{
  const post='https://discord.com/channels/111111111111111111/222222222222222222';
  const f=fixture(t,{request:()=>({items:[{...github,discordUrl:post},{...discord,id:'none',sourceUrl:'javascript:alert(1)'}]})});await f.center.activate('discover');
- const links=f.body.querySelector('[data-catalog-id="dev-github"] .mm-catalog-links');assert.deepEqual([...links.querySelectorAll('a')].map(a=>a.href),[github.sourceUrl,post]);assert.ok([...links.querySelectorAll('a')].every(a=>a.textContent==='点击查看'));assert.doesNotMatch(links.textContent,/https:/);
- const missing=f.body.querySelector('[data-catalog-id="none"] .mm-catalog-links');assert.equal(missing.querySelectorAll('a').length,0);assert.match(missing.textContent,/GitHub 网址：暂无Discord 网址：暂无/);
+ const links=f.body.querySelector('[data-catalog-id="dev-github"] .mm-catalog-links');assert.deepEqual([...links.querySelectorAll('a')].map(a=>a.href),[github.sourceUrl,post]);assert.deepEqual([...links.querySelectorAll('a')].map(a=>a.textContent),['查看仓库','查看发布帖']);assert.doesNotMatch(links.textContent,/https:/);
+ const missing=f.body.querySelector('[data-catalog-id="none"] .mm-catalog-links');assert.equal(missing,null);assert.equal(f.body.querySelector('[data-catalog-id=none] a'),null);
 });
 
 test('Discord verification displays server identity, clears on edits and ignores stale responses',async t=>{
@@ -192,7 +192,7 @@ test('external Tavern declaration never gains Install; preview language cannot c
  const f=fixture(t,{identity:{profile:{displayName:'Tester'}},request:path=>path.startsWith('/api/catalog')?{items:[{...github,type:'tavern_extension',distribution:'external_release'}]}:path.startsWith('/api/github/preview')?{compatibility:'external',language:'JavaScript'}:{items:[]}});
  await f.center.activate('discover');assert.equal(f.body.querySelector('[data-catalog-id] button'),null);
  await f.center.activate('mine');await f.click('提交扩展');const type=f.body.querySelector('[name=type]');type.value='standalone_app';type.dispatchEvent(new f.host.Event('change'));f.body.querySelector('[name=githubUrl]').value=github.sourceUrl;await f.click('读取 GitHub 资料');assert.equal(type.value,'standalone_app');assert.match(f.body.querySelector('[data-package-detection]').textContent,/未检测到 Hub 安装包/);
- const distribution=f.body.querySelector('[name=distribution]');distribution.value='managed_install';f.body.querySelector('form').dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();assert.equal(f.calls.some(x=>x.options?.method==='POST'),false);
+ assert.equal(f.body.querySelector('[name=distribution]').disabled,true);assert.match(f.body.querySelector('[data-distribution]').textContent,/作者发布页/);
 });
 
 test('shortcut switch handles touch activation and disables while Runtime is busy',async t=>{
@@ -202,4 +202,103 @@ test('shortcut switch handles touch activation and disables while Runtime is bus
  record.busy=false;await f.center.activate('installed');toggle=f.body.querySelector('[role="switch"]');assert.equal(toggle.disabled,false);
  const tap=new f.host.MouseEvent('click',{bubbles:true,cancelable:true,detail:1});Object.defineProperty(tap,'pointerType',{value:'touch'});toggle.dispatchEvent(tap);assert.equal(calls,1);assert.equal(toggle.getAttribute('aria-checked'),'true');
  toggle.click();assert.equal(calls,2);assert.equal(toggle.getAttribute('aria-checked'),'false');
+});
+
+test('GitHub form labels, optional post and independent scope survive source switching',async t=>{
+ const f=fixture(t,{identity:{profile:{displayName:'Fixture'}}});await f.center.activate('mine');await f.click('提交扩展');
+ const form=f.body.querySelector('form'),field=n=>form.querySelector(`[name="${n}"]`),change=n=>field(n).dispatchEvent(new f.host.Event('change'));
+ assert.match(field('githubUrl').closest('label').textContent,/GitHub Repository URL/);assert.match(field('discordPostUrl').closest('label').textContent,/Discord 发布帖（可选）/);
+ assert.equal(field('visibility').value,'public');assert.equal(field('discordPostUrl').required,false);assert.equal(field('discordUrl').disabled,true);
+ field('discordPostUrl').value=discord.sourceUrl;field('visibility').value='discord_guild';change('visibility');assert.equal(field('visibilitySourceUrl').value,discord.sourceUrl);
+ field('visibilitySourceUrl').value=discord.sourceUrl+'/333333333333333333';const independent=field('visibilitySourceUrl').value;
+ field('sourceType').value='discord';change('sourceType');assert.equal(field('visibilitySourceUrl').disabled,true);assert.equal(field('visibility').disabled,true);assert.equal(field('discordUrl').closest('label').hidden,false);
+ assert.ok(field('discordUrl').parentElement.querySelector('[data-action="discord:verify"]'));assert.equal(field('githubUrl').disabled,true);
+ field('sourceType').value='github';change('sourceType');assert.equal(field('visibilitySourceUrl').value,independent);assert.equal(field('discordPostUrl').value,discord.sourceUrl);assert.equal(form.querySelectorAll('[data-action="discord:verify"]').length,1);
+});
+test('edit fills new post field, legacy fallback is source-specific and explicit null wins',async t=>{
+ for(const item of [{...github,discordPostUrl:discord.sourceUrl,discordUrl:'https://ignored.example'},{...github,discordPostUrl:null,discordUrl:discord.sourceUrl},discord]){
+  const f=fixture(t,{identity:{profile:{displayName:'Fixture'}},request:()=>({items:[item]})});await f.center.activate('mine');await f.click('编辑');const field=n=>f.body.querySelector(`[name="${n}"]`);
+  assert.equal(field('discordPostUrl').value,item.sourceType==='github'?item.discordPostUrl||'':'');assert.equal(field('discordUrl').value,item.sourceType==='discord'?item.sourceUrl:'');
+  assert.equal(field('visibility').closest('label').hidden,item.sourceType==='discord');
+ }
+});
+test('Discord cards retain type-specific CTA without duplicate footer links; GitHub post absence is explicit',async t=>{
+ const items=[{...discord,id:'disc-ext',type:'tavern_extension'},{...discord,id:'disc-app',type:'standalone_app'},{...discord,id:'disc-web',type:'web_tool',websiteUrl:'https://example.com/tool'},{...github,discordPostUrl:null,discordUrl:discord.sourceUrl,distribution:'external_release'}];
+ const f=fixture(t,{request:()=>({items})});await f.center.activate('discover');
+ for(const id of ['disc-ext','disc-app','disc-web']){const card=f.body.querySelector(`[data-catalog-id="${id}"]`);assert.equal(card.querySelector('.mm-catalog-links'),null);assert.ok(card.querySelector('.mm-catalog-submitter'));assert.equal(card.querySelector('button'),null);}
+ assert.equal(f.body.querySelector('[data-catalog-id=disc-ext] a').textContent,'前往 Discord');assert.equal(f.body.querySelector('[data-catalog-id=disc-app] a').href,discord.sourceUrl);
+ assert.deepEqual([...f.body.querySelectorAll('[data-catalog-id=disc-web] a')].map(a=>a.textContent),['打开网站','原始来源']);
+ const gh=f.body.querySelector('[data-catalog-id=dev-github]');assert.match(gh.querySelector('.mm-catalog-links').textContent,/GitHub 仓库：查看仓库Discord 发布帖：暂无/);assert.equal(gh.querySelector('.mm-extension-actions a').href,github.sourceUrl);
+});
+test('GitHub prefill still supplies metadata and package capability without verifying optional Discord post',async t=>{
+ const f=fixture(t,{identity:{profile:{displayName:'Fixture'}},request:path=>path.startsWith('/api/github/preview')?{compatibility:'installable',manifest:{name:'Detected',author:'Author',description:'Description',iconUrl:'https://github.com/icon.png'}}:{items:[]}});
+ await f.center.activate('mine');await f.click('提交扩展');const field=n=>f.body.querySelector(`[name="${n}"]`);field('githubUrl').value=github.sourceUrl;field('discordPostUrl').value=discord.sourceUrl;await f.click('读取 GitHub 资料');
+ assert.equal(field('name').value,'Detected');assert.equal(field('author').value,'Author');assert.equal(field('distribution').disabled,true);assert.match(f.body.querySelector('[data-distribution]').textContent,/Hub 安装/);assert.equal(field('icon').value,'https://github.com/icon.png');assert.equal(f.calls.some(c=>c.path?.startsWith('/api/discord/verify')),false);
+});
+
+test('distribution is derived for every source/type and distribution is a disabled display and is not sent',async t=>{
+ for(const source of ['github','discord'])for(const [type,expected]of [['tavern_extension',source==='github'?'managed_install':'external_release'],['standalone_app','external_release'],['web_tool','open_url']]){
+  const f=fixture(t,{identity:{profile:{displayName:'Fixture'}}});await f.center.activate('mine');await f.click('提交扩展');const form=f.body.querySelector('form'),field=n=>form.querySelector(`[name="${n}"]`);
+  for(const[name,value]of [['sourceType',source],['type',type]]){field(name).value=value;field(name).dispatchEvent(new f.host.Event('change'));}
+  assert.equal(field('distribution').disabled,true);
+  field('githubUrl').value=github.sourceUrl;field('discordUrl').value=discord.sourceUrl;field('websiteUrl').value='https://example.com/tool';
+  if(source==='github'&&type==='tavern_extension')await f.click('读取 GitHub 资料');
+  form.dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();assert.equal(f.calls.find(c=>c.options?.method==='POST').options.body.distribution,undefined);
+ }
+});
+test('GitHub Tavern preview informs distribution without blocking submission or changing source',async t=>{
+ for(const compatible of [false,true]){
+  const f=fixture(t,{identity:{profile:{displayName:'Fixture'}},request:path=>path.startsWith('/api/github/preview')?{compatibility:compatible?'installable':'external',language:'JavaScript'}:{items:[]}});
+  await f.center.activate('mine');await f.click('提交扩展');const form=f.body.querySelector('form'),save=form.querySelector('[type=submit]'),url=form.querySelector('[name=githubUrl]');url.value=github.sourceUrl;
+  assert.equal(save.disabled,false);await f.click('读取 GitHub 资料');assert.equal(save.disabled,false);
+  assert.match(form.querySelector('[data-package-detection]').textContent,compatible?/已检测到标准 Hub 可安装扩展包/:/未检测到 Hub 安装包，将作为 GitHub 外部发布项目收录/);
+  assert.match(form.querySelector('[data-distribution]').textContent,compatible?/Hub 安装/:/作者发布页/);
+  assert.equal(form.querySelector('[name=sourceType]').value,'github');form.dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();const payload=f.calls.find(c=>c.options?.method==='POST').options.body;assert.equal(payload.distribution,undefined);assert.equal(payload.sourceType,'github');
+ }
+});
+test('late preview cannot restore stale capability after source/type/URL changes',async t=>{
+ const replies=[];const f=fixture(t,{identity:{profile:{displayName:'Fixture'}},request:path=>path.startsWith('/api/github/preview')?new Promise(r=>replies.push(r)):{items:[]}});
+ await f.center.activate('mine');await f.click('提交扩展');const form=f.body.querySelector('form'),type=form.querySelector('[name=type]'),url=form.querySelector('[name=githubUrl]');url.value=github.sourceUrl;
+ await f.click('读取 GitHub 资料');type.value='standalone_app';type.dispatchEvent(new f.host.Event('change'));type.value='tavern_extension';type.dispatchEvent(new f.host.Event('change'));replies.shift()({compatibility:'installable'});await tick();assert.doesNotMatch(form.querySelector('[data-distribution]').textContent,/Hub 安装/);
+ await f.click('读取 GitHub 资料');replies.shift()({compatibility:'external'});await tick();assert.match(form.querySelector('[data-distribution]').textContent,/作者发布页/);
+ url.value='https://github.com/example/replaced';url.dispatchEvent(new f.host.Event('input'));assert.match(form.querySelector('[data-distribution]').textContent,/检测后确定/);assert.equal(form.querySelector('[type=submit]').disabled,false);
+});
+test('non-installable Catalog GitHub Tavern has a direct GitHub CTA, including legacy and stale DTOs',async t=>{
+ for(const distribution of [undefined,'managed_install','external_release']){
+  const f=fixture(t,{request:()=>({items:[{...github,type:'tavern_extension',distribution,github:{compatibility:'external'}}]})});await f.center.activate('discover');const card=f.body.querySelector('[data-catalog-id]');assert.equal(card.querySelector('.mm-extension-actions button'),null);const cta=card.querySelector('.mm-extension-actions a');assert.equal(cta.textContent,'前往 GitHub');assert.equal(cta.href,github.sourceUrl);assert.doesNotMatch(card.textContent,/检查安装兼容性/);
+ }
+});
+
+const autoTick=()=>new Promise(r=>setTimeout(r,10));
+test('GitHub blur inspects once, auto detection preserves text, manual read shares request and keeps its button beside URL',async t=>{
+ let finish;const f=fixture(t,{identity:{profile:{displayName:'Fixture'}},request:path=>path.startsWith('/api/github/preview')?new Promise(r=>finish=r):{items:[]}});
+ await f.center.activate('mine');await f.click('提交扩展');const form=f.body.querySelector('form'),url=form.querySelector('[name=githubUrl]'),display=form.querySelector('[data-distribution]'),name=form.querySelector('[name=name]');
+ assert.equal(display.disabled,true);assert.equal(display.textContent,'由 Registry 检测后确定');assert.ok(url.parentElement.querySelector('[data-action="github:inspect"]'));assert.equal(f.body.querySelector('[data-action="github:inspect"]').textContent,'读取 GitHub 资料');
+ url.value=github.sourceUrl;url.dispatchEvent(new f.host.Event('input'));name.value='Own name';url.dispatchEvent(new f.host.Event('blur'));url.dispatchEvent(new f.host.Event('blur'));assert.equal(f.calls.filter(c=>c.path?.startsWith('/api/github/preview')).length,1);assert.equal(display.textContent,'正在检测…');
+ finish({compatibility:'installable',manifest:{name:'Remote name'}});await tick();assert.equal(display.value,'managed_install');assert.equal(name.value,'Own name');url.dispatchEvent(new f.host.Event('blur'));assert.equal(f.calls.filter(c=>c.path?.startsWith('/api/github/preview')).length,1);
+ url.value='https://github.com/example/new';url.dispatchEvent(new f.host.Event('input'));assert.equal(display.textContent,'由 Registry 检测后确定');url.dispatchEvent(new f.host.Event('blur'));await f.click('读取 GitHub 资料');assert.equal(f.calls.filter(c=>c.path?.startsWith('/api/github/preview')).length,2);
+ name.value='Edited during detection';finish({compatibility:'external',manifest:{name:'Do not overwrite edit',author:'Remote author'}});await tick();assert.equal(name.value,'Edited during detection');assert.equal(form.querySelector('[name=author]').value,'Remote author');assert.equal(display.value,'external_release');
+});
+test('paste detects after input, replacing URLs invalidates old replies, malformed URLs do not request Registry',async t=>{
+ const replies=[];const f=fixture(t,{identity:{profile:{displayName:'Fixture'}},request:path=>path.startsWith('/api/github/preview')?new Promise(r=>replies.push(r)):{items:[]}});
+ await f.center.activate('mine');await f.click('提交扩展');const url=f.body.querySelector('[name=githubUrl]'),display=f.body.querySelector('[data-distribution]');
+ const paste=async value=>{url.dispatchEvent(new f.host.Event('paste'));url.value=value;url.dispatchEvent(new f.host.Event('input'));await autoTick();};
+ await paste('https://github.com/example/first');assert.equal(replies.length,1);await paste('https://github.com/example/second');assert.equal(replies.length,2);
+ replies[1]({compatibility:'external'});await tick();replies[0]({compatibility:'installable'});await tick();assert.equal(display.value,'external_release');
+ await paste('https://github.com/example');url.dispatchEvent(new f.host.Event('blur'));assert.equal(replies.length,2);assert.equal(display.textContent,'由 Registry 检测后确定');
+});
+test('failed auto detection is visible and manually retryable without blocking external submission',async t=>{
+ let fail=true;const f=fixture(t,{identity:{profile:{displayName:'Fixture'}},request:path=>{if(path.startsWith('/api/github/preview')){if(fail)throw Error('temporarily offline');return {compatibility:'external'};}return {items:[]};}});
+ await f.center.activate('mine');await f.click('提交扩展');const form=f.body.querySelector('form'),url=form.querySelector('[name=githubUrl]'),display=form.querySelector('[data-distribution]');url.value=github.sourceUrl;url.dispatchEvent(new f.host.Event('blur'));await tick();assert.equal(display.textContent,'检测失败，请重试');assert.match(form.querySelector('[data-package-detection]').textContent,/temporarily offline/);assert.equal(form.querySelector('[type=submit]').disabled,false);
+ fail=false;await f.click('读取 GitHub 资料');assert.equal(display.value,'external_release');
+});
+test('source switch, logout and dispose cancel scheduled detection and stale updates',async t=>{
+ for(const action of ['discord','logout','dispose']){
+  const f=fixture(t,{identity:{profile:{displayName:'Fixture'}}});await f.center.activate('mine');await f.click('提交扩展');const url=f.body.querySelector('[name=githubUrl]');url.dispatchEvent(new f.host.Event('paste'));url.value=github.sourceUrl;url.dispatchEvent(new f.host.Event('input'));
+  if(action==='discord'){const source=f.body.querySelector('[name=sourceType]');source.value='discord';source.dispatchEvent(new f.host.Event('change'));}else if(action==='logout')f.registry.setIdentity(null);else f.center.dispose();
+  await autoTick();assert.equal(f.calls.filter(c=>c.path?.startsWith('/api/github/preview')).length,0);
+ }
+});
+test('editing Discord then switching to GitHub enables the themed visibility control',async t=>{
+ const f=fixture(t,{identity:{profile:{displayName:'Fixture'}},request:()=>({items:[discord]})});await f.center.activate('mine');await f.click('编辑');const source=f.body.querySelector('[name=sourceType]'),visibility=f.body.querySelector('[data-select-for=visibility]');assert.equal(visibility.disabled,true);source.value='github';source.dispatchEvent(new f.host.Event('change'));assert.equal(visibility.disabled,false);visibility.click();assert.equal(f.body.querySelector('[role=listbox]').children.length,2);
 });
