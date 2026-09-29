@@ -3,16 +3,16 @@
   "description": "Hub ecosystem MVP and Polisher dual-mode compatibility; explicit version-locked built artifacts only.",
   "artifacts": {
     "hub": {
-      "version": "0.8.0",
-      "filename": "MieMie-Hub-0.8.0.json",
+      "version": "0.8.1",
+      "filename": "MieMie-Hub-0.8.1.json",
       "scriptId": "e85cd9a3-6352-4b23-938a-6c94d826b4d3",
-      "sha256": "9bfd9d53085a0f29e23eb25299914a92c334a554c8c45a24da962fc7f818cf95"
+      "sha256": "19b9b0fead371c77c81e29ff899d2d5e8078b0ab858cd6935bf2842016ed2023"
     },
     "polisher": {
-      "version": "1.2.0",
-      "filename": "MieMie-Polisher-Extension-1.2.0.json",
+      "version": "1.2.1",
+      "filename": "MieMie-Polisher-Extension-1.2.1.json",
       "scriptId": "4dd658f1-9d4b-4f74-bba8-305c4ef2a9c8",
-      "sha256": "30cd3fe0d31b8d9e3d81a7f89a4dff3dcb6eb93e31ba488115d1451a662e4779"
+      "sha256": "a15a2fc63b295871a9ffef6654fed36eb9323d6f3ab9bb8a345bdc3d91104126"
     }
   }
 }
