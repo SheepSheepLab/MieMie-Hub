@@ -2,7 +2,7 @@
 
 咩咩Hub 是咩咩（MieMie）开源软件与社区生态的官方项目。生态由 SheepSheep 发起和创建（Founder / 创始人）；SheepSheepLab 是官方 GitHub 开发、维护与发布命名空间，官方项目主要通过该命名空间维护和发布，并欢迎社区贡献者共同参与。
 
-当前发布目标 **0.8.1**（发布流程进行中）。Core 负责 Extension Runtime、包管理与 Hub 自更新；扩展中心和设置是固定 System Modules。时间线为通过标准 API v1 加载的 Bundled Official Extension，官方默认捆绑时间线、随 Hub 整体更新，时间线只在 Launcher 打开，不进入已安装列表或包管理；仅架构测试可从构建声明移除。基础构建和测试不依赖 Registry 或 Polisher 源码。
+当前公开正式版 **0.8.1**。**0.8.2 最终功能基线已由 Owner 完成真实 Tavern 慢速安装与 UI 验收**；当前冻结功能并执行最终发布 Gate，尚未 Commit、Tag 或 Release。最终公开发布仍以生产 Registry 实时认证容量验证及 Owner 确认为前提。Core 负责 Extension Runtime、包管理与 Hub 自更新；扩展中心和设置是固定 System Modules。时间线为通过标准 API v1 加载的 Bundled Official Extension，官方默认捆绑时间线、随 Hub 整体更新，时间线只在 Launcher 打开，不进入已安装列表或包管理；仅架构测试可从构建声明移除。基础构建和测试不依赖 Registry 或 Polisher 源码。
 
 ## 扩展中心
 
@@ -49,13 +49,19 @@ MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL="$OFFICIAL_REGISTRY_HTT
 输出：
 
 ```text
-build/MieMie-Hub-0.8.1.json
-build/咩咩Hub-0.8.1.json
+build/MieMie-Hub-0.8.2.json
+build/咩咩Hub-0.8.2.json
 build/MieMie-Hub-update.json
 build/miemie-hub.js
 ```
 
 中英文 JSON 字节一致，Release 使用 ASCII 文件名。版本来自 package.json，官方版本强制纯 x.x.x。node_modules、build、test-results 均不提交。
+
+## 0.8.2 最终功能基线与验收范围
+
+修复 GitHub Release Asset 直连长期 pending 时 Relay 无法接管的问题：binary direct attempt 使用独立 5 秒时限，失败后由现有受限 Registry Relay 接管。当前最终实现为等待中转响应最多 60 秒、接收正文连续 30 秒无新字节则取消、单附件下载及 digest 校验最终上限 10 分钟；Asset digest 校验另限 15 秒。直连的 5 秒不因字节进展延长。保留全部 Package v1、Release／Asset 身份与 SHA-256 校验。安装时显示验证、下载、安装状态，并防止重复触发。
+
+stage2 baseline 曾在真实 Tavern 完成 Story Director 0.2.0、Polisher 1.2.1、Preset Manager 三次 Managed Package 安装，但移除额外 signal lifetime / Relay async 包装后的 reconciled Final RC 再次触发附件 outer deadline。前者的 PASS 不可转移到后者；此前无 blocker 的结论已撤回。历史单变量包用于调查。随后用户确认刷新后 reconciled 也能安装，但慢；生产实测又观察到 Polisher 持续接收数据后被 Hub 60 秒附件时限取消。这证明该次中断的直接触发条件，尚未定位慢速链路。后续基于正文无进展计时的版本已由 Owner 确认实际安装成功；最终 UI 包括下载速度与取消、浮动进度条、完成收起动画、返回取消及保存状态自动复核，并完成布局验收。保留原校验与唯一写入边界，不采用旧 budget-candidate。此次 Hub 最终 Gate 不修改 Registry 或 Extension，不增加缓存或镜像；Runtime Compatibility 与 Managed Package Compatibility 分别验证。当前功能冻结，发布等待最终 Gate 与 Owner 确认。规则、边界与历史调查记录见 [慢速下载验收说明](docs/PROGRESS-TIMEOUT-VALIDATION.md)。Architecture Freeze Break Required：NO。
 
 ## 0.8.1 发布说明
 

@@ -38,5 +38,9 @@ test('private motion tuning remains immutable and curves retain finite monotonic
 
 test('responsive presentation uses named containment and explicit card areas, without scaling the page',async()=>{
  const css=await read('assets/hub-panels.css');assert.match(css,/container:extension-center \/ inline-size/);assert.match(css,/@container\(max-width:760px\)/);assert.match(css,/@container\(max-width:560px\)/);assert.match(css,/@supports not \(container-type:inline-size\)/);assert.match(css,/grid-template-areas:"heading assurance" "description actions" "footer footer"/);assert.match(css,/grid-template-areas:"heading" "assurance" "description" "actions" "footer"/);assert.match(css,/font-size:clamp\(15px/);assert.doesNotMatch(css,/transform:scale/);
- for(const name of ['mm-catalog-title','mm-catalog-links','mm-catalog-footer','mm-catalog-details','mm-catalog-search']){const rule=css.match(new RegExp('\\.'+name+'\\{([^}]+)'));assert.match(rule[1],/display:grid/);assert.doesNotMatch(rule[1],/flex-wrap/);}
+ for(const name of ['mm-catalog-title','mm-catalog-search']){const rule=css.match(new RegExp('\\.'+name+'\\{([^}]+)'));assert.match(rule[1],/display:grid/);assert.doesNotMatch(rule[1],/flex-wrap/);}
+ for(const name of ['mm-catalog-links','mm-catalog-footer','mm-catalog-details']){
+  const rule=css.match(new RegExp('\\.'+name+'\\{([^}]+)'))[1];
+  assert.match(rule,/display:flex/);assert.match(rule,/align-items:center/);assert.match(rule,/flex-wrap:wrap/);
+ }
 });

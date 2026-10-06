@@ -278,7 +278,10 @@ function relaySetup(t, options = {}) {
   const relayCalls = [];
   sys = setup(t, f, {trees: options.trees || [other()], manager: {getRegistryBaseURL: () => RELAY, ...options.manager},
     fetch: async (url, init) => {
-      if (url.startsWith(API + '/releases/assets/')) throw new TypeError('Failed to fetch: browser CORS');
+      if (url.startsWith(API + '/releases/assets/')) {
+        if (options.direct) return options.direct(url, init, sys.baseRequest);
+        throw new TypeError('Failed to fetch: browser CORS');
+      }
       if (url === RELAY + '/api/packages/github/asset') {
         relayCalls.push({url, init});
         const body = JSON.parse(init.body);
@@ -294,6 +297,31 @@ function relaySetup(t, options = {}) {
     }});
   return {...sys, relayCalls, fixture: f};
 }
+
+test('hanging direct package fetch times out only its attempt, then relay installs exactly once', async t => {
+  let directSignal;
+  const sys = relaySetup(t, {manager: {directAttemptTimeoutMs: 10}, direct(url, init, base) {
+    if (url.endsWith('/301')) {directSignal = init.signal; return new Promise(() => {});}
+    return base(url, init);
+  }});
+  const candidate = await sys.manager.inspect(REPO);
+  await sys.manager.install(candidate);
+  assert.equal(directSignal.aborted, true);
+  assert.equal(sys.relayCalls.length, 1);
+  assert.equal(sys.relayCalls[0].init.signal.aborted, false);
+  assert.equal(sys.writes(), 1);
+  assert.equal((await sys.manager.listInstalled()).length, 1);
+});
+
+test('pending GitHub API metadata reaches its own deadline without any API relay', async t => {
+  const calls = [];
+  // Binary metadata assets have the existing restricted relay; JSON API queries do not.
+  const manager = createExtensionPackageManager({fetch: url => {calls.push(url); return new Promise(() => {});},
+    getRegistryBaseURL: () => RELAY, metadataTimeoutMs: 10});
+  t.after(() => manager.dispose());
+  await assert.rejects(manager.inspect(REPO), code('timeout'));
+  assert.deepEqual(calls, [API]);
+});
 
 test('CORS fallback transports only locked author Release assets with no credentials and installs verified bytes', async t => {
   const sys = relaySetup(t);
@@ -469,4 +497,263 @@ test('host dropping display-name mutation rejects even if returned content is co
     const result=updater([script(),other()]); result[0].name=script().name; return result;
   }}});
   await assert.rejects(sys.manager.update(ID),code('host-write'));
+});
+
+function hangingPackage(t, options = {}) {
+  const directSignals = [];
+  const sys = relaySetup(t, {manager: {directAttemptTimeoutMs: 10, assetTimeoutMs: 100, ...options.manager},
+    direct(url, init, base) {
+      if (!url.endsWith('/301')) return base(url, init);
+      directSignals.push(init.signal);
+      return options.direct ? options.direct(url, init) : new Promise(() => {});
+    }, reply: options.reply});
+  return {...sys, directSignals};
+}
+
+for (const failure of ['network', 'CORS']) test('immediate direct ' + failure + ' failure relays and installs once', async t => {
+  const sys = hangingPackage(t, {direct() {throw TypeError(failure === 'CORS' ? 'CORS blocked' : 'Network unavailable');}});
+  await sys.manager.install(await sys.manager.inspect(REPO));
+  assert.equal(sys.relayCalls.length, 1); assert.equal(sys.writes(), 1);
+});
+
+test('fast direct package installs without contacting relay', async t => {
+  const sys = relaySetup(t, {direct: (url, init, base) => base(url, init)});
+  await sys.manager.install(await sys.manager.inspect(REPO));
+  assert.equal(sys.relayCalls.length, 0); assert.equal(sys.writes(), 1);
+});
+
+test('direct and relay both hang: outer asset deadline aborts relay and never writes', async t => {
+  let finishRelay;
+  const sys = hangingPackage(t, {reply: (bytes, body, url) => new Promise(resolve => {finishRelay = () => resolve(response(bytes, url));})});
+  const candidate = await sys.manager.inspect(REPO);
+  await assert.rejects(sys.manager.install(candidate), code('timeout'));
+  assert.equal(sys.directSignals[0].aborted, true);
+  assert.equal(sys.relayCalls.length, 1); assert.equal(sys.relayCalls[0].init.signal.aborted, true);
+  finishRelay(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(sys.writes(), 0); assert.equal(sys.manager.isBusy(), false);
+});
+
+for (const invalid of ['digest', 'release_changed']) test('hanging direct then invalid relay ' + invalid + ' refuses writes', async t => {
+  const sys = hangingPackage(t, {reply(bytes, body, url) {
+    if (invalid === 'release_changed') return response(encode({error: {code: 'release_changed'}}), url, 409);
+    const corrupt = bytes.slice(); corrupt[0] ^= 1; return response(corrupt, url);
+  }});
+  await assert.rejects(sys.manager.install(await sys.manager.inspect(REPO)), code(invalid === 'digest' ? 'hash' : invalid));
+  assert.equal(sys.relayCalls.length, 1); assert.equal(sys.writes(), 0);
+});
+
+for (const stage of ['direct', 'relay']) for (const kind of ['user cancel', 'dispose']) test(kind + ' during hanging ' + stage + ' aborts requests and prevents late writes', async t => {
+  let reached, finish;
+  const started = new Promise(resolve => {reached = resolve;});
+  const sys = hangingPackage(t, {
+    direct(url, init) {
+      if (stage === 'direct') reached();
+      return new Promise(resolve => {if (stage === 'direct') finish = () => resolve(response(sys.fixture.bytes, url));});
+    }, reply(bytes, body, url) {reached(); return new Promise(resolve => {finish = () => resolve(response(bytes, url));});},
+  });
+  const candidate = await sys.manager.inspect(REPO), controller = new AbortController();
+  const job = sys.manager.install(candidate, {signal: controller.signal});
+  const rejected = assert.rejects(job, error => error.code === 'cancelled' || error.name === 'AbortError');
+  await started;
+  if (kind === 'dispose') sys.manager.dispose(); else controller.abort();
+  await rejected;
+  assert.ok(sys.directSignals.every(signal => signal.aborted));
+  assert.equal(sys.relayCalls.length, stage === 'relay' ? 1 : 0);
+  assert.ok(sys.relayCalls.every(call => call.init.signal.aborted));
+  finish(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(sys.writes(), 0);
+});
+
+test('late non-cooperative direct success after fallback cannot duplicate installation', async t => {
+  let finish;
+  const sys = hangingPackage(t, {direct: (url, init) => new Promise(resolve => {finish = () => resolve(response(sys.fixture.bytes, url));})});
+  const candidate = await sys.manager.inspect(REPO);
+  const job = sys.manager.install(candidate);
+  await assert.rejects(sys.manager.install(candidate), code('busy'));
+  await job; finish(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(sys.writes(), 1);
+  await assert.rejects(sys.manager.install(candidate), code('duplicate'));
+  assert.equal(sys.writes(), 1);
+});
+
+test('direct response body stalls: child timeout cancels reader and relay succeeds', async t => {
+  let readerCancelled = false;
+  const sys = hangingPackage(t, {direct(url) {
+    return response(new ReadableStream({pull() {return new Promise(() => {});}, cancel() {readerCancelled = true;}}), url);
+  }});
+  await sys.manager.install(await sys.manager.inspect(REPO));
+  assert.equal(readerCancelled, true); assert.equal(sys.writes(), 1);
+});
+
+test('binary metadata asset hanging uses existing locked asset relay without API proxy', async t => {
+  const sys = relaySetup(t, {manager: {directAttemptTimeoutMs: 10}, direct(url, init, base) {
+    return url.endsWith('/302') ? new Promise(() => {}) : base(url, init);
+  }});
+  await sys.manager.install(await sys.manager.inspect(REPO));
+  assert.deepEqual(sys.relayCalls.map(call => JSON.parse(call.init.body).assetId), [302]);
+  assert.equal(sys.writes(), 1);
+});
+
+test('progress reflects validation, download and sole write; callback failures cannot bypass checks', async t => {
+  const sys = hangingPackage(t); const phases = [];
+  await sys.manager.install(await sys.manager.inspect(REPO), {onProgress(phase) {if (phases.at(-1) !== phase) phases.push(phase); throw Error('Presentation listener');}});
+  assert.deepEqual(phases, ['verifying', 'downloading', 'relaying', 'downloading', 'verifying', 'installing']); assert.equal(sys.writes(), 1);
+});
+
+
+for (const transport of ['direct','relay']) test(transport + ' package progress counts validated stream bytes and uses locked size without Content-Length', async t => {
+ const f=fixture(), events=[];
+ const streamed=(bytes,url)=>response(new ReadableStream({start(controller){controller.enqueue(bytes.slice(0,100));controller.enqueue(bytes.slice(100));controller.close();}}),url);
+ const sys=relaySetup(t,{fixture:f,direct(url,init,base){
+  if(url.endsWith('/302')) return base(url,init);
+  if(transport==='direct') return streamed(f.bytes,url);
+  throw new TypeError('fixture CORS rejection');
+ },reply(bytes,body,url){return streamed(bytes,url);}});
+ const candidate=await sys.manager.inspect(REPO);
+ await sys.manager.install(candidate,{onProgress(phase,detail){events.push({phase,detail});}});
+ assert.deepEqual(events.filter(e=>e.detail).map(e=>e.detail),[
+  {receivedBytes:0,totalBytes:f.bytes.length},{receivedBytes:100,totalBytes:f.bytes.length},{receivedBytes:f.bytes.length,totalBytes:f.bytes.length}]);
+ assert.equal(events.at(-1).phase,'installing');assert.equal(sys.writes(),1);
+ const lastBytes=events.findLastIndex(e=>e.detail);
+ assert.ok(events.slice(lastBytes+1).some(e=>e.phase==='verifying'));
+});
+
+test('partial direct body then network failure resets byte progress for safe Relay', async t => {
+ const f=fixture(), received=[];
+ const sys=relaySetup(t,{fixture:f,direct(url,init,base){
+  if(url.endsWith('/302'))return base(url,init);
+  let pulls=0;return response(new ReadableStream({pull(controller){if(pulls++===0)controller.enqueue(f.bytes.slice(0,100));else controller.error(new TypeError('fixture body failed'));}}),url);
+ }});
+ await sys.manager.install(await sys.manager.inspect(REPO),{onProgress(phase,detail){if(detail)received.push(detail.receivedBytes);}});
+ assert.deepEqual(received,[0,100,0,f.bytes.length]);assert.equal(sys.writes(),1);
+});
+
+test('download reaching 100 percent cannot bypass a subsequent package hash failure', async t => {
+ const f=fixture(), received=[];let sys;
+ sys=setup(t,f,{trees:[other()],fetch:async(url,init)=>{
+  if(url.endsWith('/assets/301')){const bad=f.bytes.slice();bad[bad.length-1]^=1;return response(bad,url);}
+  return sys.baseRequest(url,init);
+ }});
+ await assert.rejects(sys.manager.install(await sys.manager.inspect(REPO),{onProgress(phase,detail){if(detail)received.push(detail.receivedBytes);}}),code('hash'));
+ assert.equal(received.at(-1),f.bytes.length);assert.equal(sys.writes(),0);
+});
+
+// Simulated transport time, real stream/hash/Release/write boundaries.
+const flushTransfer = async () => {for (let i = 0; i < 3; i++) await new Promise(resolve => setImmediate(resolve));};
+const waitTransfer = async check => {for(let i=0;i<1000&&!check();i++)await new Promise(resolve=>setImmediate(resolve));assert.ok(check(),'transfer stage reached');await flushTransfer();};
+async function controlledRelay(t, overrides = {}) {
+  let stream, cancelled = false, relaySignal;
+  const sys = relaySetup(t, {manager: {assetTimeoutMs: undefined, ...overrides},
+    direct(url, init, base) {if (url.endsWith('/302')) return base(url, init); throw TypeError('fixture CORS');},
+    reply(bytes, body, url, init) {
+      relaySignal = init.signal;
+      return response(new ReadableStream({start(controller) {stream = controller;}, cancel() {cancelled = true;}}), url);
+    }});
+  const candidate = await sys.manager.inspect(REPO);
+  t.mock.timers.enable({apis: ['setTimeout']});
+  return {...sys, candidate, stream: () => stream, cancelled: () => cancelled, relaySignal: () => relaySignal};
+}
+
+test('relay keeps receiving for 100 seconds: crosses old 60s cap and installs once', async t => {
+  const sys = await controlledRelay(t), events = [];
+  const job = sys.manager.install(sys.candidate, {onProgress(phase, detail) {if (detail) events.push(detail.receivedBytes);}});
+  await waitTransfer(sys.stream);
+  const bytes = sys.fixture.bytes, split = Math.ceil(bytes.length / 5);
+  for (let offset = 0; offset < bytes.length; offset += split) {
+    t.mock.timers.tick(20000); await flushTransfer();
+    sys.stream().enqueue(bytes.slice(offset, offset + split)); await flushTransfer();
+  }
+  sys.stream().close(); await job;
+  assert.equal(events.at(-1), bytes.length); assert.equal(sys.writes(), 1);
+  assert.equal(sys.manager.isBusy(), false); assert.equal(sys.relaySignal().aborted, false);
+  t.mock.timers.tick(600000); await flushTransfer(); assert.equal(sys.writes(), 1);
+});
+
+for (const empty of [false, true]) test('30s relay inactivity cancels reader, including empty chunks=' + empty, async t => {
+  const sys = await controlledRelay(t);
+  const job = sys.manager.install(sys.candidate);
+  const rejected = assert.rejects(job, error => error.code === 'timeout' && /未收到新数据/.test(error.message));
+  await waitTransfer(sys.stream); sys.stream().enqueue(sys.fixture.bytes.slice(0, 10)); await flushTransfer();
+  for (let i = 0; i < 2; i++) {
+    t.mock.timers.tick(10000); await flushTransfer();
+    if (empty) {sys.stream().enqueue(new Uint8Array()); await flushTransfer();}
+  }
+  t.mock.timers.tick(9999); await flushTransfer(); assert.equal(sys.cancelled(), false);
+  t.mock.timers.tick(1); await rejected; await flushTransfer();
+  assert.equal(sys.cancelled(), true); assert.equal(sys.relaySignal().aborted, true);
+  assert.equal(sys.writes(), 0); assert.equal(sys.manager.isBusy(), false);
+});
+
+test('continuous trickle cannot renew the ten-minute final cap', async t => {
+  const sys = await controlledRelay(t);
+  const job = sys.manager.install(sys.candidate);
+  const rejected = assert.rejects(job, error => error.code === 'timeout' && /总时限/.test(error.message));
+  await waitTransfer(sys.stream);
+  for (let i = 0; i < 29; i++) {
+    t.mock.timers.tick(20000); await waitTransfer(sys.stream); sys.stream().enqueue(sys.fixture.bytes.slice(i, i + 1)); await flushTransfer();
+  }
+  t.mock.timers.tick(20000); await rejected; await flushTransfer();
+  assert.equal(sys.cancelled(), true); assert.equal(sys.relaySignal().aborted, true); assert.equal(sys.writes(), 0);
+});
+
+test('relay response deadline remains 60s and late response cannot install', async t => {
+  let finish;
+  const sys = relaySetup(t, {manager: {assetTimeoutMs: undefined},
+    direct(url, init, base) {if (url.endsWith('/302')) return base(url, init); throw TypeError('fixture CORS');},
+    reply(bytes, body, url) {return new Promise(resolve => {finish = () => resolve(response(bytes, url));});}});
+  const candidate = await sys.manager.inspect(REPO);
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const job = sys.manager.install(candidate);
+  const rejected = assert.rejects(job, error => error.code === 'timeout' && /响应超时/.test(error.message));
+  await waitTransfer(()=>finish); t.mock.timers.tick(60000); await rejected;
+  finish(); await flushTransfer(); assert.equal(sys.writes(), 0); assert.equal(sys.relayCalls[0].init.signal.aborted, true);
+});
+
+for (const kind of ['cancel', 'dispose']) test(kind + ' after relay body progress aborts retained fetch signal and reader', async t => {
+  const sys = await controlledRelay(t), controller = new AbortController();
+  const job = sys.manager.install(sys.candidate, {signal: controller.signal});
+  const rejected = assert.rejects(job, error => error.code === 'cancelled' || error.name === 'AbortError');
+  await waitTransfer(sys.stream); sys.stream().enqueue(sys.fixture.bytes.slice(0, 10)); await flushTransfer();
+  if (kind === 'cancel') controller.abort(); else sys.manager.dispose();
+  await rejected; await flushTransfer();
+  assert.equal(sys.cancelled(), true); assert.equal(sys.relaySignal().aborted, true); assert.equal(sys.writes(), 0);
+  t.mock.timers.tick(600000); await flushTransfer(); assert.equal(sys.writes(), 0);
+});
+
+test('direct body trickle still switches after five seconds, then relay completes', async t => {
+  let directStream, directCancelled = false;
+  const sys = relaySetup(t, {manager: {assetTimeoutMs: undefined}, direct(url, init, base) {
+    if (url.endsWith('/302')) return base(url, init);
+    return response(new ReadableStream({start(c) {directStream = c;}, cancel() {directCancelled = true;}}), url);
+  }});
+  const candidate = await sys.manager.inspect(REPO);
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const job = sys.manager.install(candidate); await waitTransfer(()=>directStream);
+  for (let i = 0; i < 4; i++) {t.mock.timers.tick(1000); directStream.enqueue(sys.fixture.bytes.slice(i, i + 1)); await flushTransfer();}
+  t.mock.timers.tick(1000); await job;
+  assert.equal(directCancelled, true); assert.equal(sys.relayCalls.length, 1); assert.equal(sys.writes(), 1);
+});
+
+test('hung package digest has a separate 15s deadline after all relay bytes arrive', async t => {
+ const f=fixture();
+ const sys=await controlledRelay(t,{crypto:{subtle:{digest:(algorithm,bytes)=>bytes.byteLength===f.bytes.length
+  ? new Promise(()=>{}) : webcrypto.subtle.digest(algorithm,bytes)}}});
+ const job=sys.manager.install(sys.candidate);
+ const rejected=assert.rejects(job,error=>error.code==='timeout'&&/校验超时/.test(error.message));
+ await waitTransfer(sys.stream);sys.stream().enqueue(sys.fixture.bytes);sys.stream().close();await flushTransfer();
+ t.mock.timers.tick(15000);await rejected;assert.equal(sys.writes(),0);assert.equal(sys.manager.isBusy(),false);
+});
+
+test('missing saved script is pending, while malformed saved identity is an error',async t=>{
+ const missing=setup(t,fixture(),{manager:{readSavedScript:async()=>null}});
+ assert.equal((await missing.manager.listInstalled())[0].persistenceState,'pending');
+ const wrong=setup(t,fixture(),{manager:{readSavedScript:async()=>({id:'wrong',name:'x',content:'void 0'})}});
+ assert.equal((await wrong.manager.listInstalled())[0].persistenceState,'error');
+});
+
+test('cancelling initial inspection aborts the real query and ignores a late response',async t=>{
+ let signal,finish;const sys=setup(t,fixture(),{fetch:(url,init)=>{signal=init.signal;return new Promise(resolve=>{finish=()=>resolve(response('{}',url));});}});
+ const controller=new AbortController(),job=sys.manager.inspect(REPO,{signal:controller.signal});
+ const rejected=assert.rejects(job,code('cancelled'));await waitTransfer(()=>signal);controller.abort();await rejected;
+ assert.equal(signal.aborted,true);finish();await flushTransfer();assert.equal(sys.writes(),0);
 });

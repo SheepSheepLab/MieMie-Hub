@@ -143,7 +143,14 @@ async function fixture({legacy=false,cors=false,corrupt=false,oldHub=false}={}) 
   if(legacy)await until(()=>h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'legacy Polisher startup');
   const q=selector=>d.querySelector(selector);
   const click=selector=>{const node=q(selector);assert.ok(node,'Missing '+selector+'; UI: '+q('[data-hub-panel="extension-center"]')?.textContent);assert.equal(node.disabled,false,'disabled '+selector);node.click();};
-  async function center(tab='discover'){await h.__MieMieHub.open();click('[data-hub-app="extension-center"]');await tick();click('[data-center-tab="'+tab+'"]');await tick();}
+  async function center(tab='discover'){
+    await h.__MieMieHub.open();click('[data-hub-app="extension-center"]');await tick();
+    click('[data-center-tab="'+tab+'"]');
+    // Installed rendering includes asynchronous host readback; one event-loop
+    // tick is not evidence that the requested tab has finished rendering.
+    await until(()=>q('[data-center-tab="'+tab+'"]')?.getAttribute('aria-selected')==='true' &&
+      (tab!=='installed'||q('[data-hub-panel="extension-center"]')?.textContent.includes('已识别的全局')),'center tab '+tab);
+  }
   async function action(name){click('[data-action="'+name+'"]');await tick();}
   const installed=()=>flat(trees).map(x=>x.script).find(x=>x.content.startsWith('// MieMie-Extension-Build:')||x.content.startsWith('// MieMie Polisher ·'));
   async function drain(){await reconcileQueue;await tick();if(h.__MieMiePolisherSource)await h.__MieMiePolisherSource.settled();await tick();}

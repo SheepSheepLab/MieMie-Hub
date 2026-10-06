@@ -8,6 +8,20 @@
 #miemie-hub-shell .mm-hub-body p{margin:0 0 var(--mie-space-3);white-space:pre-wrap;overflow-wrap:anywhere}
 #miemie-hub-shell .mm-hub-note{font-size:var(--mie-font-small);color:var(--mie-text-muted)}
 #miemie-hub-shell .mm-extension-card{padding:var(--mie-space-4);border:1px solid var(--mie-border);border-radius:var(--mie-radius);margin:0 0 var(--mie-space-3);background:var(--mie-card-fill);overflow-wrap:anywhere;min-width:0}
+/* Save confirmation never adds a row. Polling resumes each effect at its elapsed time. */
+#miemie-hub-shell .mm-extension-card[data-save-state]{position:relative;isolation:isolate}
+#miemie-hub-shell .mm-extension-card[data-save-state]::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:1}
+#miemie-hub-shell .mm-extension-card[data-save-state=pending]::after{background:linear-gradient(105deg,transparent 30%,#b495ff08 40%,#d6c1ff25 50%,#b495ff08 60%,transparent 70%);background-size:300% 100%;animation:mm-save-scan 1800ms linear infinite;animation-delay:var(--mm-save-elapsed,0ms)}
+#miemie-hub-shell .mm-extension-card[data-save-state=confirmed]::after{animation:mm-save-ready 1800ms ease-out both;animation-delay:var(--mm-save-elapsed,0ms)}
+#miemie-hub-shell .mm-extension-card[data-save-state=error]::after{box-shadow:inset 0 0 0 1px var(--mie-error);animation:mm-save-error 1600ms ease-out both;animation-delay:var(--mm-save-elapsed,0ms)}
+@keyframes mm-save-scan{from{background-position:100% 0}to{background-position:0% 0}}
+@keyframes mm-save-ready{0%{box-shadow:inset 0 0 0 1px transparent}25%{box-shadow:inset 0 0 0 1px var(--mie-highlight),inset 0 0 22px #91dded28,0 0 16px #91dded30}100%{box-shadow:inset 0 0 0 1px transparent}}
+@keyframes mm-save-error{0%{box-shadow:inset 0 0 0 1px var(--mie-error)}28%{box-shadow:inset 0 0 0 1px var(--mie-error),inset 0 0 24px #ef789736,0 0 16px #ef789736}100%{box-shadow:inset 0 0 0 1px var(--mie-error)}}
+@media(prefers-reduced-motion:reduce){
+ #miemie-hub-shell .mm-extension-card[data-save-state]::after{animation:none}
+ #miemie-hub-shell .mm-extension-card[data-save-state=pending]::after{background:none;box-shadow:inset 0 0 0 1px var(--mie-accent)}
+ #miemie-hub-shell .mm-extension-card[data-save-state=confirmed]::after{box-shadow:inset 0 0 0 1px var(--mie-highlight)}
+}
 #miemie-hub-shell .mm-extension-title{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--mie-gap);margin-bottom:var(--mie-space-2)}
 #miemie-hub-shell .mm-extension-title small{font-size:var(--mie-font-small);color:var(--mie-text-muted)}
 #miemie-hub-shell .mm-extension-actions,#miemie-hub-shell .mm-system-actions{display:flex;align-items:center;flex-wrap:wrap;gap:var(--mie-space-2);margin-top:var(--mie-space-3)}
@@ -29,6 +43,36 @@
 #miemie-hub-shell .mm-ecosystem-tabs button[aria-current=page]{background:var(--mie-selected-fill);border-color:var(--mie-selected-border);color:var(--mie-selected-text)}
 #miemie-hub-shell .mm-center-main{overflow:auto;min-width:0;min-height:0;padding:var(--mie-space-5);overscroll-behavior:contain;scrollbar-width:thin;container-type:inline-size}
 #miemie-hub-shell .mm-center-notice:empty{display:none}
+#miemie-hub-shell .mm-install-progress{position:absolute;z-index:3;left:16px;right:16px;bottom:calc(var(--mie-control-height) + max(12px,env(safe-area-inset-bottom)) + 12px);display:grid;grid-template-columns:fit-content(36%) minmax(0,1fr) auto;align-items:center;gap:16px;padding:16px 20px;border:1px solid var(--mie-selected-border);border-radius:var(--mie-radius-control);background:var(--mie-panel-fill);box-shadow:0 10px 32px #0006,var(--mie-panel-glow);backdrop-filter:blur(18px);color:var(--mie-text-muted);font-size:var(--mie-font-small);font-variant-numeric:tabular-nums;overflow:hidden;transform-origin:50% 100%;animation:mm-download-enter 420ms cubic-bezier(.16,1,.3,1) both}
+#miemie-hub-shell .mm-install-progress .mm-install-identity{margin:0;min-width:0;gap:12px;align-self:center}
+#miemie-hub-shell .mm-install-identity .mm-catalog-name>small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#miemie-hub-shell .mm-install-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--mie-text)}
+#miemie-hub-shell .mm-install-details{display:grid;gap:6px;min-width:0;overflow-wrap:anywhere}
+#miemie-hub-shell .mm-install-status{font-size:12px}
+#miemie-hub-shell .mm-install-progress [data-cancel-install]{white-space:nowrap;padding:8px 12px}
+#miemie-hub-shell .mm-download-active .mm-center-main{padding-bottom:160px}
+#miemie-hub-shell .mm-install-progress[data-state=completed]{border-color:var(--mie-success-border);animation:mm-download-complete 1100ms cubic-bezier(.16,1,.3,1) both}
+#miemie-hub-shell .mm-install-progress[data-state=completed] .mm-install-status{color:var(--mie-success-text)}
+#miemie-hub-shell .mm-install-progress[data-state=leaving]{animation:mm-download-leave 360ms cubic-bezier(.4,0,.2,1) both;pointer-events:none}
+@keyframes mm-download-enter{from{opacity:0;transform:translateY(18px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+#miemie-hub-shell .mm-install-progress[data-state=completed]::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(105deg,transparent 30%,#b5d8c226 50%,transparent 70%);animation:mm-download-sheen 1000ms cubic-bezier(.16,1,.3,1) both}
+@keyframes mm-download-sheen{from{transform:translateX(-100%);opacity:0}25%{opacity:1}to{transform:translateX(100%);opacity:0}}
+@keyframes mm-download-complete{0%,100%{box-shadow:0 10px 32px #0006}35%{box-shadow:0 0 24px #b5d8c240,0 10px 32px #0006}}
+@keyframes mm-download-leave{from{opacity:1;transform:translateY(0) scale(1)}to{opacity:0;transform:translateY(16px) scale(.985)}}
+@media(max-width:600px){
+ #miemie-hub-shell .mm-install-progress{left:10px;right:10px;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;padding:12px}
+ #miemie-hub-shell .mm-install-identity{margin:0;min-width:0;gap:12px}
+#miemie-hub-shell .mm-install-identity .mm-catalog-name>small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#miemie-hub-shell .mm-install-identity{grid-column:1/-1}
+ #miemie-hub-shell .mm-install-details{font-size:11px}
+ #miemie-hub-shell .mm-download-active .mm-center-main{padding-bottom:180px}
+}
+#miemie-hub-shell .mm-install-progress[hidden]{display:none}
+#miemie-hub-shell .mm-install-progress progress{display:block;width:100%;height:8px;border:0;border-radius:999px;overflow:hidden;accent-color:var(--mie-selected-text);background:var(--mie-card-fill)}
+#miemie-hub-shell .mm-install-progress progress::-webkit-progress-bar{background:var(--mie-card-fill);border-radius:999px}
+#miemie-hub-shell .mm-install-progress progress::-webkit-progress-value{background:var(--mie-selected-text);border-radius:999px}
+#miemie-hub-shell .mm-install-progress progress::-moz-progress-bar{background:var(--mie-selected-text);border-radius:999px}
+
 #miemie-hub-shell .mm-header-account{margin-left:auto;display:flex;align-items:center;gap:var(--mie-space-2);max-width:45%}
 #miemie-hub-shell .mm-header-account .mm-submit-profile{display:flex;align-items:center;gap:var(--mie-space-2);min-width:0;margin:0}
 #miemie-hub-shell .mm-account-copy{min-width:0;display:grid;gap:4px}
@@ -37,6 +81,7 @@
 #miemie-hub-shell .mm-header-account button{padding:8px;font-size:12px;flex-shrink:0}
 #miemie-hub-shell .mm-catalog-search{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:var(--mie-space-2);margin-bottom:16px}
 #miemie-hub-shell .mm-catalog-search :is(input,select){min-width:0;width:100%}
+#miemie-hub-shell .mm-hub-body .mm-catalog-search>:is(input,select,button){margin:0;align-self:center;box-sizing:border-box;height:max(var(--mie-control-height),calc(1.5em + 22px));line-height:1.5}
 #miemie-hub-shell .mm-hub-body :is(input,textarea,select){max-width:100%;min-height:var(--mie-control-height);font:inherit;box-sizing:border-box;border:1px solid var(--mie-border);border-radius:var(--mie-radius-control);padding:10px 12px;background:var(--mie-bg);color:var(--mie-text)}
 #miemie-hub-shell .mm-hub-body select{appearance:none;-webkit-appearance:none;padding-right:32px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23b495ff' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
 #miemie-hub-shell .mm-hub-body input::placeholder{color:var(--mie-text-muted)}
@@ -55,8 +100,24 @@
 #miemie-hub-shell .mm-catalog-heading small{color:var(--mie-text-muted);font-size:var(--mie-font-small)}
 #miemie-hub-shell .mm-identity-badge{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;border:1px solid var(--mie-badge-border);border-radius:8px;background:var(--mie-badge-fill);color:var(--mie-badge-text);padding:5px 9px;font-size:var(--mie-font-small);line-height:1.5;align-self:start}
 #miemie-hub-shell .mm-identity-badge[data-classification=official]{border-color:var(--mie-official-border);background:var(--mie-official-fill);color:var(--mie-official-text)}
-#miemie-hub-shell .mm-catalog-meta{display:grid;grid-template-columns:auto auto;gap:4px 10px;font-size:var(--mie-font-small);color:var(--mie-text-muted)}
-#miemie-hub-shell .mm-catalog-description{font-size:14px;line-height:1.6;color:var(--mie-description)}
+#miemie-hub-shell .mm-catalog-meta{display:grid;grid-template-columns:auto auto;align-items:center;gap:4px 10px;font-size:var(--mie-font-small);color:var(--mie-text-muted)}
+#miemie-hub-shell .mm-catalog-description{position:relative;height:3.2em;font-size:14px;line-height:1.6;color:var(--mie-description)}
+#miemie-hub-shell .mm-catalog-description>.mm-description-preview{display:block;height:100%;overflow:hidden;margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+/* Only the end of the last line fades; the link occupies that same line. */
+#miemie-hub-shell .mm-description-truncated>.mm-description-preview{-webkit-mask-image:linear-gradient(#000,#000),linear-gradient(to right,#000 calc(100% - 9em),transparent calc(100% - 7em));mask-image:linear-gradient(#000,#000),linear-gradient(to right,#000 calc(100% - 9em),transparent calc(100% - 7em));-webkit-mask-size:100% 50%;mask-size:100% 50%;-webkit-mask-position:top,bottom;mask-position:top,bottom;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
+#miemie-hub-shell .mm-description-open{position:absolute;right:0;bottom:0;display:block;width:7em;height:1.6em;margin:0;padding:0;min-height:0;border:0;border-radius:0;background:none;box-shadow:none;color:var(--mie-accent);font:inherit;line-height:1.6;text-align:right;white-space:nowrap;text-shadow:0 2px 10px #0008}
+#miemie-hub-shell .mm-description-open:hover:not(:disabled){background:none;box-shadow:none;color:var(--mie-highlight);text-decoration:underline;text-underline-offset:3px}
+#miemie-hub-shell .mm-description-open[hidden]{display:none}
+#miemie-hub-shell .mm-description-dialog{box-sizing:border-box;position:fixed;inset:0;margin:auto;width:calc(100% - 32px);max-width:640px;max-height:calc(100% - 32px);max-height:calc(100dvh - 32px);padding:0;overflow:hidden;border:1px solid var(--mie-border);border-radius:var(--mie-radius);background:var(--mie-panel-fill);color:var(--mie-text);box-shadow:var(--mie-shadow);pointer-events:auto}
+#miemie-hub-shell .mm-description-dialog[open]{display:flex;flex-direction:column;animation:mm-description-enter 220ms cubic-bezier(.16,1,.3,1) both}
+#miemie-hub-shell .mm-description-dialog::backdrop{background:#080510aa;backdrop-filter:blur(5px)}
+#miemie-hub-shell .mm-description-dialog h2{flex-shrink:0;max-height:20vh;overflow:auto;overflow-wrap:anywhere;margin:0;padding:20px 24px;border-bottom:1px solid var(--mie-border);font-size:18px;line-height:1.5}
+#miemie-hub-shell .mm-description-full{min-height:0;overflow:auto;overscroll-behavior:contain;padding:20px 24px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8;font-size:14px;color:var(--mie-description)}
+#miemie-hub-shell .mm-description-dialog footer{flex-shrink:0;display:flex;padding:12px 24px 20px;border-top:1px solid var(--mie-border)}
+#miemie-hub-shell .mm-description-dialog footer button{width:100%;margin:0;min-height:var(--mie-control-height)}
+#miemie-hub-shell .mm-description-hint{display:block;margin-top:6px;line-height:1.6;color:var(--mie-text-muted);font-size:12px}
+@keyframes mm-description-enter{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){#miemie-hub-shell .mm-description-dialog[open]{animation:none}}
 @media(max-width:600px){
  #miemie-hub-shell .mm-hub-header{padding:12px;gap:var(--mie-space-2);flex-wrap:wrap}
  #miemie-hub-shell .mm-hub-header>img{width:32px;height:32px}
@@ -86,24 +147,24 @@
 #miemie-hub-shell .mm-catalog-assurance .mm-identity-badge{flex:none}
 #miemie-hub-shell .mm-extension-card[data-catalog-id]>.mm-extension-actions{grid-area:actions;align-self:center;justify-self:end;justify-content:flex-end;max-width:100%;margin:0}
 #miemie-hub-shell .mm-extension-card[data-catalog-id]>[data-package-preview]{grid-column:1/-1}
-#miemie-hub-shell .mm-catalog-footer{grid-area:footer;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"links details";align-items:end;gap:var(--mie-space-3);min-width:0}
-#miemie-hub-shell .mm-catalog-details{grid-area:details;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:var(--mie-space-3);min-width:0}
+#miemie-hub-shell .mm-catalog-footer{grid-area:footer;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 20px;min-width:0}
+#miemie-hub-shell .mm-catalog-details{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;min-width:0}
 #miemie-hub-shell .mm-catalog-title{width:fit-content;max-width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:var(--mie-space-2)}
 #miemie-hub-shell .mm-catalog-name{min-width:0;overflow-wrap:anywhere}
 #miemie-hub-shell .mm-catalog-version{white-space:nowrap;color:var(--mie-accent)}
 #miemie-hub-shell .mm-installed-status{font-size:var(--mie-font-small);color:var(--mie-success-text);border:1px solid var(--mie-success-border);background:var(--mie-success-fill);border-radius:8px;padding:6px 10px}
 #miemie-hub-shell .mm-catalog-submitter{display:flex;align-items:center;justify-content:flex-end;gap:6px;color:var(--mie-text-muted);font-size:var(--mie-font-small);min-width:0;overflow-wrap:anywhere}
 #miemie-hub-shell .mm-catalog-submitter .mm-extension-icon{width:28px;height:28px;border-radius:50%;font-size:15px}
-#miemie-hub-shell .mm-catalog-links{grid-area:links;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px;min-width:0;font-size:var(--mie-font-small);color:var(--mie-text-muted)}
-#miemie-hub-shell .mm-catalog-links>div{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:4px;min-height:44px}
-#miemie-hub-shell .mm-catalog-links a{min-height:44px;padding:0 2px}
+#miemie-hub-shell .mm-catalog-links{display:flex;flex-wrap:wrap;align-items:center;gap:0 20px;min-width:0;font-size:var(--mie-font-small);color:var(--mie-text-muted)}
+#miemie-hub-shell .mm-catalog-links>div{display:flex;align-items:center;gap:4px;min-height:44px}
+#miemie-hub-shell .mm-catalog-links a{min-height:44px;padding:0 2px;align-items:center}
 @media(pointer:coarse){#miemie-hub-shell .mm-catalog-links>div,#miemie-hub-shell .mm-catalog-links a{min-height:var(--mie-control-height)}}
 /* Card layout follows the content container, including narrow desktop panels. */
 @container(max-width:760px){
  #miemie-hub-shell .mm-catalog-assurance{display:grid;justify-items:end}
  #miemie-hub-shell .mm-catalog-assurance .mm-hub-note{order:1}
- #miemie-hub-shell .mm-catalog-details{grid-template-columns:minmax(0,1fr);justify-items:end;gap:4px}
- #miemie-hub-shell .mm-catalog-links{grid-template-columns:minmax(0,1fr)}
+ #miemie-hub-shell .mm-catalog-details{gap:12px 16px}
+ #miemie-hub-shell .mm-catalog-footer{gap:8px 16px}
 }
 @container(max-width:560px){
  #miemie-hub-shell .mm-extension-card[data-catalog-id]{grid-template-columns:minmax(0,1fr);grid-template-areas:"heading" "assurance" "description" "actions" "footer";grid-template-rows:none;gap:12px;padding:12px}
@@ -111,11 +172,11 @@
  #miemie-hub-shell .mm-catalog-heading .mm-extension-icon{width:40px;height:40px}
  #miemie-hub-shell .mm-catalog-assurance{grid-template-columns:minmax(0,1fr);gap:6px}
  #miemie-hub-shell .mm-catalog-assurance .mm-hub-note{max-width:none;text-align:left;margin:0;justify-self:start;font-size:13px}
- #miemie-hub-shell .mm-catalog-footer{grid-template-columns:minmax(0,1fr);grid-template-areas:"links" "details";border-top:1px solid var(--mie-border);padding-top:8px;gap:8px}
+ #miemie-hub-shell .mm-catalog-footer{display:grid;grid-template-columns:minmax(0,1fr);border-top:1px solid var(--mie-border);padding-top:8px;gap:8px}
  #miemie-hub-shell .mm-catalog-details{justify-items:start}
  #miemie-hub-shell .mm-catalog-submitter{justify-content:flex-start}
- #miemie-hub-shell .mm-catalog-links{grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}
- #miemie-hub-shell .mm-catalog-links>div{grid-template-columns:minmax(0,1fr);gap:0}
+ #miemie-hub-shell .mm-catalog-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:0 12px}
+ #miemie-hub-shell .mm-catalog-links>div{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto 44px;gap:0}
  #miemie-hub-shell .mm-extension-title{grid-template-columns:minmax(0,1fr)}
  #miemie-hub-shell .mm-catalog-search{grid-template-columns:minmax(0,1fr) auto}
  #miemie-hub-shell .mm-catalog-search input{grid-column:1/-1}
@@ -138,6 +199,10 @@
 #miemie-hub-shell .mm-catalog-heading strong{font-size:clamp(15px,2.2cqi,18px)}
 #miemie-hub-shell .mm-extension-card{padding:clamp(12px,2cqi,16px)}
 @container extension-center (max-width:600px){
+ #miemie-hub-shell .mm-install-progress{left:10px;right:10px;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;padding:12px}
+ #miemie-hub-shell .mm-install-identity{grid-column:1/-1}
+ #miemie-hub-shell .mm-install-details{font-size:11px}
+ #miemie-hub-shell .mm-download-active .mm-center-main{padding-bottom:180px}
  #miemie-hub-shell .mm-hub-header{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding:12px}
  #miemie-hub-shell .mm-hub-header>img{display:none}
  #miemie-hub-shell .mm-hub-header strong{font-size:15px}
