@@ -1,5 +1,7 @@
 # Hub 0.8.2 持续下载验收记录
 
+> **Historical development / review record.** 下文版本、测试数字、待验收／未发布状态均属于当时阶段。当前公开基线为 **MieMie Hub 0.8.2**；当前 Extension 开发从 [EXTENSION-DEVELOPER-GUIDE.md](EXTENSION-DEVELOPER-GUIDE.md) 开始。
+
 当前状态：Owner 已确认最终功能基线在真实 Tavern 可正常使用和安装扩展，进入最终发布 Gate；尚未发布。以下保留调查过程与阶段性测试结果，早期 TEST ONLY 状态不再代表当前功能验收状态。
 
 历史背景：此前在真实 Tavern 观察到持续接收 Polisher 附件，但 Hub 60 秒附件总时限终止传输。Owner 已授权改为以无进展超时为主、有界最终总时限为兜底。此改动是实际下载行为变化，不是纯诊断。

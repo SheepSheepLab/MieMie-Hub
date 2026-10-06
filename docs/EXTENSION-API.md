@@ -2,9 +2,11 @@
 
 适用于 MieMie Hub Extension API v1。这里只记录现有接口，不增加 Runtime、包管理或权限机制。
 
+当前正式基线为 Hub 0.8.2。[社区开发统一入口](EXTENSION-DEVELOPER-GUIDE.md)帮助选择适配路径。**Runtime Compatibility 与 Managed Package Compatibility 是两个独立 Gate**：本文定义 Runtime、生命周期及展示能力；物理安装、更新和卸载已由 Hub Package Manager 提供，格式与校验见 [Package v1](EXTENSION-PACKAGE.md)。Runtime 注册成功不代表发布包可在线安装。
+
 ## 三个独立概念
 
-- **Registered Extension**：Runtime 中的注册记录，可启用、停用、注销。当前没有真正的 Extension 包安装器；“已安装扩展”管理页展示的是本地注册状态。
+- **Registered Extension**：Runtime 中的注册记录，可启用、停用、注销。`hub.extensions.uninstall(id)` 只注销 Runtime，不物理删除酒馆助手脚本。“已安装”页同时区分 Runtime 状态与可识别的 Managed Package；物理包操作不属于本页 Runtime API。
 - **Launcher Capability**：可选的快捷启动能力，以 `contributes.launcher` 声明。它不决定扩展是否能注册或运行。
 - **Pinned to Hub**：未来用户偏好，本版本没有实现。当前菜单根据可用 Launcher 展示入口，不是固定偏好。
 

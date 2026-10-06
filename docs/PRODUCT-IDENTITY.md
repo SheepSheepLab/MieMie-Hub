@@ -1,5 +1,7 @@
 # Official application presentation convention
 
+Integration entry: [Extension Developer Guide](EXTENSION-DEVELOPER-GUIDE.md). For official branding and reserved assets, see [BRAND.md](../BRAND.md) and [ASSETS-LICENSE.md](../ASSETS-LICENSE.md); this display/protocol convention does not redefine those policies.
+
 Keep a small immutable module in each application's own repository:
 
 ```js

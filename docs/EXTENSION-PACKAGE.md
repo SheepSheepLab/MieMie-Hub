@@ -2,6 +2,8 @@
 
 这是一份机器安装兼容规范，不是安全审核或作者认证。社区作者保留软件、仓库和 Release 的所有权与维护权；Registry 只保存目录元数据及投稿身份，不镜像软件文件。未适配本规范的公开 GitHub 项目仍可收录，按钮显示“查看 GitHub”；Discord 项目只跳转作者原帖，不保存附件地址，不自动安装。
 
+当前适用于 Hub 0.8.2 的 Package v1。适配路径与两个独立 Gate 见 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md)；Runtime 生命周期见 [Extension API v1](EXTENSION-API.md)。满足包格式不等于已验证 Runtime 运行兼容性。
+
 ## 最小发布要求
 
 作者无需采用 MieMie 的源码目录结构。公开 GitHub Repository 的每个可安装 Release 提供：
@@ -99,9 +101,22 @@ ec6266a8cb4038dadf20c357ef1acb9b7d8239036467c8d13e6ec98ed3a000f4
 
 ## 网络与安全边界
 
-公开读取不要求 Token，不发送聊天、设置、API Key、宿主 Cookie 或 Authorization。查询/元数据默认 15 秒，脚本附件默认 60 秒；流式限制字节数。teardown 取消请求，重复写操作拒绝并行。
+Hub 浏览器客户端公开读取不要求用户提供 GitHub Token，不发送聊天、设置、API Key、宿主 Cookie 或 Authorization。Registry 服务端的 GitHub App 认证独立配置，凭据不进入 Hub。teardown 取消请求，重复写操作拒绝并行；流式读取始终限制实际字节数。
 
-浏览器使用正常 CORS，从 GitHub API 下载附件，并仅接受官方 GitHub/CDN 重定向。浏览器 CORS 阻止读取、超时或 digest 缺失时失败，不使用公共代理、`no-cors`、Token 或未校验安装。自动测试验证这些失败路径，不能替代真实酒馆网络测试。
+Hub 0.8.2 的默认下载时限如下（对应 [正式实现](../src/extension-packages.js) 的 Package Manager 默认参数）：
+
+| 阶段 | 默认时限与边界 |
+| --- | --- |
+| GitHub 查询／机器元数据 | 15 秒；机器元数据读取不使用下面脚本附件的 10 分钟预算 |
+| Direct GitHub binary attempt | 独立 5 秒，包含直连响应正文读取；收到字节也不延长该时限 |
+| 脚本附件 Relay response wait | 等待中转响应最多 60 秒；进入正文读取后改用无进展计时 |
+| Relay body no-progress | 连续 30 秒未收到新字节则取消；只有实际收到字节才重置 |
+| Attachment total upper bound | 单个脚本附件下载及 digest 校验合计最多 10 分钟；进度不会延长此上限，不是整个安装流程的无限预算 |
+| Asset digest validation | 附件 digest 计算另限 15 秒，同时受所在操作的外层时限约束 |
+
+浏览器使用正常 CORS，从 GitHub API 读取作者 Release 附件，并仅接受官方 GitHub/CDN 重定向。具备有效附件上下文时，直连网络／CORS 失败或直连时限到期（包括正文停滞）可以切换到已配置的受限 Registry Relay。HTTP、重定向、大小、digest 或其他校验错误不会通过 Relay 绕过；取消操作也不会触发继续下载。
+
+Relay 只接收 `repository`、`releaseId`、`assetId`，由服务端验证公开仓库、Release、Manifest 及对应附件，不接受任意 URL，不是通用代理。Hub 仍独立核对 Release identity、Asset identity、GitHub digest、原始附件 SHA-256、`contentSha256`、`productId`、`scriptId` 和 repository identity，并在写入前重新读取 Release。Relay 不可用、超时或任一校验失败时拒绝写入，不使用公共代理、`no-cors` 或未校验安装。自动测试不能替代真实酒馆网络测试。
 
 Hash 只验证完整性和一致性，不证明作者身份、代码善意或安全。安装脚本拥有酒馆助手赋予的宿主能力；MVP 不提供代码沙盒。Catalog 上架、可安装状态及 Discord 投稿身份都不是官方审核安全或原作者认证。作者主动下架仅影响发现和新安装，不删除用户本地代码；已安装用户仍可从其原作者 GitHub 检查更新。
 

@@ -1,5 +1,7 @@
 # Final UI v1 · 待实机验收
 
+> **Historical development / review record.** 下文版本、测试数字、待验收／未发布状态均属于当时阶段。当前公开基线为 **MieMie Hub 0.8.2**；当前 Extension 开发从 [EXTENSION-DEVELOPER-GUIDE.md](EXTENSION-DEVELOPER-GUIDE.md) 开始。
+
 这份改动直接使用正式 Hub 源码，没有沿用先前独立 Preview 的 UI 实现。版本仍为 0.7.0；未 Commit、Push 或 Release。本次 Surface 增量保持 API v1，新增可选 closePanel，并小范围适配 Polisher 双模式。Registry 本轮增加独立项目链接、Discord 服务器预验证与登录成功页自动关闭；仅本地修改，未部署。
 
 ## 打开与验收

@@ -2,7 +2,7 @@
 
 咩咩Hub 是咩咩（MieMie）开源软件与社区生态的官方项目。生态由 SheepSheep 发起和创建（Founder / 创始人）；SheepSheepLab 是官方 GitHub 开发、维护与发布命名空间，官方项目主要通过该命名空间维护和发布，并欢迎社区贡献者共同参与。
 
-当前公开正式版 **0.8.1**。**0.8.2 最终功能基线已由 Owner 完成真实 Tavern 慢速安装与 UI 验收**；当前冻结功能并执行最终发布 Gate，尚未 Commit、Tag 或 Release。最终公开发布仍以生产 Registry 实时认证容量验证及 Owner 确认为前提。Core 负责 Extension Runtime、包管理与 Hub 自更新；扩展中心和设置是固定 System Modules。时间线为通过标准 API v1 加载的 Bundled Official Extension，官方默认捆绑时间线、随 Hub 整体更新，时间线只在 Launcher 打开，不进入已安装列表或包管理；仅架构测试可从构建声明移除。基础构建和测试不依赖 Registry 或 Polisher 源码。
+当前公开正式版 **[MieMie Hub 0.8.2](https://github.com/SheepSheepLab/MieMie-Hub/releases/tag/v0.8.2)** 已发布，Production Registry 为 **0.6.1**。Core 负责 Extension Runtime、包管理与 Hub 自更新；扩展中心和设置是固定 System Modules。时间线为通过标准 API v1 加载的 Bundled Official Extension，官方默认捆绑时间线、随 Hub 整体更新，时间线只在 Launcher 打开，不进入已安装列表或包管理；仅架构测试可从构建声明移除。基础构建和测试不依赖 Registry 或 Polisher 源码。
 
 ## 扩展中心
 
@@ -24,9 +24,9 @@ Extension 安装和更新先验证 Release/Asset、Manifest、产品身份、版
 
 物理卸载会删除目标脚本条目及其 data，仅确认删除，不自动生成备份；不清空 localStorage、酒馆变量、Polisher 历史设置或其他脚本。请保存编辑并停止正在生成的任务后更新。Hash 校验不能保证作者代码安全，软件并未运行在完整沙盒里。
 
-GitHub Extension 下载首先直连作者 Release；浏览器因 CORS 无法读取附件时，使用内置官方服务（或开发者显式覆盖的 Registry）受限字节转发。转发无需 Discord 登录，不携带 Token、聊天、密钥或宿主凭据。Registry 必须先验证作者仓库、Release 与 Manifest，只能转发匹配的两个附件；Hub 再独立校验 digest／SHA-256／身份。Registry 不持久托管软件文件。没有配置服务、服务不可达、超时或校验失败时拒绝写入，不开启宿主 Proxy、不使用公共代理或 no-cors。详见 [浏览器下载修复与复测](docs/DOWNLOAD-TRANSPORT.md)。Hub 0.5.1 自更新另有官方仓库限定的安全转发入口，需要 Registry 0.3.1 或以上，详见 [自更新说明](docs/SELF-UPDATE.md)。
+GitHub Extension 下载首先直连作者 Release；浏览器因 CORS 无法读取附件时，使用内置官方服务（或开发者显式覆盖的 Registry）受限字节转发。转发无需 Discord 登录，不携带 Token、聊天、密钥或宿主凭据。Registry 必须先验证作者仓库、Release 与 Manifest，只能转发匹配的两个附件；Hub 再独立校验 digest／SHA-256／身份。Registry 不持久托管软件文件。没有配置服务、服务不可达、超时或校验失败时拒绝写入，不开启宿主 Proxy、不使用公共代理或 no-cors。当前下载规则见 [Package v1 网络与安全边界](docs/EXTENSION-PACKAGE.md#网络与安全边界)，历史排查见 [浏览器下载修复与复测](docs/DOWNLOAD-TRANSPORT.md)。Hub 0.5.1 自更新另有官方仓库限定的安全转发入口，需要 Registry 0.3.1 或以上，详见 [自更新说明](docs/SELF-UPDATE.md)。
 
-Hub 自更新继续使用设置页独立流程，仅更新自己；[既有自更新说明](docs/SELF-UPDATE.md) 中的安装实例定位、仅 content 写入、新 iframe 交接与保存读回确认保持有效。旧 alpha.4 没有更新代码，首次仍需手动引导。
+Hub 自更新继续使用设置页独立流程，仅更新自己；[既有自更新说明](docs/SELF-UPDATE.md) 中的安装实例定位、content 与名称末尾版本号同步写入、新 iframe 交接与保存读回确认保持有效。旧 alpha.4 没有更新代码，首次仍需手动引导。
 
 ## 开发与构建
 
@@ -57,33 +57,20 @@ build/miemie-hub.js
 
 中英文 JSON 字节一致，Release 使用 ASCII 文件名。版本来自 package.json，官方版本强制纯 x.x.x。node_modules、build、test-results 均不提交。
 
-## 0.8.2 最终功能基线与验收范围
+## 当前安装体验与验证
 
-修复 GitHub Release Asset 直连长期 pending 时 Relay 无法接管的问题：binary direct attempt 使用独立 5 秒时限，失败后由现有受限 Registry Relay 接管。当前最终实现为等待中转响应最多 60 秒、接收正文连续 30 秒无新字节则取消、单附件下载及 digest 校验最终上限 10 分钟；Asset digest 校验另限 15 秒。直连的 5 秒不因字节进展延长。保留全部 Package v1、Release／Asset 身份与 SHA-256 校验。安装时显示验证、下载、安装状态，并防止重复触发。
+0.8.2 已完成真实 Tavern 慢速安装与 UI 验收：下载显示进度、速度与取消入口，返回可取消尚未写入的安装，完成后收起浮动进度条，并自动复核保存状态。简介预览最多两行，完整简介在独立窗口查看。Runtime Compatibility 与 Managed Package Compatibility 分别验证。
 
-stage2 baseline 曾在真实 Tavern 完成 Story Director 0.2.0、Polisher 1.2.1、Preset Manager 三次 Managed Package 安装，但移除额外 signal lifetime / Relay async 包装后的 reconciled Final RC 再次触发附件 outer deadline。前者的 PASS 不可转移到后者；此前无 blocker 的结论已撤回。历史单变量包用于调查。随后用户确认刷新后 reconciled 也能安装，但慢；生产实测又观察到 Polisher 持续接收数据后被 Hub 60 秒附件时限取消。这证明该次中断的直接触发条件，尚未定位慢速链路。后续基于正文无进展计时的版本已由 Owner 确认实际安装成功；最终 UI 包括下载速度与取消、浮动进度条、完成收起动画、返回取消及保存状态自动复核，并完成布局验收。保留原校验与唯一写入边界，不采用旧 budget-candidate。此次 Hub 最终 Gate 不修改 Registry 或 Extension，不增加缓存或镜像；Runtime Compatibility 与 Managed Package Compatibility 分别验证。当前功能冻结，发布等待最终 Gate 与 Owner 确认。规则、边界与历史调查记录见 [慢速下载验收说明](docs/PROGRESS-TIMEOUT-VALIDATION.md)。Architecture Freeze Break Required：NO。
+直连失败可由受限 Registry Relay 接管；脚本正文以无进展超时为主，并保留有界总时限与全部完整性校验。准确时限与失败边界集中在 [Package v1](docs/EXTENSION-PACKAGE.md#网络与安全边界)。阶段性调查保留在 [慢速下载验收记录](docs/PROGRESS-TIMEOUT-VALIDATION.md)，历史版本说明见 [Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases)。
 
-## 0.8.1 发布说明
-
-新的中心绽开展开动画，保留原有收起动画；改进投稿、GitHub 自动检测、来源链接与 Catalog 分发展示。详见 [0.8.1 发布说明](docs/RELEASE-0.8.1.md)。
-
-## 0.8.0 候选版本说明
-
-- 全新蜂窝 Launcher、侧栏扩展中心与设置界面，改善窄屏操作。
-- 应用窗口从对应图标打开并返回；支持应用自愿适配的外部快捷入口。
-- 加强扩展清理、安装更新校验与异常恢复，继续区分官方/社区身份和安装兼容性。
-- 修复时间线切换器的显示问题。
-- 保留既有设置与协议身份。用户已完成实机 RC 验收；最终候选与简短抽查见 [RC 验收记录](docs/RC-VALIDATION.md)。
-
-## Final UI v1 验收
-
-当前工作区的蜂窝 Launcher、侧栏扩展中心和新设置界面等待实机验收，尚未发布。运行 `npm run build` 后执行 `node tools/ui-review.mjs`，打开 http://127.0.0.1:5173 检查同一份实际构建（宿主和目录为本地假数据）。详见 [Final UI 验收与结构](docs/FINAL-UI.md)。
+本地 UI 检查可先运行 `npm run build`，再执行 `node tools/ui-review.mjs`，打开 http://127.0.0.1:5173 查看实际构建（宿主与目录使用本地假数据）。测试方式见 [TESTING.md](docs/TESTING.md)；早期界面审查保留在 [Final UI 历史记录](docs/FINAL-UI.md)。
 
 ## 开发者资料
 
 - [四层架构、时间线迁移与无时间线测试包](docs/CORE-ARCHITECTURE.md)
 
-- [社区扩展作者指南](docs/ECOSYSTEM.md)
+- **[Extension 开发统一入口：社区作者与 coding agent 从这里开始](docs/EXTENSION-DEVELOPER-GUIDE.md)**
+- [社区投稿、目录与信任边界](docs/ECOSYSTEM.md)
 - [Extension Package / Manifest v1](docs/EXTENSION-PACKAGE.md)
 - [Extension API v1](docs/EXTENSION-API.md)
 - [Launcher 双模式协议 v1](docs/LAUNCHER-PROTOCOL.md)
@@ -94,10 +81,11 @@ stage2 baseline 曾在真实 Tavern 完成 Story Director 0.2.0、Polisher 1.2.1
 Hub 的基础测试完全独立。额外组合测试只读显式提供、锁定版本与 SHA-256 的产物，不查找或导入另一仓库产品源码：
 
 ```sh
-npm run test:integration -- --polisher /path/to/MieMie-Polisher-Extension-1.2.1.json
+MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL=https://registry.sheepsheeplab.com \
+  npm run test:integration -- --polisher /path/to/MieMie-Polisher-Extension-1.2.1.json
 ```
 
-本阶段不包含 Pinned、社交功能、镜像、Discord 附件安装、Extension 代码沙盒或 Loader/A/B。
+当前版本不包含 Pinned、社交功能、镜像、Discord 附件安装、Extension 代码沙盒或 Loader/A/B。
 
 ## 授权与来源
 
@@ -117,7 +105,7 @@ Copyright © 2026 SheepSheep。社区贡献者（Community Contributors）保留
 
 对外分发时应随附 `LICENSE`、上述品牌／素材说明及适用的第三方声明，并按 GPL 提供对应版本源码和构建材料。当前构建不会把这些文件嵌入酒馆助手 JSON；单独一个 JSON 不能替代完整的授权说明与源码提供安排。
 
-### 0.4.2 Discord 登录修复
+### Discord 登录
 
 登录结果使用绑定原 Origin 和 PKCE 的一次性交接，不依赖弹窗消息或第三方 Cookie；收到 Registry 会话后验证当前用户并刷新「我的」。原消息交接保持旧服务兼容。生产发布构建使用 `MIEMIE_BUILD_MODE=production` 和真实 `MIEMIE_DEFAULT_REGISTRY_URL`。关闭 Hub/重载后需重新登录；不要复制任何 Token。
 
