@@ -133,7 +133,8 @@ export async function validateExtensionPackage(bytes, metadata, crypto = globalT
 
 export function createExtensionPackageManager({getScriptTrees, updateScriptTreesWith, fetch: request = (...args) => globalThis.fetch(...args),
   readSavedScript, getRunningVersion, persistenceTimeoutMs = 15000, confirmationIntervalMs = 250,
-  crypto = globalThis.crypto, randomUUID = () => crypto.randomUUID(), onChange = () => {}, backup, confirmUninstall, getRegistryBaseURL = () => '', now = Date.now, downloadCacheTtlMs = 120000, metadataTimeoutMs = 15000, assetTimeoutMs = 60000} = {}) {
+  crypto = globalThis.crypto, randomUUID = () => crypto.randomUUID(), onChange = () => {}, backup, confirmUninstall, getRegistryBaseURL = () => '', now = Date.now, downloadCacheTtlMs = 120000, metadataTimeoutMs = 15000, assetTimeoutMs = 600000, directAttemptTimeoutMs = 5000,
+  relayResponseTimeoutMs = 60000, assetIdleTimeoutMs = 30000, assetVerificationTimeoutMs = 15000} = {}) {
   let disposed = false, busy = false;
   const controllers = new Set(), legacyContents = new Set(), listeners = new Set();
   const downloaded = new Map(); let cacheBytes = 0, relayCooldown = null;
@@ -172,7 +173,7 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
     if (called !== 1) throw extensionPackageError('host-write', '宿主未执行写入。');
     extensionValidateTree(result); return result;
   }
-  async function deadline(action, milliseconds, outerSignal) {
+  async function deadline(action, milliseconds, outerSignal, message = '扩展操作总时限已到，未完成安装。') {
     alive(); outerSignal?.throwIfAborted();
     const controller = new AbortController(); controllers.add(controller);
     let rejectCancelled;
@@ -180,15 +181,32 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
     const abort = () => rejectCancelled(extensionPackageError('cancelled', '扩展操作已取消。'));
     controller.signal.addEventListener('abort', abort, {once: true});
     const propagate = () => controller.abort(); outerSignal?.addEventListener('abort', propagate, {once: true});
-    const timer = setTimeout(() => {rejectCancelled(extensionPackageError('timeout', 'GitHub 请求超时，未完成安装。')); controller.abort();}, milliseconds);
-    try {return await Promise.race([Promise.resolve().then(() => action(controller.signal)), cancelled]);}
-    finally {clearTimeout(timer); outerSignal?.removeEventListener('abort', propagate); controllers.delete(controller);}
+    let timer, finished = false;
+    const arm = (duration = milliseconds, timeoutMessage = message) => {
+      if (finished || controller.signal.aborted) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {rejectCancelled(extensionPackageError('timeout', timeoutMessage)); controller.abort();}, duration);
+    };
+    arm();
+    try {return await Promise.race([Promise.resolve().then(() => {controller.signal.throwIfAborted(); return action(controller.signal, arm);}), cancelled]);}
+    finally {finished = true; clearTimeout(timer); outerSignal?.removeEventListener('abort', propagate); controllers.delete(controller);}
   }
-  async function publicBytes(url, {limit, size, binary = false, signal, relayContext}) {
+  async function publicBytes(url, {limit, size, binary = false, signal, relayContext, progress = () => {}}) {
     let response, relayBase = '', relayURL = '';
-    try {response = await request(url, {method: 'GET', headers: {Accept: binary ? 'application/octet-stream' : 'application/vnd.github+json'}, mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', redirect: binary ? 'follow' : 'error', cache: 'no-store', signal});}
-    catch {
+    const direct = async directSignal => {
+      const response = await request(url, {method: 'GET', headers: {Accept: binary ? 'application/octet-stream' : 'application/vnd.github+json'}, mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', redirect: binary ? 'follow' : 'error', cache: 'no-store', signal: directSignal});
+      directSignal.throwIfAborted();
+      return readPublicResponse(response, {limit, size, binary, signal: directSignal, progress});
+    };
+    try {
+      // Bound the complete direct transfer, including a stalled response body.
+      // Only this child signal expires; the outer download deadline owns relay.
+      return await (binary && relayContext ? deadline(direct, directAttemptTimeoutMs, signal, 'GitHub 直连停滞，正在切换安全下载服务。') : direct(signal));
+    } catch (error) {
       signal.throwIfAborted();
+      // HTTP, redirect, size and validation failures are never rescued by relay.
+      if (error?.code && error.code !== 'timeout') throw error;
+      if (binary && relayContext) progress('relaying');
       if (!binary || !relayContext) throw extensionPackageError('download', '无法读取作者 GitHub Release 信息，请检查网络后重试；未安装扩展。');
       // GitHub's final Release CDN may omit CORS headers. The configured Registry
       // can transport only Manifest-verified assets, not arbitrary URLs. Never
@@ -197,11 +215,24 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
       if (!relayBase) throw extensionPackageError('download', '作者 GitHub 附件被浏览器跨域限制拦截，安全下载服务暂不可用，请稍后重试；未安装扩展。');
       if (relayCooldown?.base === relayBase && relayCooldown.until > now()) throw extensionPackageError('github_rate_limited', 'GitHub 匿名访问额度暂时用完，请在 ' + new Date(relayCooldown.until).toLocaleTimeString() + ' 后重试；本地扩展未被修改。');
       relayURL = relayBase + '/api/packages/github/asset';
-      try {response = await request(relayURL, {method: 'POST', headers: {Accept: 'application/octet-stream', 'Content-Type': 'application/json'},
-        body: JSON.stringify(relayContext), mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', cache: 'no-store', signal});}
-      catch {signal.throwIfAborted(); throw extensionPackageError('relay', '安全下载服务暂时无法连接，请稍后重试；未安装扩展。');}
-      if (registryBaseURL(getRegistryBaseURL()) !== relayBase) throw extensionPackageError('cancelled', '下载服务已切换，请重新预览项目。');
+      const relay = async (relaySignal, arm) => {
+        try {response = await request(relayURL, {method: 'POST', headers: {Accept: 'application/octet-stream', 'Content-Type': 'application/json'},
+          body: JSON.stringify(relayContext), mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error', cache: 'no-store', signal: relaySignal});}
+        catch {relaySignal.throwIfAborted(); throw extensionPackageError('relay', '安全下载服务暂时无法连接，请稍后重试；未安装扩展。');}
+        if (registryBaseURL(getRegistryBaseURL()) !== relayBase) throw extensionPackageError('cancelled', '下载服务已切换，请重新预览项目。');
+        const touch = arm ? () => arm(assetIdleTimeoutMs, '安装包下载长时间未收到新数据，已停止；未完成安装。') : () => {};
+        // Keep one child signal alive across headers AND body. Only real bytes
+        // renew its idle deadline; the parent total cap can never be renewed.
+        return readPublicResponse(response, {limit, size, binary, signal: relaySignal, relayBase, relayURL, progress, onBodyStarted: touch, onBytes: touch});
+      };
+      return limit === EXTENSION_PACKAGE_LIMIT
+        ? deadline(relay, relayResponseTimeoutMs, signal, '安全下载服务响应超时，未完成安装。')
+        : relay(signal);
     }
+    return readPublicResponse(response, {limit, size, binary, signal, relayBase, relayURL, progress});
+  }
+  async function readPublicResponse(response, {limit, size, binary, signal, relayBase = '', relayURL = '', progress = () => {}, onBodyStarted = () => {}, onBytes = () => {}}) {
+    signal.throwIfAborted();
     if (relayBase && (response?.url !== relayURL || response.redirected)) throw extensionPackageError('redirect', '安全下载响应地址发生变化，已拒绝安装。');
     if (relayBase && !response?.ok && !['opaque', 'opaqueredirect'].includes(response?.type)) {
       // Only consume a bounded structured error. Never show arbitrary upstream
@@ -221,7 +252,7 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
         relayCooldown = {base: relayBase, until: retryAt};
         throw extensionPackageError('github_rate_limited', 'GitHub 匿名访问额度暂时用完，请在 ' + new Date(retryAt).toLocaleTimeString() + ' 后重试；本地扩展未被修改。');
       }
-      const messages = {github_unavailable: '安全下载服务暂时无法连接作者 GitHub，请稍后重试', upstream_timeout: '读取作者 GitHub 文件超时，请稍后重试', relay_busy: '安全下载任务繁忙，请稍后重试', rate_limited: '请求过于频繁，请稍后重试', origin_denied: '安全下载服务暂不支持当前酒馆地址，请联系服务维护者', release_changed: '作者 Release 已发生变化，请重新预览'};
+      const messages = {github_unavailable: '安全下载服务暂时无法连接作者 GitHub，请稍后重试', upstream_timeout: '安全下载服务读取 GitHub 文件超时，请稍后重试', relay_busy: '安全下载任务繁忙，请稍后重试', rate_limited: '请求过于频繁，请稍后重试', origin_denied: '安全下载服务暂不支持当前酒馆地址，请联系服务维护者', release_changed: '作者 Release 已发生变化，请重新预览'};
       if (Object.hasOwn(messages, errorData?.code || '')) throw extensionPackageError(errorData.code, messages[errorData.code] + '；未安装扩展。');
     }
     if (!response?.ok || ['opaque', 'opaqueredirect'].includes(response.type)) throw extensionPackageError(relayBase ? 'relay' : 'http',
@@ -235,16 +266,24 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
     const length = response.headers?.get('content-length');
     if (length && (!/^\d+$/.test(length) || Number(length) > limit)) throw extensionPackageError('size', 'GitHub 响应超过大小限制。');
     if (!response.body?.getReader) throw extensionPackageError('stream', '浏览器不支持受限流式下载。');
+    // Presentation is separate from the private transport watchdog.
+    const reportBytes = receivedBytes => {
+      if (binary && limit === EXTENSION_PACKAGE_LIMIT && Number.isSafeInteger(size) && size > 0) {
+        try {progress('downloading', {receivedBytes, totalBytes: size});} catch {}
+      }
+    };
+    onBodyStarted(); reportBytes(0);
     const reader = response.body.getReader(), chunks = []; let total = 0;
     const cancel = () => {void reader.cancel().catch(() => {});}; signal.addEventListener('abort', cancel, {once: true});
     try {for (;;) {signal.throwIfAborted(); const {done, value} = await reader.read(); signal.throwIfAborted(); if (done) break;
-      total += value.byteLength; if (total > limit || (size !== undefined && total > size)) throw extensionPackageError('size', '附件超过允许大小。'); chunks.push(value);}}
+      total += value.byteLength; if (total > limit || (size !== undefined && total > size)) throw extensionPackageError('size', '附件超过允许大小。');
+      if (value.byteLength > 0) {onBytes(); chunks.push(value); reportBytes(total);}}}
     finally {signal.removeEventListener('abort', cancel); void reader.cancel().catch(() => {});}
     if (relayBase && registryBaseURL(getRegistryBaseURL()) !== relayBase) throw extensionPackageError('cancelled', '下载服务已切换，请重新预览项目。');
     if (!total || (size !== undefined && total !== size)) throw extensionPackageError('size', '附件大小与 Release 不一致。');
     const bytes = new Uint8Array(total); let offset = 0; for (const chunk of chunks) {bytes.set(chunk, offset); offset += chunk.byteLength;} return bytes;
   }
-  async function query(url, signal, limit = 1024 * 1024) {return deadline(async signal => extensionJSON(await publicBytes(url, {signal, limit})), metadataTimeoutMs, signal);}
+  async function query(url, signal, limit = 1024 * 1024) {return deadline(async signal => extensionJSON(await publicBytes(url, {signal, limit})), metadataTimeoutMs, signal, 'GitHub Release 信息验证超时，未完成安装。');}
   function asset(release, name, repo, limit) {
     const found = release.assets?.filter(item => item?.name === name);
     if (!found || found.length !== 1) throw extensionPackageError('asset', 'Release 缺少唯一的 ' + name + '。');
@@ -254,14 +293,20 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
       || item.browser_download_url !== repo.url + '/releases/download/' + release.tag_name + '/' + name) throw extensionPackageError('asset', 'Release Asset ID、地址、大小或 digest 无效。');
     return {id: item.id, name, size: item.size, sha256: item.digest.slice(7), url: item.url, repository: repo.url, releaseId: release.id};
   }
-  async function download(item, limit, signal) {return deadline(async signal => {
+  async function download(item, limit, signal, progress = () => {}) {return deadline(async signal => {
     // Short-lived iframe memory only, keyed by the full authoritative asset lock.
     // Every install still re-reads Release before/after verification. A cache hit
     // never bypasses digest, package/content hash, identity or write-time checks.
     pruneDownloads(); const key = JSON.stringify(item), cached = downloaded.get(key);
-    const bytes = cached ? cached.bytes.slice() : await publicBytes(item.url, {signal, limit, size: item.size, binary: true,
+    const bytes = cached ? cached.bytes.slice() : await publicBytes(item.url, {signal, limit, size: item.size, binary: true, progress,
       relayContext: {repository: item.repository, releaseId: item.releaseId, assetId: item.id}});
-    if (bytes.byteLength !== item.size || bytes.byteLength > limit || await extensionHash(bytes, crypto) !== item.sha256) throw extensionPackageError('hash', 'GitHub Asset digest 校验失败。');
+    if (limit === EXTENSION_PACKAGE_LIMIT) {
+      if (cached) progress('downloading', {receivedBytes: bytes.byteLength, totalBytes: item.size});
+      progress('verifying');
+    }
+    if (bytes.byteLength !== item.size || bytes.byteLength > limit) throw extensionPackageError('hash', 'GitHub Asset digest 校验失败。');
+    const digest = await deadline(() => extensionHash(bytes, crypto), assetVerificationTimeoutMs, signal, '安装包校验超时，未完成安装。');
+    if (digest !== item.sha256) throw extensionPackageError('hash', 'GitHub Asset digest 校验失败。');
     signal.throwIfAborted(); alive();
     if (!cached && downloadCacheTtlMs > 0) {
       while (downloaded.size && (downloaded.size >= 8 || cacheBytes + bytes.byteLength > 32 * 1024 * 1024)) {
@@ -270,30 +315,31 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
       downloaded.set(key, {bytes: bytes.slice(), until: now() + Math.min(downloadCacheTtlMs, 120000)}); cacheBytes += bytes.byteLength;
     }
     return bytes;
-  }, limit === extensionMetadataLimit ? metadataTimeoutMs : assetTimeoutMs, signal);}
+  }, limit === extensionMetadataLimit ? metadataTimeoutMs : assetTimeoutMs, signal,
+    limit === extensionMetadataLimit ? 'GitHub 安装包元数据传输超时，未完成安装。' : 'Extension 附件传输总时限已到，未完成安装。');}
   async function releaseById(repo, id, signal) {
     if (!Number.isSafeInteger(id) || id < 1) throw extensionPackageError('release', 'Release ID 无效。');
     const release = await query(repo.api + '/releases/' + id, signal);
     if (!extensionObject(release) || release.id !== id || release.draft !== false || !Array.isArray(release.assets) || !extensionVersion(release.tag_name?.slice(1)) || release.tag_name !== 'v' + release.tag_name.slice(1)) throw extensionPackageError('release', 'Release 身份或三段式版本无效。');
     return release;
   }
-  async function describe(repo, release, signal) {
+  async function describe(repo, release, signal, progress) {
     if (!release.assets.some(item => item?.name === EXTENSION_PACKAGE_METADATA)) return {repoUrl: repo.url, installable: false, compatibility: 'external', releaseId: release.id, version: release.tag_name.slice(1), tag: release.tag_name, reason: '作者尚未提供标准安装包，请前往 GitHub 获取。'};
     const metadataAsset = asset(release, EXTENSION_PACKAGE_METADATA, repo, extensionMetadataLimit);
-    const metadata = validateExtensionPackageMetadata(extensionJSON(await download(metadataAsset, extensionMetadataLimit, signal)), repo.url, release);
+    const metadata = validateExtensionPackageMetadata(extensionJSON(await download(metadataAsset, extensionMetadataLimit, signal, progress)), repo.url, release);
     const packageAsset = asset(release, metadata.asset.name, repo, EXTENSION_PACKAGE_LIMIT);
     if (packageAsset.size !== metadata.asset.size || packageAsset.sha256 !== metadata.asset.sha256) throw extensionPackageError('metadata', '机器元数据与 GitHub Asset digest 不一致。');
     return {repoUrl: repo.url, installable: true, compatibility: 'installable', id: metadata.productId, version: metadata.version, tag: metadata.tag, releaseId: release.id, manifest: metadata.manifest, metadata, asset: packageAsset, metadataAsset};
   }
-  async function inspect(repoUrl) {
+  async function inspect(repoUrl, {signal} = {}) {
     alive(); let repo = parseExtensionRepository(repoUrl);
-    const info = await query(repo.api);
+    const info = await query(repo.api, signal);
     if (!extensionObject(info) || info.private !== false || info.full_name?.toLowerCase() !== (repo.owner + '/' + repo.repo).toLowerCase()) throw extensionPackageError('repository', '仓库不存在、不是公开仓库或已重命名；请确认作者地址。');
     // GitHub URLs are case-insensitive, but returned Asset URLs use canonical case.
     repo = parseExtensionRepository('https://github.com/' + info.full_name);
     let highest = null;
     for (let page = 1; page <= 10; page++) {
-      const releases = await query(repo.api + '/releases?per_page=100&page=' + page);
+      const releases = await query(repo.api + '/releases?per_page=100&page=' + page, signal);
       if (!Array.isArray(releases)) throw extensionPackageError('release', 'GitHub Release 列表格式异常。');
       for (const release of releases) if (extensionObject(release) && release.draft === false && Number.isSafeInteger(release.id) && release.id > 0 && Array.isArray(release.assets)
         && typeof release.tag_name === 'string' && release.tag_name.startsWith('v') && extensionVersion(release.tag_name.slice(1))
@@ -302,7 +348,7 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
       if (page === 10) throw extensionPackageError('release-limit', 'Release 数量超过第一版扫描限制，未猜测最新版本。');
     }
     if (!highest) return {repoUrl: repo.url, installable: false, compatibility: 'external', reason: '没有有效三段式 Release，请前往 GitHub。'};
-    return describe(repo, await releaseById(repo, highest.id), undefined);
+    return describe(repo, await releaseById(repo, highest.id, signal), signal);
   }
   function row(entry) {const value = identity(entry.script); return {id: value.productId, instanceId: entry.script.id, version: value.version, name: entry.script.name, enabled: entry.script.enabled, folderEnabled: entry.folderEnabled, repoUrl: value.repository, managed: true, legacy: !!value.legacy, scope: 'global'};}
   async function listInstalled() {
@@ -316,7 +362,7 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
         const persisted = await deadline(signal => readSavedScript(item.instanceId, signal), persistenceTimeoutMs);
         const content = persisted?.content;
         const saved = identity({content: content || ''});
-        if (!saved || saved.productId !== item.id || persisted?.id !== item.instanceId || typeof persisted.name !== 'string') return {...item, version: null, persistenceError: '尚未确认此脚本已持久保存。'};
+        if (!saved || saved.productId !== item.id || persisted?.id !== item.instanceId || typeof persisted.name !== 'string') return {...item, version: null, persistenceState: persisted == null ? 'pending' : 'error', persistenceError: '尚未确认此脚本已持久保存。'};
         return {...item, name: persisted.name, version: saved.version, memoryVersion: item.version,
           persistenceError: content !== scripts.get(item.instanceId).content || persisted.name !== scripts.get(item.instanceId).name ? '内存与已保存脚本不一致，尚未确认更新成功。' : ''};
       } catch {return {...item, version: null, persistenceError: '无法核验宿主持久保存版本，请重试；不代表更新成功。'};}
@@ -350,19 +396,23 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
   async function snapshot(id) {const trees = readTree(); await learnLegacy(trees); alive(); const entry = locate(trees, id); return {...row(entry), content: entry.script.content, script: extensionClone(entry.script)};}
   function ensureSnapshot(trees, saved) {const entry = locate(trees, saved.id); if (entry.script.id !== saved.instanceId || entry.script.content !== saved.content) throw extensionPackageError('changed', '安装实例或内容已被其他操作修改，请重新检查。'); return entry;}
   async function exclusive(action) {alive(); if (busy) throw extensionPackageError('busy', '已有扩展安装或管理操作正在进行。'); busy = true; notify(); try {return await action();} finally {busy = false; notify();}}
-  async function lockedCandidate(candidate) {
+  async function lockedCandidate(candidate, signal, progress = () => {}) {
+    signal?.throwIfAborted();
     if (!candidate?.installable || !candidate.manifest || candidate.id !== candidate.manifest.id || candidate.version !== candidate.manifest.version || candidate.tag !== 'v' + candidate.version) throw extensionPackageError('candidate', '请先检查一个可安装的标准 GitHub Extension。');
-    const repo = parseExtensionRepository(candidate.repoUrl), release = await releaseById(repo, candidate.releaseId);
-    const fresh = await describe(repo, release);
+    const repo = parseExtensionRepository(candidate.repoUrl), release = await releaseById(repo, candidate.releaseId, signal);
+    const fresh = await describe(repo, release, signal, progress);
     if (!fresh.installable || fresh.id !== candidate.id || fresh.version !== candidate.version || fresh.tag !== candidate.tag
       || JSON.stringify(fresh.asset) !== JSON.stringify(candidate.asset) || JSON.stringify(fresh.metadataAsset) !== JSON.stringify(candidate.metadataAsset)
       || JSON.stringify(fresh.metadata) !== JSON.stringify(candidate.metadata)) throw extensionPackageError('release-changed', '目标 Release 或 Asset 已变化，请重新检查。');
-    const bytes = await download(fresh.asset, EXTENSION_PACKAGE_LIMIT);
+    progress('downloading');
+    const bytes = await download(fresh.asset, EXTENSION_PACKAGE_LIMIT, signal, progress);
+    progress('verifying');
     const script = await validateExtensionPackage(bytes, fresh.metadata, crypto); alive();
-    const finalRelease = await releaseById(repo, fresh.releaseId);
+    signal?.throwIfAborted();
+    const finalRelease = await releaseById(repo, fresh.releaseId, signal);
     if (finalRelease.tag_name !== fresh.tag || JSON.stringify(asset(finalRelease, fresh.asset.name, repo, EXTENSION_PACKAGE_LIMIT)) !== JSON.stringify(fresh.asset)
       || JSON.stringify(asset(finalRelease, EXTENSION_PACKAGE_METADATA, repo, extensionMetadataLimit)) !== JSON.stringify(fresh.metadataAsset)) throw extensionPackageError('release-changed', '写入前 Release 附件已改变，已取消。');
-    alive(); return {fresh, script};
+    signal?.throwIfAborted(); alive(); return {fresh, script};
   }
   async function check(id) {const installed = await snapshot(id), candidate = await inspect(installed.repoUrl);
     if (candidate.installable && candidate.id !== id) throw extensionPackageError('identity', '仓库当前包属于不同 Extension ID，不允许覆盖。');
@@ -371,13 +421,19 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
     listInstalled, inspect, check,
     isBusy: () => busy,
     subscribe(listener) {listeners.add(listener); return () => listeners.delete(listener);},
-    install(candidate) {return exclusive(async () => {
+    install(candidate, {signal, onProgress} = {}) {return exclusive(async () => {
+      const progress = (phase, detail) => {try {onProgress?.(phase, detail);} catch {}};
+      progress('verifying');
+      signal?.throwIfAborted();
       const before = readTree(); await learnLegacy(before);
       if (extensionValidateTree(before).some(entry => identity(entry.script)?.productId === candidate?.id)) throw extensionPackageError('duplicate', '此 Extension 已安装，请使用更新。');
-      const {script, fresh} = await lockedCandidate(candidate);
+      const {script, fresh} = await lockedCandidate(candidate, signal, progress);
+      progress('installing');
+      signal?.throwIfAborted();
       const newScript = extensionClone(script); newScript.id = randomUUID(); newScript.enabled = true;
       if (!extensionText(newScript.id, 200) || newScript.id === script.id) throw extensionPackageError('instance-id', '无法生成独立安装实例 ID。');
       const result = writeTree(trees => {
+        signal?.throwIfAborted();
         if (extensionValidateTree(trees).some(entry => identity(entry.script)?.productId === fresh.id || entry.script.id === newScript.id
           || (fresh.id === 'miemie.polisher' && entry.script.content.startsWith('// MieMie Polisher ·')))) throw extensionPackageError('duplicate', '检测到已有同 ID 扩展或旧版候选，拒绝重复安装。');
         trees.push(newScript); extensionValidateTree(trees); return trees;

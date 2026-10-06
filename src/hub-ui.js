@@ -35,7 +35,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   const panels = new Set([manager.panel, message.panel, center.panel, settings.panel]);
 
   const account = doc.createElement('div'); account.className = 'mm-header-account'; center.header.append(account);
-  const ecosystem = createExtensionCenter({host, body: center.body, accountContainer: account, runtime, shortcuts, sources: localSources, ...ecosystemOptions, refreshLaunchers: renderMenu});
+  const ecosystem = createExtensionCenter({host, body: center.body, accountContainer: account, progressContainer: center.panel, runtime, shortcuts, sources: localSources, ...ecosystemOptions, refreshLaunchers: renderMenu});
 
   const versionCard = doc.createElement('div'); versionCard.className = 'mm-system-card';
   const versionTitle = doc.createElement('h2'); versionTitle.textContent = 'Hub 版本';
@@ -131,9 +131,11 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   };
   surface=createSurfaceController({host,shell,root,launcher,panels,place,
     resolve:key=>systemSurfaces[key]||extensionPanels.get(key)||(key.startsWith('message:')?messages.get(key.slice(8)):undefined),
-    onState:updateOrbState,onError:error=>{lastError=error.message;ecosystem.report(lastError);},
+    onState:next=>{if(next!=='extension-center')ecosystem.leave();else ecosystem.enter();updateOrbState();},onError:error=>{lastError=error.message;ecosystem.report(lastError);},
   });
+  function closeCurrent(){if(surface.state==='extension-center')ecosystem.leave();return surface.close(surface.state);}
   function go(next){
+    if(surface.state==='extension-center'&&!['extension-center','extensions'].includes(next))ecosystem.leave();
     if(next==='extensions'){void ecosystem.activate('installed');next='extension-center';}
     else if(next==='extension-center')void ecosystem.activate();
     return surface.go(next);
@@ -182,7 +184,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
       const items = [orb, ...menuButtons], index = items.indexOf(doc.activeElement);
       e.preventDefault(); items[(index + (e.shiftKey ? items.length - 1 : 1)) % items.length]?.focus({preventScroll:true});
     }
-    if (e.key === 'Escape' && surface.state !== 'closed') { e.preventDefault(); e.stopImmediatePropagation(); void (surface.state === 'menu' ? go('closed') : surface.close(surface.state)); }
+    if (e.key === 'Escape' && surface.state !== 'closed') { e.preventDefault(); e.stopImmediatePropagation(); void (surface.state === 'menu' ? go('closed') : closeCurrent()); }
   }
   doc.addEventListener('keydown', key, true);
   host.visualViewport?.addEventListener('resize', resized); host.visualViewport?.addEventListener('scroll', resized);
@@ -190,7 +192,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   shell.connect({onToggle: () => go(surface.state === 'closed' ? 'menu' : 'closed'), beforeMove: () => {}, onPosition: resized});
   renderMenu(); updateOrbState();
   return {
-    open: () => go('menu'), toggle: () => go(surface.state === 'closed' ? 'menu' : 'closed'), back: () => surface.close(surface.state),
+    open: () => go('menu'), toggle: () => go(surface.state === 'closed' ? 'menu' : 'closed'), back: () => closeCurrent(),
     registerShortcut:(id,mount)=>shortcuts.register(id,mount),
     forgetShortcut:id=>shortcuts.forget(id),
     runtimeChanged(event,preservePreference=false){if(event.kind==='uninstall'&&!preservePreference)shortcuts.forget(event.extension.manifest.id);shortcuts.sync();this.refresh();},

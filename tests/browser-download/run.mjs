@@ -11,6 +11,8 @@ import {resolve, isAbsolute} from 'node:path';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const serveOnly = process.argv.includes('--serve');
+const frozenRC = process.argv.includes('--frozen-rc');
+const sourceRoot = frozenRC ? resolve(root, '../review-artifacts/github-install-stage2/frozen-rc-modules') : resolve(root, 'src');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const repository = 'https://github.com/DevelopmentFixture/CorsExtension';
 const api = 'https://api.github.com/repos/DevelopmentFixture/CorsExtension';
@@ -31,8 +33,8 @@ const asset = (id, name, bytes) => ({id, name, state: 'uploaded', size: bytes.le
 const release = {id: 7, tag_name: 'v1.0.0', draft: false, prerelease: true, assets: [
   asset(31, 'MieMie-Extension-update.json', metadataBytes), asset(32, packageName, packageBytes),
 ]};
-const observed = {blockedFiles: 0, relayPosts: 0, deniedOrigins: 0, credentialHeaders: 0, preflights: 0};
-let relayMode = 'valid', allowedOrigin = '';
+const observed = {blockedFiles: 0, relayPosts: 0, deniedOrigins: 0, credentialHeaders: 0, preflights: 0, hangingDirect: 0, abortedDirect: 0, cancelledBodies: 0};
+let relayMode = 'valid', allowedOrigin = '', hangDirect = false;
 let browserHTML = '', workerHTML = '';
 const servers = [];
 function json(response, value, status = 200, headers = {}) {
@@ -51,14 +53,14 @@ const sourceHandler = async (request, response) => {
   if (pathname === '/fixture-control' && request.method === 'POST' && request.headers.origin === allowedOrigin) {
     const chunks = []; for await (const part of request) chunks.push(part);
     const input = JSON.parse(Buffer.concat(chunks));
-    if (input.mode && !['valid', 'slow', 'tamper-metadata', 'tamper-package'].includes(input.mode)) return json(response, {error: 'Bad fixture mode'}, 400);
+    if (input.mode && !['valid', 'slow', 'slow-package', 'tamper-metadata', 'tamper-package'].includes(input.mode)) return json(response, {error: 'Bad fixture mode'}, 400);
     if (input.mode) relayMode = input.mode;
     if (input.report) console.log(JSON.stringify(input.report));
     return json(response, observed);
   }
   if (pathname === '/' || pathname === '/worker') {response.writeHead(200, {'Content-Type': 'text/html'}); response.end((pathname === '/worker' ? workerHTML : browserHTML) || '<!doctype html><title>MieMie Chromium CORS test fixture</title>'); return;}
   if (!/^\/src\/[a-z0-9-]+\.js$/.test(pathname)) {response.writeHead(404); response.end(); return;}
-  response.writeHead(200, {'Content-Type': 'text/javascript'}); response.end(await readFile(resolve(root, '.' + pathname)));
+  response.writeHead(200, {'Content-Type': 'text/javascript'}); response.end(await readFile(resolve(sourceRoot, pathname.slice('/src/'.length))));
 };
 let browser;
 const passed = [];
@@ -76,6 +78,11 @@ try {
     }
     const headers = {'Access-Control-Allow-Origin': '*'};
     const match = /\/releases\/assets\/(31|32)$/.exec(path);
+    if (match?.[1] === '32' && hangDirect) {
+      observed.hangingDirect++;
+      response.once('close', () => {observed.abortedDirect++;});
+      return; // A real socket stays pending until browser AbortSignal closes it.
+    }
     if (match) {response.writeHead(302, {...headers, Location: '/files/' + match[1]}); response.end(); return;}
     if (path === '/repos/DevelopmentFixture/CorsExtension') return json(response, {private: false, full_name: 'DevelopmentFixture/CorsExtension'}, 200, headers);
     if (path.endsWith('/releases')) return json(response, [release], 200, headers);
@@ -99,28 +106,45 @@ try {
     if (Object.keys(input).sort().join(',') !== 'assetId,releaseId,repository' || input.repository !== repository || input.releaseId !== 7 || ![31, 32].includes(input.assetId)) {
       return json(response, {error: 'Unverified fixture identity'}, 400, headers);
     }
-    if (relayMode === 'slow') await new Promise(yes => setTimeout(yes, 500));
+    if (relayMode === 'slow' || (relayMode === 'slow-package' && input.assetId === 32)) await new Promise(yes => setTimeout(yes, 500));
     let bytes = input.assetId === 31 ? metadataBytes : packageBytes;
     if ((relayMode === 'tamper-metadata' && input.assetId === 31) || (relayMode === 'tamper-package' && input.assetId === 32)) {
       bytes = Buffer.from(bytes); bytes[bytes.length - 1] ^= 1;
     }
     if (response.destroyed) return;
-    response.writeHead(200, {...headers, 'Content-Type': 'application/octet-stream', 'Content-Length': bytes.length}); response.end(bytes);
+    response.writeHead(200, {...headers, 'Content-Type': 'application/octet-stream', 'Content-Length': bytes.length});
+    if (input.assetId === 32 && ['body-progress', 'body-stall'].includes(relayMode)) {
+      const mode = relayMode;
+      response.once('close', () => {if (!response.writableFinished) observed.cancelledBodies++;});
+      response.flushHeaders();
+      if (mode === 'body-stall') {response.write(bytes.subarray(0, 10)); return;}
+      const step = Math.ceil(bytes.length / 8);
+      for (let offset = 0; offset < bytes.length; offset += step) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        if (response.destroyed) return;
+        response.write(bytes.subarray(offset, offset + step));
+      }
+    } else response.write(bytes);
+    response.end();
   });
   if (serveOnly) {
     const configuration = {githubOrigin, repository, relayOrigin, appOrigin, deniedAppOrigin, productId, scriptId, content};
     const exerciseSource = async function exerciseInBrowser({githubOrigin, repository, base, install = true, timeout = 3000, disposeAfter, reinstall = false}) {
       const {createExtensionPackageManager} = await import('/src/extension-packages.js');
       let trees = [], writes = 0;
-      const request = (url, options) => {
+      const request = async (url, options) => {
+        const binary = url.endsWith('/releases/assets/32');
+        const relay = options.method === 'POST';
+        if (binary) {record('direct_package_observed'); options.signal.addEventListener('abort', () => record('direct_package_abort_observed', 'timeout'), {once:true});}
+        if (relay) record('relay_request_started');
         if (url.startsWith('https://api.github.com/repos/DevelopmentFixture/CorsExtension')) {
           const target = new URL(url); return fetch(githubOrigin + target.pathname + target.search, options);
         }
-        return fetch(url, options);
+        const response = await fetch(url, options); if (relay) record('relay_headers_received'); return response;
       };
       const manager = createExtensionPackageManager({fetch: request, getRegistryBaseURL: () => base,
-        metadataTimeoutMs: timeout, assetTimeoutMs: timeout, getScriptTrees: () => structuredClone(trees),
-        updateScriptTreesWith(updater) {writes++; trees = updater(structuredClone(trees)); return structuredClone(trees);},
+        metadataTimeoutMs: timeout, assetTimeoutMs: timeout, directAttemptTimeoutMs: directBudget, assetIdleTimeoutMs: idleBudget, onTrace: event => trace.push(event), getScriptTrees: () => structuredClone(trees),
+        updateScriptTreesWith(updater) {record('host_write_observed'); writes++; trees = updater(structuredClone(trees)); return structuredClone(trees);},
       });
       let timer;
       if (disposeAfter !== undefined) timer = setTimeout(() => manager.dispose(), disposeAfter);
@@ -128,8 +152,8 @@ try {
         const candidate = await manager.inspect(repository);
         let result = install ? await manager.install(candidate) : null;
         if (reinstall) {await manager.uninstall(candidate.id); result = await manager.install(await manager.inspect(repository));}
-        return {ok: true, writes, candidate: {id: candidate.id, repoUrl: candidate.repoUrl}, result, trees};
-      } catch (error) {return {ok: false, writes, code: error.code, message: error.message, trees};}
+        return {ok: true, writes, trace, candidate: {id: candidate.id, repoUrl: candidate.repoUrl}, result, trees};
+      } catch (error) {return {ok: false, writes, trace, code: error.code, message: error.message, trees};}
       finally {clearTimeout(timer); manager.dispose();}
     };
     const configurationText = JSON.stringify(configuration);
@@ -210,22 +234,27 @@ try {
   const page = await context.newPage();
   let corsConsoleErrors = 0;
   page.on('console', message => {if (/CORS|Access-Control-Allow-Origin/.test(message.text())) corsConsoleErrors++;});
-  async function exercise({base = relayOrigin, install = true, timeout = 3000, disposeAfter, reinstall = false, origin = appOrigin} = {}) {
+  async function exercise({base = relayOrigin, install = true, timeout = 3000, disposeAfter, directBudget = 100, reinstall = false, idleBudget = 30000, origin = appOrigin} = {}) {
     await page.goto(origin);
-    return page.evaluate(async ({githubOrigin, repository, base, install, timeout, disposeAfter, reinstall}) => {
+    return page.evaluate(async ({githubOrigin, repository, base, install, timeout, disposeAfter, directBudget, reinstall, idleBudget}) => {
       const {createExtensionPackageManager} = await import('/src/extension-packages.js');
-      let trees = [], writes = 0;
+      let trees = [], writes = 0; const trace = [], started = performance.now();
+      const record = (phase, status = 'success') => trace.push({timestamp: Date.now(), elapsedMs: Math.round(performance.now()-started), phase, status});
       // Only official fixture API URLs are remapped. Responses and failures are
       // native browser fetch objects; browser CORS checks remain fully enabled.
-      const request = (url, options) => {
+      const request = async (url, options) => {
+        const binary = url.endsWith('/releases/assets/32');
+        const relay = options.method === 'POST';
+        if (binary) {record('direct_package_observed'); options.signal.addEventListener('abort', () => record('direct_package_abort_observed', 'timeout'), {once:true});}
+        if (relay) record('relay_request_started');
         if (url.startsWith('https://api.github.com/repos/DevelopmentFixture/CorsExtension')) {
           const target = new URL(url); return fetch(githubOrigin + target.pathname + target.search, options);
         }
-        return fetch(url, options);
+        const response = await fetch(url, options); if (relay) record('relay_headers_received'); return response;
       };
       const manager = createExtensionPackageManager({fetch: request, getRegistryBaseURL: () => base,
-        metadataTimeoutMs: timeout, assetTimeoutMs: timeout, getScriptTrees: () => structuredClone(trees),
-        updateScriptTreesWith(updater) {writes++; trees = updater(structuredClone(trees)); return structuredClone(trees);},
+        metadataTimeoutMs: timeout, assetTimeoutMs: timeout, directAttemptTimeoutMs: directBudget, assetIdleTimeoutMs: idleBudget, onTrace: event => trace.push(event), getScriptTrees: () => structuredClone(trees),
+        updateScriptTreesWith(updater) {record('host_write_observed'); writes++; trees = updater(structuredClone(trees)); return structuredClone(trees);},
       });
       let timer;
       if (disposeAfter !== undefined) timer = setTimeout(() => manager.dispose(), disposeAfter);
@@ -233,10 +262,10 @@ try {
         const candidate = await manager.inspect(repository);
         let result = install ? await manager.install(candidate) : null;
         if (reinstall) {await manager.uninstall(candidate.id); result = await manager.install(await manager.inspect(repository));}
-        return {ok: true, writes, candidate: {id: candidate.id, repoUrl: candidate.repoUrl}, result, trees};
-      } catch (error) {return {ok: false, writes, code: error.code, message: error.message, trees};}
+        return {ok: true, writes, trace, candidate: {id: candidate.id, repoUrl: candidate.repoUrl}, result, trees};
+      } catch (error) {return {ok: false, writes, trace, code: error.code, message: error.message, trees};}
       finally {clearTimeout(timer); manager.dispose();}
-    }, {githubOrigin, repository, base, install, timeout, disposeAfter, reinstall});
+    }, {githubOrigin, repository, base, install, timeout, disposeAfter, directBudget, reinstall, idleBudget});
   }
   async function check(name, action) {await action(); passed.push(name); console.log('PASS ' + name);}
   await check('actual cross-origin GitHub asset rejection, without Registry, writes nothing', async () => {
@@ -277,6 +306,40 @@ try {
   await check('teardown aborts the in-flight browser download before any write', async () => {
     relayMode = 'slow'; const result = await exercise({disposeAfter: 100}); relayMode = 'valid';
     assert.equal(result.ok, false); assert.equal(result.code, 'cancelled'); assert.equal(result.writes, 0); assert.deepEqual(result.trees, []);
+  });
+  await check('pending native GitHub fetch aborts its direct socket then relay installs once', async () => {
+    hangDirect = true;
+    const before = observed.abortedDirect, result = await exercise();
+    hangDirect = false;
+    assert.equal(result.ok, true, JSON.stringify(result)); assert.equal(result.writes, 1);
+    assert(observed.hangingDirect > 0); assert(observed.abortedDirect > before);
+  });
+  await check('pending native direct plus slow relay reaches the outer deadline without writes', async () => {
+    hangDirect = true; relayMode = 'slow-package';
+    const result = await exercise({timeout: 350});
+    hangDirect = false; relayMode = 'valid';
+    assert.equal(result.ok, false); assert.equal(result.code, 'timeout'); assert.equal(result.writes, 0);
+  });
+  await check('native 5s pending package fetch enters locked Relay', async () => {
+    hangDirect = true;
+    const result = await exercise({timeout: 60000, directBudget: 5000}); hangDirect = false;
+    assert.equal(result.ok, true, JSON.stringify(result)); assert.equal(result.writes, 1);
+    const direct = result.trace.find(e=>e.phase==='direct_package_observed');
+    const relay = result.trace.find(e=>e.phase==='relay_request_started' && e.elapsedMs >= direct.elapsedMs);
+    assert(relay); assert(relay.elapsedMs-direct.elapsedMs >= 4900 && relay.elapsedMs-direct.elapsedMs < 6500);
+    assert(result.trace.some(e=>e.phase==='direct_package_abort_observed')); console.log(JSON.stringify({frozenRC, nativePhaseTrace: result.trace}));
+  });
+  await check('native relay body continuously progresses beyond the idle window and installs', async () => {
+    relayMode = 'body-progress';
+    const result = await exercise({idleBudget: 350}); relayMode = 'valid';
+    assert.equal(result.ok, true, JSON.stringify(result)); assert.equal(result.writes, 1);
+  });
+  await check('native stalled relay body hits idle timeout and closes its socket without writes', async () => {
+    relayMode = 'body-stall'; const before = observed.cancelledBodies;
+    const result = await exercise({idleBudget: 200}); relayMode = 'valid';
+    assert.equal(result.ok, false); assert.equal(result.code, 'timeout'); assert.match(result.message, /未收到新数据/);
+    assert.equal(result.writes, 0);
+    await new Promise(resolve => setTimeout(resolve, 50)); assert(observed.cancelledBodies > before);
   });
   console.log(JSON.stringify({passed: passed.length, browser: await browser.version(), observed,
     scope: 'Real Chromium CORS against local fixture origins; not live Tavern or public Registry acceptance.'}, null, 2));

@@ -12,7 +12,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 
 // Execute the complete built Hub in a disposable helper-like iframe. There is
 // no character selected, no Polisher artifact, and no real network access.
-async function fixture(t, releaseFetch = async () => ({ok: true, json: async () => [{tag_name: 'v' + pkg.version, draft: false, prerelease: true}]})) {
+async function fixture(t, releaseFetch = async () => ({ok: true, json: async () => [{tag_name: 'v' + pkg.version, draft: false, prerelease: true}]}), pendingInstall = false) {
   const errors = [], requests = [], releaseRequests = [], listeners = [], subscriptions = new Set();
   const virtualConsole = new VirtualConsole();
   virtualConsole.on('jsdomError', error => errors.push(error.message));
@@ -50,7 +50,8 @@ async function fixture(t, releaseFetch = async () => ({ok: true, json: async () 
     if (index >= 0) listeners.splice(index, 1);
     return remove.call(this, type, fn, options);
   };
-  let frame;
+  let frame, installSignal;
+  if(pendingInstall)host.localStorage.setItem('miemie_registry_url_v1','https://registry.example');
   function unmount() {
     if (!frame) return;
     frame.contentWindow.dispatchEvent(new frame.contentWindow.Event('pagehide'));
@@ -62,6 +63,8 @@ async function fixture(t, releaseFetch = async () => ({ok: true, json: async () 
     blockNetwork(scope);
     Object.assign(scope, {TextDecoder, TextEncoder});
     scope.fetch = (url, init) => {
+      if(pendingInstall&&url.startsWith('https://registry.example/api/catalog'))return Promise.resolve(Response.json({items:[{id:'pending-fixture',name:'Fixture',description:'【简介】\n'+('正文。'.repeat(300)),sourceType:'github',sourceUrl:'https://github.com/DevelopmentFixture/Example',github:{compatibility:'installable',manifest:{id:'fixture.example'}}}],hasMore:false}));
+      if(pendingInstall&&url==='https://api.github.com/repos/DevelopmentFixture/Example'){installSignal=init.signal;return new Promise(()=>{});}
       if (registryBase && url === registryBase + '/api/catalog?page=1&pageSize=12&q=&source=') return Promise.resolve(Response.json({items:[],hasMore:false}));
       assert.equal(url, 'https://api.github.com/repos/SheepSheepLab/MieMie-Hub/releases?per_page=100&page=1');
       releaseRequests.push({url, init}); return releaseFetch(url, init);
@@ -90,7 +93,7 @@ async function fixture(t, releaseFetch = async () => ({ok: true, json: async () 
   async function launch(id) {
     await host.__MieMieHub.open(); await click('[data-hub-app="' + id + '"]');
   }
-  return {host, doc, query, click, launch, listeners, subscriptions, requests, releaseRequests, unmount, mount};
+  return {host, doc, query, click, launch, listeners, subscriptions, requests, releaseRequests, unmount, mount, getInstallSignal:()=>installSignal};
 }
 
 test('Core system launchers coexist with existing entries without registering Extensions', async t => {
@@ -514,4 +517,28 @@ test('native presentation owns Shortcut geometry and motion only; Honeycomb reta
  hold=true;orb.click();await settle();await settle();assert.equal(app.panel.dataset.surfaceState,'opening');
  f.host.visualViewport.width=390;f.host.dispatchEvent(new f.host.Event('orientationchange'));await settle();await settle();assert.equal(app.panel.dataset.surfaceState,'open');assert.ok(cancels);
  const closing=app.api.closePanel();await settle();assert.equal(app.panel.dataset.surfaceState,'closing');const disposal=f.host.__MieMieHub.whenDisposed;f.unmount();await closing;await disposal;assert.equal(app.panel.isConnected,false);
+});
+
+for(const exit of ['button','escape'])test('built Hub '+exit+' cancels pending install inspection immediately',async t=>{
+ const f=await fixture(t,undefined,true);await f.launch('extension-center');
+ for(let i=0;i<50&&!f.query('[data-action="pending-fixture:install"]');i++)await settle();
+ await f.click('[data-action="pending-fixture:install"]');
+ for(let i=0;i<50&&!f.getInstallSignal();i++)await settle();assert.ok(f.getInstallSignal());
+ const panel=f.query('[data-hub-panel="extension-center"]'),toast=panel.querySelector('[data-install-progress]');
+ assert.equal(toast.parentElement,panel);assert.equal(toast.nextElementSibling,panel.querySelector('.mm-return'));
+ if(exit==='button')panel.querySelector('.mm-return').click();else f.doc.dispatchEvent(new f.host.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+ assert.equal(f.getInstallSignal().aborted,true);assert.equal(toast.hidden,true);await settle();
+});
+
+
+test('description Escape closes only its dialog in the complete built Hub and disposal removes the modal',async t=>{
+ const f=await fixture(t,undefined,true);
+ f.host.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+ f.host.HTMLDialogElement.prototype.close=function(){this.open=false;};
+ await f.launch('extension-center');await f.click('.mm-description-open');
+ const panel=f.query('[data-hub-panel="extension-center"]');assert.equal(panel.hidden,false);assert.ok(f.query('dialog[open]'));
+ f.query('.mm-description-full').dispatchEvent(new f.host.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await settle();
+ assert.equal(f.query('dialog'),null);assert.equal(panel.hidden,false);assert.equal(f.doc.activeElement,f.query('.mm-description-open'));
+ await f.click('.mm-description-open');f.unmount();assert.equal(f.query('dialog'),null);
+ assert.equal(f.listeners.filter(x=>x.type==='keydown').length,0);
 });

@@ -115,10 +115,10 @@ async function withPackagePreference(id, enabled, action) {
 }
 packageUI.setEnabled = (id, enabled) => withPackagePreference(id, enabled, () => packageManager.setEnabled(id, enabled));
 packageUI.uninstall = async id => {const result=await packageManager.uninstall(id);if(result?.action==='uninstalled')hubUI?.forgetShortcut(id);return result;};
-packageUI.install = candidate => {
+packageUI.install = (candidate, {onProgress, signal} = {}) => {
   if (!/^[a-z0-9][a-z0-9._-]{1,79}$/.test(candidate?.id || '')) return Promise.reject(Error('Extension ID 无效。'));
   if (bundledPolicies.get(candidate.id)?.management === 'hub') return Promise.reject(Error('此随包工具随 Hub 整体更新，无需单独安装。'));
-  return withPackagePreference(candidate.id, true, () => packageManager.install(candidate));
+  return withPackagePreference(candidate.id, true, () => packageManager.install(candidate, {onProgress, signal}));
 };
 const registryClient = createRegistryClient({host: h, defaultBaseURL: HUB_DEFAULT_REGISTRY_URL, fetch: (...args) => window.fetch(...args), crypto: window.crypto});
 hubUI = createHubUI(h, hubShell, HUB_ASSETS, extensionRuntime, {
