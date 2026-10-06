@@ -1,6 +1,7 @@
 # Final Architecture Polish · 2026-09-27
 
-> 后续 Application Presentation & Shortcut 工作已扩展此基线；当前状态与验证以 [APPLICATION-PRESENTATION.md](APPLICATION-PRESENTATION.md) 为准。尚未进入 Release Hardening。
+> **Historical development / review record.** 下文版本、测试数字、待验收／未发布状态均属于当时阶段。当前公开基线为 **MieMie Hub 0.8.2**；当前 Extension 开发从 [EXTENSION-DEVELOPER-GUIDE.md](EXTENSION-DEVELOPER-GUIDE.md) 开始。
+> 当时后续阶段见 [APPLICATION-PRESENTATION.md](APPLICATION-PRESENTATION.md)；该链接不代表当前发布状态。
 
 结论：ARCHITECTURE READY FOR FREEZE。Hub 0.7.0 / Polisher 1.1.4，未升级版本，未 Commit / Push / Release。本报告针对本轮架构收口；已有 Final UI 和 Registry 未提交改动仍保留，不表示本轮重新实现了它们。
 

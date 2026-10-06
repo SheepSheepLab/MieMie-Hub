@@ -1,5 +1,7 @@
 # GitHub Extension 浏览器下载修复（Hub 0.3.2 / Registry 0.1.2）
 
+> **Historical development / review record.** 下文版本、测试数字、待验收／未发布状态均属于当时阶段。当前公开基线为 **MieMie Hub 0.8.2**；当前 Extension 开发从 [EXTENSION-DEVELOPER-GUIDE.md](EXTENSION-DEVELOPER-GUIDE.md) 开始。
+
 ## 根因与路径
 
 GitHub REST Release Asset 的 302 响应有 `Access-Control-Allow-Origin: *`，但当前最终 `release-assets.githubusercontent.com` 附件响应没有该头。浏览器可以读取 Release 列表，却不能读取安装机器元数据。`browser_download_url` 的 GitHub 重定向同样不能解决这个问题。Node/curl 下载成功不是浏览器 CORS 成功。

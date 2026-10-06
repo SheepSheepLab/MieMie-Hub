@@ -1,6 +1,6 @@
 # Hub 构建、更新与产物兼容验证
 
-当前最终功能基线：Hub **0.8.2**，完整产物组合为 Polisher **1.2.1**。Owner 已完成真实 Tavern 安装及 UI 验收；正式发布仍需最终 Gate 与 Owner 确认。本文后续带版本的验收数字属于历史记录，不代替本轮复测。
+当前正式基线：Hub **0.8.2** 已发布，完整产物组合为 Polisher **1.2.1**，Production Registry 为 **0.6.1**。适配验收先看 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md)。下文明示历史阶段的版本与验收数字保留原记录，不代替本次实际测试输出。
 
 ## 独立构建与测试
 
@@ -27,10 +27,13 @@ npm test
 ## 锁定产物组合测试
 
 ```sh
-npm run test:integration -- --polisher /absolute/path/MieMie-Polisher-Extension-1.2.0.json
+MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL=https://registry.sheepsheeplab.com \
+  npm run test:integration -- --polisher /absolute/path/MieMie-Polisher-Extension-1.2.1.json
 ```
 
-组合测试只引用完整 JSON 产物，不导入另一仓库源码。`tests/integration/artifacts.lock.json` 锁定当前 Hub 与 Polisher 1.2.0 的版本、脚本 ID 和 SHA-256；校验失败时拒绝执行。具体 hash 以该锁定文件为准，每个发布版本都重新计算最终构建字节，不在本文复制会过时的 Hub hash。
+默认锁定的是正式生产构建；上面的环境参数使 npm 脚本重新构建时使用相同配置。默认 development 构建字节不同，不能直接拿来通过此锁。也可显式指定已下载并核验的正式 Hub JSON。
+
+组合测试只引用完整 JSON 产物，不导入另一仓库源码。`tests/integration/artifacts.lock.json` 锁定当前 Hub 与 Polisher 1.2.1 的版本、脚本 ID 和 SHA-256；校验失败时拒绝执行。具体 hash 以该锁定文件为准，每个发布版本都重新计算最终构建字节，不在本文复制会过时的 Hub hash。
 
 JSON 可以是中文本地文件名或 ASCII Release 文件名；校验针对实际字节、版本及脚本 ID。测试不自动寻找兄弟源码目录或下载附件。可以用 `--hub` 和 `--lock` 显式选择另一份已确认的锁定组合。
 
@@ -56,10 +59,10 @@ JSON 可以是中文本地文件名或 ASCII Release 文件名；校验针对实
 ## 完整 Package 产物测试
 
 ```sh
-npm run test:ecosystem -- --polisher /path/to/MieMie-Polisher-Extension-1.2.0.json --metadata /path/to/MieMie-Extension-update.json --legacy-polisher /path/to/MieMie-Polisher-Extension-1.0.1.json
+npm run test:ecosystem -- --polisher /path/to/MieMie-Polisher-Extension-1.2.1.json --metadata /path/to/MieMie-Extension-update.json --legacy-polisher /path/to/MieMie-Polisher-Extension-1.0.1.json
 ```
 
-显式读取Hub完整构建JSON、Polisher1.1.0 JSON和metadata以及已发布1.0.1 JSON；不导入另一仓库源码。验证metadata/digest，报告记录每份产物SHA-256。只在模拟宿主中由正式树API触发创建/重载/删除iframe，执行真实构建代码，GitHub响应替身明确为Development Fixture。结果在ignored `test-results/ecosystem.json`。
+显式读取 Hub 完整构建 JSON、Polisher 1.2.1 JSON 和匹配 metadata，以及已发布 1.0.1 JSON；不导入另一仓库源码。验证metadata/digest，报告记录每份产物SHA-256。只在模拟宿主中由正式树API触发创建/重载/删除iframe，执行真实构建代码，GitHub响应替身明确为Development Fixture。结果在ignored `test-results/ecosystem.json`。
 
 Registry另有显式产物合同测试 `tests/hub-contract.mjs --hub <Hub JSON> --sha256 <锁定SHA256> --report <本地输出>`。它验证指定HubJSON的hash、使用其中实际客户端连接临时本地HTTP服务与隔离SQLite；Discord/GitHub上游是测试适配器。基础Registry测试不要求Hub目录存在。
 
@@ -73,7 +76,7 @@ Registry另有显式产物合同测试 `tests/hub-contract.mjs --hub <Hub JSON> 
 
 Hub 与时间线图片保持 SheepSheep 提供的源 PNG 字节，构建仅 Base64 编码，不生成、改色、缩放或压缩；Polisher Icon 不由 Hub 更新修改。
 
-发布前执行构建、全部基础测试、锁定产物组合测试、敏感信息和 staged 内容检查。发布均标记 GitHub Pre-release；附件只使用 ASCII 名称，并匿名重新下载核对最终字节 hash、Tag／Commit、元数据和工作区状态。正式发布不等于真实酒馆验收完成。
+发布前执行构建、全部基础测试、锁定产物组合测试、敏感信息和 staged 内容检查。正式版与候选版的 Release 状态应与 Owner 授权一致，不统一标为 Pre-release；附件只使用 ASCII 名称，并匿名重新下载核对最终字节 hash、Tag／Commit、元数据和工作区状态。正式发布不等于真实酒馆验收完成。
 
 
 ## 浏览器 CORS 回归（保留 0.3.2 基线）

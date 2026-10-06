@@ -1,5 +1,7 @@
 # Application Presentation & Shortcut Launcher · 2026-09-27
 
+> **Historical development / review record.** 下文版本、测试数字、待验收／未发布状态均属于当时阶段。当前公开基线为 **MieMie Hub 0.8.2**；当前 Extension 开发从 [EXTENSION-DEVELOPER-GUIDE.md](EXTENSION-DEVELOPER-GUIDE.md) 开始。
+
 Status: READY FOR VISUAL / INTEGRATION REVIEW. This supersedes the previous
 Architecture Freeze assessment for this working tree. No commit, push, release,
 version bump, deployment or production database change was performed.

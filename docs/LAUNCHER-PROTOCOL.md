@@ -1,5 +1,7 @@
 # 可选 Launcher 双模式协议 v1
 
+适配路径先看 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md)。本协议负责 Standalone ↔ Hub 单实例交接；蜂窝／Surface／可选外部 Shortcut 的现行契约见 [Extension API v1](EXTENSION-API.md)，物理安装与更新另按 [Package v1](EXTENSION-PACKAGE.md) 验证。
+
 此协议对社区作者完全可选。没有Hub适配、没有open、没有Launcher的作品都可以被Catalog作为外部项目收录。原生Extension的生命周期与Launcher能力分离；是否具备机器安装包由Package规范决定，不能因为没有Launcher拒绝后台Extension。
 
 父页面 `window.parent.__MieMieHub` 提供API v1。兼容Hub发出 `miemie:hub-ready` / `miemie:hub-disposed`，event.detail为对应Hub对象；不能把旧实例的事件误认为当前实例。`extensions.provide(manifest,factory)` 返回 `{ok,ready,release}`。`ready`等待注册/激活，`release()`撤回来源。Hub新提供可选`whenDisposed`，在整个Runtime清理结束后完成；不能把disposed事件当成异步清理已完成。
