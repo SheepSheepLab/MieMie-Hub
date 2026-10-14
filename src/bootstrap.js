@@ -1,3 +1,16 @@
+// Reuse the previous Hub's completion boundary before constructing a successor.
+// This private, transient slot is not an Extension API or a second cleanup queue.
+const previousHubDisposal=h.__MieMieHubDisposal;
+if(previousHubDisposal){
+  let cancelled=false;const cancel=()=>{cancelled=true;};
+  window.addEventListener('pagehide',cancel,{once:true});window.addEventListener('unload',cancel,{once:true});
+  void previousHubDisposal.then(()=>{
+    window.removeEventListener('pagehide',cancel);window.removeEventListener('unload',cancel);
+    if(!cancelled&&!h.__MieMieHub)startHub();
+  });
+}else startHub();
+function startHub(){
+const hubShell=createHubRoot(h,HUB_ASSETS);
 const HUB_STATE_KEY = 'miemie_hub_extensions_v1';
 let hubUI, hubDisposed = false, savedHubState = {version: 1, extensions: {}};
 const sources = new Map(), withdrawing = new Set();
@@ -15,10 +28,16 @@ function persistHubChange(event) {
   catch (_) { hubUI?.report('扩展状态本次未能保存；当前页面仍可使用。'); }
 }
 const extensionRuntime = createExtensionRuntime({
+  // Helper may remove this iframe before bounded async cleanup completes.
+  // Helper already provides host Lodash. Its delay callback belongs to the
+  // host realm, so iframe removal cannot discard the timeout. No new timers.
+  setTimeout: h._?.delay || h.setTimeout.bind(h), clearTimeout: h.clearTimeout.bind(h),
   resolveClassification: bundledClassificationResolver(BUNDLED_EXTENSIONS),
   onChange(event) { persistHubChange(event); hubUI?.runtimeChanged(event,withdrawing.has(event.extension.manifest.id)||hubDisposed); },
   onMessage(id, title, text) { hubUI?.showMessage(id, title, text); },
   onClose(id) { hubUI?.closeMessage(id); },
+  onNativeWindow: (id,provider) => hubUI.registerNativeWindow(id,provider),
+  onBeforeOpen: id => hubUI.acquireHub(id),
   onShortcut: (id,mount) => hubUI.registerShortcut(id,mount),
   onPanel: (...args) => hubUI.attachPanel(...args),
   onShowPanel: id => hubUI.showPanel(id),
@@ -151,8 +170,12 @@ function cleanupHub() {
   if (hubDisposed) return;
   hubDisposed = true;
   hubSelfUpdater.dispose();
+  h.__MieMieHubDisposal=whenDisposed;
   // dispose() revokes every extension synchronously before its first await.
-  void Promise.resolve(extensionRuntime.dispose()).finally(finishHubDisposal);
+  void Promise.resolve(extensionRuntime.dispose()).finally(()=>{
+    if(h.__MieMieHubDisposal===whenDisposed)delete h.__MieMieHubDisposal;
+    finishHubDisposal();
+  });
   sources.clear(); hubUI.dispose(); hubShell.dispose();
   if (h.__MieMieHub === publicHub) delete h.__MieMieHub;
   if (h.__meemeCombinedUI === combinedUI) delete h.__meemeCombinedUI;
@@ -160,3 +183,4 @@ function cleanupHub() {
 }
 window.addEventListener('pagehide', cleanupHub, {once: true});
 window.addEventListener('unload', cleanupHub, {once: true});
+}

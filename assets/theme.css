@@ -1,6 +1,6 @@
 /* Core visual tokens; no protocol or Extension branding overrides. */
 #miemie-hub-shell{
- --mie-z-surface:2147483500;--mie-motion-hero:760ms;--mie-blur-hero:14px;--mie-hero-backdrop:#201332b8;--mie-ease-hero:cubic-bezier(.4,0,.2,1);
+ --mie-z-surface:2147483646;--mie-motion-hero:760ms;--mie-blur-hero:14px;--mie-hero-backdrop:#201332b8;--mie-ease-hero:cubic-bezier(.4,0,.2,1);
  --mie-bg:#0b0814;--mie-surface:#171124;--mie-surface-strong:#211832;--mie-text:#f3edff;--mie-text-muted:#b5a8cd;
  --mie-accent:#b495ff;--mie-highlight:#91dded;--mie-border:#aa80f238;--mie-glow:0 0 24px #a56aff38;
  --mie-radius:16px;--mie-blur:12px;--mie-shadow:0 24px 80px #0009;

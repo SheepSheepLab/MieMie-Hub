@@ -7,6 +7,7 @@ Current compatibility baseline：
 | 项目 | 当前基线 |
 | --- | --- |
 | MieMie Hub | [0.8.2 正式版](https://github.com/SheepSheepLab/MieMie-Hub/releases/tag/v0.8.2) |
+| 本仓库源码 | 0.8.3，等待 Owner GitHub 审核，尚未发布 |
 | Extension API | v1 |
 | Extension Package | v1 |
 | Production Registry | 0.6.1 |
@@ -22,7 +23,9 @@ Current compatibility baseline：
 | Runtime registration | 想由 Hub 管理运行期生命周期时需要；普通外部投稿无需接入 | [EXTENSION-API](EXTENSION-API.md) |
 | Honeycomb Launcher | 可选；需要蜂窝入口时声明，后台扩展无需提供 | [EXTENSION-API](EXTENSION-API.md) |
 | Surface | 可选；使用 Hub 面板展开／返回动画时接入 | [EXTENSION-API](EXTENSION-API.md) |
+| Back Navigation | 可选；希望 Escape 先处理内部交互层时采用；未采用者保留原行为 | [EXTENSION-API](EXTENSION-API.md#optional-back-navigation-capability-api-v1) |
 | Shortcut Launcher | 可选；需已挂载主面板、声明 Launcher，并提供实例 `open()` | [EXTENSION-API](EXTENSION-API.md) |
+| Native Window | 可选；双入口共享业务实例，原生入口保留扩展自己的窗口控制 | [EXTENSION-API](EXTENSION-API.md#optional-native-window-ownership-api-v1) |
 | Standalone dual-mode | 可选；承诺有无 Hub 均可运行时，需要正确处理交接 | [LAUNCHER-PROTOCOL](LAUNCHER-PROTOCOL.md) |
 
 ## 1. 我只想把作品投稿到 Hub
@@ -64,6 +67,22 @@ Launcher 是可选运行期能力，不决定 Package 是否可安装。没有 L
 
 Extension 保持业务内容所有权；Hub 负责已接入面板的展示、位置和过渡。关闭面板不是停用、卸载或重置设置；不要在返回时创建第二个实例。完整示例、能力检测和清理要求见 API 文档。
 
+### 可选：让 Escape 先返回工具内部一层
+
+使用 [Optional Back Navigation Capability](EXTENSION-API.md#optional-back-navigation-capability-api-v1)：
+在 `attachPanel()` 后，通过能力检测调用 `api.registerBackHandler(handler)`。
+处理器同步返回 `true` 表示已处理；同步返回 `false` 才由 Hub 关闭 Surface、恢复原入口。
+扩展自己管理内部状态，Hub 不读取内部 DOM 或页面栈。
+
+该能力不是适配 Hub 的必选项。现有 API v1 扩展不需要修改代码、Manifest、Package、
+稳定 ID、Launcher 或重新发布；没有注册处理器时，Escape 继续原有关闭行为。
+旧扩展不会因此自动获得逐层返回能力。
+
+动画或草稿确认可异步执行，但处理器必须立即返回 `true`，不能返回 Promise，
+也不能用 `api.guard()` 包装。异步完成前检查 `api.signal`、请求的 `isCurrent()`
+和自己的操作有效性；`api.closePanel()` 始终是直接关闭，不再次触发处理器。
+异常处理、长按、原生 Dialog、清理和完整示例以正式 API 文档为准。
+
 ## 5. 我要保留自己的外部悬浮球
 
 可选使用 `api.registerShortcutLauncher({mount})`。先 `attachPanel()`，Manifest 声明 Launcher，同一实例提供 `open()`。Shortcut 是额外入口，不替代蜂窝入口，也不创建第二份业务。
@@ -72,11 +91,23 @@ Extension 保持业务内容所有权；Hub 负责已接入面板的展示、位
 
 Hub 不扫描第三方 DOM。用户在已安装页开启「显示悬浮球」后才挂载该入口，默认关闭；移除入口必须清理其 DOM 和事件。可选原生动画的完整契约见 [API 的 Shortcut 与 Native Presentation 说明](EXTENSION-API.md)。
 
+### 可选：双入口与完整原生窗口操作
+
+旧 Shortcut 提供外部入口及可选动画，窗口显隐、焦点与关闭仍由 Hub Surface
+控制。完整原生操作使用 [Optional Native Window Ownership](EXTENSION-API.md#optional-native-window-ownership-api-v1)。
+这是 0.8.3 源码提供的可选能力：同一 Session 的蜂窝入口走 Hub Surface，原生入口
+复用扩展自己的窗口控制逻辑。不要再用“存在 hubApi”判断是否允许拖动或缩放。
+同步交接控制权、取消原生动画及手势，异步完成检查 lease，不复制业务实例。
+旧扩展可以不接入，继续原有行为；需要完整原生操作的扩展由作者自愿适配。
+Runtime Gate、Native Window Parity Gate 与 Managed Package Gate 分别验证。
+
+原生显隐、拖动、缩放、位置／尺寸记忆、动画、Esc 和焦点由扩展维护；Hub 不替作者实现这些业务 UI。Hub 展开时拥有前景，收起后恢复普通原生窗口交互。未适配该能力的正式第三方不会因升级 Hub 或开启悬浮球而自动获得完整原生操作。
+
 ## 6. 我要同时支持 Standalone + Hub
 
 按 [LAUNCHER-PROTOCOL](LAUNCHER-PROTOCOL.md) 管理交接，始终保持 **single business instance**。不能让 Standalone 启动一份业务，再由 Hub 启动第二份业务或第二层 Hook。
 
-Hub 接管前停止独立业务并完成清理，再通过 `extensions.provide()` 提供同一产品的工厂。Hub 消失时，等待来源 lease 释放及旧 Hub 的 `whenDisposed` 清理完成，再恢复 Standalone。串行处理重复事件、双启动顺序、Hub 重载和异步清理，不把 disposed 事件等同于清理已完成。
+Hub 接管前撤去冲突的独立展示，按自身适配器完成必要的串行清理，再通过 `extensions.provide()` 提供同一产品的工厂。保留既有业务实例的适配器只切换展示；不要为第二个入口重复初始化业务或 Hook。Hub 消失时，等待来源 lease 释放及旧 Hub 的 `whenDisposed` 清理完成，再恢复 Standalone。串行处理重复事件、双启动顺序、Hub 重载和异步清理，不把 disposed 事件等同于清理已完成。
 
 Hub 仍存在而用户已停用／注销扩展时，不得绕过用户选择自动复活独立业务。协议中的 Polisher 1.1.0 链接是固定参考快照，包含产品专用身份，不能原样复制其 ID、品牌或存储 key；当前 Shortcut 契约以 API 文档为准。
 
@@ -91,6 +122,9 @@ Hub 仍存在而用户已停用／注销扩展时，不得绕过用户选择自�
 - [ ] 若提供 Launcher，`contributes.launcher` 与 `open()` 配套，反复打开不新增业务实例。
 - [ ] 若采用 Surface，打开／返回／停用过程中面板与资源状态正确。
 - [ ] 若采用 Shortcut，开关、入口来源和 dispose 正确，与蜂窝共用实例和面板。
+- [ ] 若采用 Back Handler，独立 Escape 一次返回一层、长按不连退，异常保留草稿，关闭后焦点与真实 Origin 相符；未接入时维持原行为。
+- [ ] 若采用 Native Window，蜂窝与原生入口共用同一业务实例；拖动、缩放、开关、草稿和原生输入保持，切换及撤销同步结束旧手势／动画，失效 lease 不再写入。
+- [ ] Hub 展开时原生普通窗口／球不穿透前景；收起完成后恢复交互。浏览器 top-layer modal 按原生规则单独验收。
 - [ ] 若支持 dual-mode，双启动顺序、Hub 重载和异步 handoff 均保持单实例。
 
 **通过 Runtime Gate 不代表通过 Managed Package Gate。** 特别是 `hub.extensions.uninstall(id)` 只注销 Runtime，不物理删除酒馆助手脚本。

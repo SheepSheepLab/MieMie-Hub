@@ -1,10 +1,10 @@
 // Private UI capability registry. Extensions own every pixel and pointer handler.
-export function createShortcutLaunchers({host,runtime,launch,onChange=()=>{},onError=()=>{}}){
+export function createShortcutLaunchers({host,runtime,launch,openNative=()=>null,releaseNative=()=>{},onChange=()=>{},onError=()=>{}}){
  const key='miemie_hub_shortcuts_v1',entries=new Map();let preferences={},disposed=false;
  try{const value=JSON.parse(host.localStorage.getItem(key));if(value&&typeof value==='object'&&!Array.isArray(value))preferences=value;}catch(_){}
  const report=error=>onError(error?.message||String(error));
  function save(){host.localStorage.setItem(key,JSON.stringify(preferences));}
- function unmount(entry){const handle=entry.handle;entry.handle=null;if(handle)try{handle.dispose();}catch(e){report(e);}}
+ function unmount(entry){const handle=entry.handle;entry.handle=null;if(handle)releaseNative(entry.id);if(handle)try{handle.dispose();}catch(e){report(e);}}
  function sync(){
   if(disposed)return;
   for(const [id,entry] of entries){
@@ -12,7 +12,7 @@ export function createShortcutLaunchers({host,runtime,launch,onChange=()=>{},onE
    if(!visible){unmount(entry);continue;}
    if(entry.handle)continue;
    try{
-    const open=()=>{if(disposed||entries.get(id)!==entry||!entry.handle||!runtime.get(id)?.enabled)return Promise.resolve(false);return launch(id,()=>runtime.open(id),capture(entry));};
+    const open=()=>{if(disposed||entries.get(id)!==entry||!entry.handle||!runtime.get(id)?.enabled)return Promise.resolve(false);const origin=capture(entry);return openNative(id,origin)??launch(id,()=>runtime.open(id),origin);};
     const mount=entry.mount,handle=mount(Object.freeze({open}));
     if(!handle||typeof handle.dispose!=='function'||typeof handle.getOrigin!=='function'){handle?.dispose?.();throw Error('Shortcut mount 必须返回 getOrigin / dispose。');}
     entry.handle=handle;
@@ -37,6 +37,8 @@ export function createShortcutLaunchers({host,runtime,launch,onChange=()=>{},onE
   }):null;
   return {kind:'shortcut',presentation,radius,background:style?.background,id:entry.id,rect:r?{left:r.left,top:r.top,width:r.width,height:r.height}:null,
    currentRect:read,element:()=>element(entry),
+   // Focus belongs to this mount and this node, never its replacement.
+   focusElement:()=>available()&&element(entry)===node?node:null,
    active:value=>{try{entry.handle?.setActive?.(value);}catch(e){report(e);}},
    highlight:()=>{try{entry.handle?.highlight?.();}catch(e){report(e);}},
   };

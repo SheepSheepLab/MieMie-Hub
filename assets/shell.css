@@ -1,4 +1,7 @@
 #miemie-hub-shell{position:fixed;inset:0 auto auto 0;width:0;height:0;z-index:2147483400;font:var(--mie-font-body)/1.6 system-ui,-apple-system,sans-serif;color:var(--mie-text);text-align:left}
+/* Hub content owns the foreground while open; the closed Dock keeps its old layer. */
+#miemie-hub-shell[data-hub-foreground=true]{z-index:2147483645}
+#miemie-hub-shell[data-hub-foreground=true]::before{content:'';position:fixed;inset:0;pointer-events:auto}
 #miemie-hub-shell *{box-sizing:border-box}
 #miemie-hub-shell button{font:inherit;color:inherit;border:1px solid var(--mie-border);border-radius:var(--mie-radius-control);padding:10px 16px;min-height:var(--mie-control-height);background:var(--mie-control-fill);cursor:pointer;white-space:normal;overflow-wrap:anywhere;transition:background var(--mie-motion-fast),border-color var(--mie-motion-fast),box-shadow var(--mie-motion-fast)}
 #miemie-hub-shell button:hover:not(:disabled){border-color:var(--mie-accent);box-shadow:var(--mie-glow)}

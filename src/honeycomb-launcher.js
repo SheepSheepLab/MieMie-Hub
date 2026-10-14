@@ -144,7 +144,7 @@ export function createHoneycombLauncher({host, root, shell, title}) {
     Object.assign(ripple.style,{left:center.x-bounds.left+'px',top:center.y-bounds.top+'px',width:center.size+'px',height:center.size+'px'});
     return fly(ripple,[{transform:'translate(-50%,-50%) scale('+LAUNCHER_TUNING.rippleStartScale+')',opacity:0},{transform:'translate(-50%,-50%) scale(1.4)',opacity:.4,offset:.23},{transform:'translate(-50%,-50%) scale('+LAUNCHER_TUNING.rippleEndScale+')',opacity:0}],0,LAUNCHER_TUNING.rippleMs);
   }
-  async function open({preserve=false}={}) {
+  async function open({preserve=false,focus=true}={}) {
     if (disposed || (active && root.dataset.open === 'true')) return;
     const id=++generation,previous=active?positions():null;
     stopFlights();active=true;x=0;root.hidden=false;root.dataset.open='true';root.dataset.moving='true';root.inert=false;
@@ -153,7 +153,7 @@ export function createHoneycombLauncher({host, root, shell, title}) {
     // The Hub name appears with its icon immediately, without a separate reveal.
     Object.assign(hubLabel.style,{transform:'translate(-50%,0) scale(1)',opacity:1});
     await Promise.all([bloom(hubEnd,bounds),...cells.map((cell,i)=>openTravel(cell,i,previous?.[i]||{...hubEnd,size:i?geometry.size*LAUNCHER_TUNING.collapsedScale:hubEnd.size,opacity:i?0:1},target[i],bounds))]);
-    if(id===generation&&active){root.dataset.moving='false';draw();shell.orb.focus({preventScroll:true});}
+    if(id===generation&&active){root.dataset.moving='false';draw();if(focus)shell.orb.focus({preventScroll:true});}
   }
   async function close() {
     if (!active || root.dataset.open==='false') return;
@@ -189,9 +189,9 @@ export function createHoneycombLauncher({host, root, shell, title}) {
     const rw=Math.min(w,rect.width),rh=Math.min(h,rect.height);
     return {left:Math.max(ox,Math.min(ox+w-rw,rect.left)),top:Math.max(oy,Math.min(oy+h-rh,rect.top)),width:rw,height:rh};
   }
-  function highlight(origin) {
+  function highlight(origin,{focus=true}={}) {
     const button=buttons.find(b=>b.dataset.hubApp===origin?.id);
-    restoringFocus=true;button?.focus({preventScroll:true});restoringFocus=false;
+    restoringFocus=true;if(focus)button?.focus({preventScroll:true});restoringFocus=false;
     if(button&&!reduced()){
       const raw=host.getComputedStyle(shell.root).getPropertyValue('--mie-motion-fast').trim(),duration=parseFloat(raw)*(raw.endsWith('ms')?1:1000);
       void fly(button,[{filter:'brightness('+LAUNCHER_TUNING.returnBrightness+')'},{filter:'brightness(1)'}],0,Number.isFinite(duration)?duration:0).finally(()=>button.style.removeProperty('filter'));

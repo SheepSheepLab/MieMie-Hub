@@ -22,7 +22,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
     card.setAttribute('aria-busy',String(phase==='pending'));
     card.setAttribute('aria-label',card.querySelector('strong').textContent+' · '+({pending:'正在确认酒馆保存',confirmed:'酒馆保存已确认',error:'状态异常，请查看条目中的说明'}[phase]));
   }
-  let clearForm=()=>{};
+  let clearForm=()=>{},backForm=()=>false;
   let descriptionDialog=null;
   const descriptionObserver=typeof host.ResizeObserver==='function'?new host.ResizeObserver(entries=>{
     for(const {target} of entries){
@@ -34,7 +34,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
   function closeDescription(restoreFocus=true) {
     if(!descriptionDialog)return;
     const {dialog,opener}=descriptionDialog;descriptionDialog=null;
-    host.removeEventListener('keydown',descriptionKey,true);
+    dialog.removeEventListener('keydown',descriptionKey,true);
     if(dialog.open&&typeof dialog.close==='function')dialog.close();dialog.remove();
     if(restoreFocus&&opener.isConnected)opener.focus({preventScroll:true});
   }
@@ -44,10 +44,6 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
       if(event.shiftKey&&doc.activeElement===first||!event.shiftKey&&doc.activeElement===last){
         event.preventDefault();event.stopImmediatePropagation();(event.shiftKey?last:first).focus({preventScroll:true});
       }
-    }
-    if(descriptionDialog&&event.key==='Escape'){
-      // Capture before the Hub's document handler so Escape only closes this dialog.
-      event.preventDefault();event.stopImmediatePropagation();closeDescription();
     }
   }
   function openDescription(item,opener) {
@@ -59,7 +55,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
     back.onclick=()=>closeDescription();footer.append(back);dialog.append(title,text,footer);
     dialog.addEventListener('cancel',event=>{event.preventDefault();closeDescription();});
     descriptionDialog={dialog,opener};(progressContainer||body).append(dialog);
-    host.addEventListener('keydown',descriptionKey,true);
+    dialog.addEventListener('keydown',descriptionKey,true);
     dialog.showModal();text.focus({preventScroll:true});
   }
   function descriptionPreview(item) {
@@ -284,7 +280,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
         toggle.onchange=()=>{try{shortcuts.set(id,toggle.checked);}catch(e){report(e.message);}finally{update();}};
         toggle.onkeydown=event=>{if(event.key==='Enter'&&!toggle.disabled){event.preventDefault();toggle.click();}};
         const track=el('span',undefined,'mm-switch-track');track.setAttribute('aria-hidden','true');track.append(el('span',undefined,'mm-switch-thumb'));
-        copy.append(el('span','显示悬浮球'),el('small','在酒馆页面创建快捷入口'));
+        copy.append(el('span','显示悬浮球'),el('small',local.nativeWindowAvailable?'原生窗口，保留扩展自己的操作':'快捷入口，窗口仍由 Hub 管理'));
         label.append(copy,toggle,track);card.append(label);
       }
       const actions = el('div', undefined, 'mm-extension-actions'); card.append(actions);
@@ -499,7 +495,8 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
       }catch(e){if(!disposed&&generation===serial)report(e.message);}finally{submitting=false;refreshSave();}
     };
     choices=createSubmissionSelects({host,form});for(const select of [source,type,visibility])choices.add(select);
-    clearForm=()=>{++previewSerial;if(autoTimer!==null)host.clearTimeout(autoTimer);autoTimer=null;choices.dispose();clearForm=()=>{};};
+    backForm=()=>choices.back();
+    clearForm=()=>{++previewSerial;if(autoTimer!==null)host.clearTimeout(autoTimer);autoTimer=null;choices.dispose();backForm=()=>false;clearForm=()=>{};};
     content.replaceChildren(form);
   }
   async function renderMine() {
@@ -530,5 +527,5 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
     try{if(active==='installed')await renderInstalled();else if(active==='mine')await renderMine();else await renderDiscover();}catch(e){report(e.message);}
   }
   renderAccount();
-  return {activate,report,leave,enter(){if(!visible)void activate();},refresh(){if(active==='installed')void renderInstalled();},dispose(){leave();disposed=true;installController?.abort();installProgress.remove();if(speedTimer!==null)host.clearInterval(speedTimer);speedTimer=null;clearForm();++serial;unsubscribe?.();registry.dispose();packages?.dispose();tabs.remove();main.remove();account.replaceChildren();if(!accountContainer)account.remove();body.classList.remove('mm-center-layout');},getActive:()=>active};
+  return {activate,report,leave,back(){if(disposed||!visible)return false;if(descriptionDialog){closeDescription();return true;}return backForm();},enter(){if(!visible)void activate();},refresh(){if(active==='installed')void renderInstalled();},dispose(){leave();disposed=true;installController?.abort();installProgress.remove();if(speedTimer!==null)host.clearInterval(speedTimer);speedTimer=null;clearForm();++serial;unsubscribe?.();registry.dispose();packages?.dispose();tabs.remove();main.remove();account.replaceChildren();if(!accountContainer)account.remove();body.classList.remove('mm-center-layout');},getActive:()=>active};
 }

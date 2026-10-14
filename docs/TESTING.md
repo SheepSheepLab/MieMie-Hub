@@ -2,7 +2,16 @@
 
 当前正式基线：Hub **0.8.2** 已发布，完整产物组合为 Polisher **1.2.1**，Production Registry 为 **0.6.1**。适配验收先看 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md)。下文明示历史阶段的版本与验收数字保留原记录，不代替本次实际测试输出。
 
+本仓库源码为 **0.8.3**，等待 Owner GitHub 审核；本轮结果独立记录于下方 0.8.3 小节，不能据此宣称已经创建 Tag、发布附件或完成公开自更新。
+
 ## 独立构建与测试
+
+本地 Dual Entrance 增量使用 `tests/native-window.test.mjs` 检查所有权、单 Session、
+草稿、原生 lease、动画中断、错误与撤销边界；独立测试应用位于
+`tests/fixtures/native-window-extension.js`，可导出为真实 Tavern Helper 脚本包。
+该通用 Fixture 的 Native Window Parity 结果不能替代 Tavern Phone 作者适配验收。
+完整回归仍分别记录 Back、Focus、Lifecycle、真实 Tavern 和模拟宿主组合测试，
+Managed Package 的模拟校验不代表生产安装/更新/持久卸载通过。
 
 ```sh
 npm ci
@@ -163,3 +172,94 @@ MIEMIE_TEST_ARTIFACT=/path/to/verified-MieMie-Hub-0.5.1.json \
 发布验证使用 GitHub v0.6.0 附件 SHA-256 核对过的完整旧包作为起点，执行 0.6.0 → 0.6.1 下载、校验、同实例写入、保存回读、新 iframe 启动与随包列表确认。用户设置、其他脚本和旧偏好保留；已移除来源不能从旧偏好恢复入口。
 
 Hub 全套 210 项、Polisher 23 项、正式产物组合 28 项、生态安装链 13 项、真实旧版产物模拟自更新 3 项、无 Timeline 架构测试包自更新 3 项均通过。生产构建另核对版本、机器清单、原始字节 hash、content hash 及发布配置。不将模拟宿主测试称为真实酒馆验收。
+
+## Optional Back Navigation 回归
+
+`npm test` 包含同步返回契约、旧 API v1 默认分支、Runtime 撤销、Surface
+过渡与迟到请求、Shortcut origin、明确关闭、System Dialog／投稿 Picker 和监听清理。
+`tests/fixtures/back-extension.js` 只维护通用内部层级，不含官方工具业务代码。
+
+真实 Chromium 键盘／原生 Dialog 测试（依赖本机已安装的 Playwright 与 Chromium）：
+
+```sh
+PLAYWRIGHT_MODULE=/absolute/path/playwright/index.mjs \
+HUB_ARTIFACT=/absolute/path/candidate/MieMie-Hub-0.8.3.json \
+node tests/browser-back/run.mjs
+```
+
+完整 Hub 运行在隔离模拟宿主中，覆盖真实按键、长按、Native Dialog cancel、
+body portal、closed Shadow DOM、草稿错误恢复和 Session 清理。
+结果及截图保存在 `test-results/back-browser/`。这不是实际 Tavern 或 Safari 验收。
+
+旧版官方 Preset Manager 可使用未修改的正式 0.5.1 产物做独立 Runtime 回归：
+
+```sh
+PLAYWRIGHT_MODULE=/absolute/path/playwright/index.mjs \
+HUB_ARTIFACT=/absolute/path/candidate/MieMie-Hub-0.8.3.json \
+PRESET_ARTIFACT=/absolute/path/MieMie-Preset-Manager-Extension-0.5.1.json \
+node tests/browser-back/legacy-preset.mjs
+```
+
+运行器校验正式 0.5.1 文件 SHA-256，不下载、不改写该包。它使用模拟 Tavern API，
+不执行预设写入，不代表 Native 数据安全或 Package 安装验收，也不声称旧版本自动获得
+逐层 Escape。官方产物与通用 Fixture 不能代替真实第三方项目的零迁移验收。
+
+Package v1 的安装、更新、卸载继续使用独立 package-manager／ecosystem Gate。
+Safari、真实 Tavern 与真实第三方样本须分别记录；缺失结果必须标记 Pending。
+
+### Surface Origin 焦点恢复回归
+
+`node --test tests/surface-focus.test.mjs tests/shortcut-launchers.test.mjs`
+检查实际 `document.activeElement`（开放 Shadow DOM 同时检查深层焦点），不以高亮或动画终点代替焦点断言。
+
+- `surface.close()`（Esc fallback、Hub 返回、`api.closePanel()`）完成关闭过渡后，优先恢复本次 Origin：蜂窝对应入口或 Shortcut 当前有效 mount 的真实可聚焦节点。Hub 自身收起仍回到主悬浮球。
+- 关闭过渡期间，用户产生新的 focusin、pointerdown 或非 Escape 键盘操作，放弃旧焦点恢复。串行导航队列已有更新请求、Session revoke、Hub dispose 同样禁止迟到恢复。resize 取消动画仍完成当前有效导航，可恢复有效 Origin。
+- 恢复检查复用 Surface serial/queue。临时输入监听仅在关闭过渡存在，完成、异常、revoke、dispose 都释放；不新增常驻全局焦点管理。
+- Shortcut 焦点节点来自既有 `getOrigin()`，绑定原 mount/node；只检查该声明子树及开放 Shadow DOM 内已有可聚焦节点。不改第三方 tabindex、外观、拖动、点击或 Presentation。仅提供不可聚焦外壳且内部无可聚焦节点（含不可访问的 closed Shadow DOM）的第三方，不保证能够恢复 DOM 焦点；安全放弃恢复，不错误转交 Hub orb，不要求强制迁移。
+- Browser/真实 Tavern 另测内部菜单和 Native Dialog 的焦点、显式关闭不调用 Back、双入口动画终点、停用/重启与并发导航。自动化 Chromium 不替代 Owner 物理键盘验收；Safari 单独记录。
+
+### Hub → Standalone 生命周期交接回归
+
+`npm test` 包含 `tests/lifecycle-handoff.test.mjs`；单独执行前先 `npm run build`。
+
+- 使用 Runtime 的现有 AbortSignal 同步释放 Panel lease，再执行原有有界异步 teardown；扩展自己的 `onCleanup()` 仍保持 LIFO 顺序。
+- Hub 退出时只恢复 attach 前根节点被 Surface 借用的 hidden/inert、Surface 状态与定位尺寸。不遍历或清除业务子节点、class、data-hidden 等扩展状态；扩展后续 cleanup 对自身状态的修改继续有效。普通 disable/uninstall 仍隐藏已停用面板。
+- dispose/revoke 在关闭动画完成前发生时，旧 serial 不得再次写入已交还的 DOM，也不得恢复失效 Origin 的焦点。
+- `miemie:hub-disposed` 仍是同步通知，`whenDisposed` 仍是异步业务清理完成边界。新版 Hub 的继任启动复用同一个 Promise；等待期间卸载 iframe 可取消启动，多份等待脚本只建立一个 Hub。
+- Runtime 原有有界操作计时器复用 Helper 已有宿主 Lodash `delay`，由宿主页面持有回调，时限不变；直接使用宿主原生 setTimeout 仍可能丢弃 iframe 回调。真实 Helper 删除旧 Hub iframe 后，不结束的 cleanup 仍会超时并允许继任启动。没有增加依赖包或常驻计时器。
+- 真实宿主另做正式 Hub 0.8.2、Back-Focus RC、Lifecycle RC 三方对照，用未经修改的 Tavern Phone 2.2.0 和正式 Polisher 验证 Standalone、双向启动顺序、停用/重启、Shortcut 与关闭动画中退出。独立延迟清理 Fixture 验证旧清理不会覆盖新 Session。
+- 不把模拟宿主测试当真实 Tavern，也不把 Runtime 通过当 Managed Package 生产通过。旧版本尚未完成退出时不具备新版内部等待标记，升级应等待原有 `whenDisposed` 或刷新页面；不保证任意不遵守取消/清理时限的第三方异步业务代码。
+
+## 0.8.3 源码审核回归 · 2026-10-14
+
+本轮从既有未提交开发成果构建。版本调整前的 Production Build 与已验收 Foreground Priority RC 原始字节相同；0.8.3 最终构建归一化版本值后也与该 RC 相同。没有重新设计 Back、Native Window 或生命周期，也没有修改第三方正式产物。更新的 `tests/integration/artifacts.lock.json` 使用最终生产构建的真实 SHA-256，Polisher 锁定仍为正式 1.2.1。
+
+| 检查 | 本轮结果 | 范围 |
+| --- | --- | --- |
+| `npm test` | 485 / 485 | Node.js / jsdom / 构建与版本、Runtime、Package、Self Update、Back、Native、Lifecycle、Focus、Foreground、Legacy Shortcut |
+| Production `npm run build` | PASS | 正式 HTTPS Registry、稳定 Script ID、JSON、构建身份、元数据与双 hash、原始图片字节 |
+| `npm run test:integration` | 30 / 30 | 最终 Hub 与已发布 Polisher 1.2.1 的锁定完整产物；模拟宿主 |
+| `npm run test:ecosystem` | 16 / 16 | 独立 Managed Package 安装／更新／卸载／保存及旧正式 Polisher 升级；模拟 GitHub 与宿主 |
+| 已发布 0.8.2 → 最终 0.8.3 自更新 UI | 3 / 3 | 完整旧／新产物、恢复下载、同实例写入及保存确认；模拟网络与宿主，不是公开自更新 |
+| 真实 Tavern Back | 22 PASS | 原 Back Fixture：逐层 Escape、Native Dialog、长按、连续输入、草稿错误恢复、Runtime 清理 |
+| 真实 Tavern Shortcut / Focus | 16 PASS | 原 Shortcut Fixture：双入口、动画终点、真实 DOM 焦点、显式关闭、失效 Origin、Session 和 Hub 重载 |
+| 真实 Tavern Native / Foreground | 8 PASS | 通用 Native Fixture：原生拖动／缩放／开关、单业务实例、草稿、Hub 前景与收起后恢复 |
+| 真实 Tavern 正式 Polisher 1.2.1 | 9 PASS | 原始发布包、双启动顺序、Legacy Shortcut、Esc、Hub 退出与重载、启停、单实例 |
+| 真实 Tavern 原始 Tavern Phone 2.2.0 | 12 PASS | 未注册新能力的正式包、蜂窝／Surface／原 Escape／Legacy Shortcut、启停、重载与 Standalone 恢复 |
+| 最终构建 Safari 26.6 | 10 PASS（烟测） | 真实 Safari 21624.4.5.11.5：蜂窝／Shortcut 逐层返回及焦点、Enter 重开、原生拖动／缩放／开关、前景优先级和整页重载；加载内容 hash 与最终构建完全一致 |
+| JavaScript syntax / JSON / `git diff --check` | PASS | 当前源码、构建及本轮修改；未嵌入私人 Phone 副本或测试扩展 |
+
+真实宿主为独立数据目录中的 **SillyTavern 1.19.0 / Tavern Helper 4.11.3 / Chromium 151.0.7922.34**，使用浏览器产生的 trusted 输入，不是 Owner 实体键鼠验收。Back Fixture 本身没有 Shortcut，其运行器对应项目不适用；上表独立 Shortcut Fixture 的结果覆盖该能力，不把缺少测试能力记成产品通过。
+
+Safari 使用同一隔离 Tavern / Helper，通过原生应用输入操作；记录的 22 次键盘事件均为 trusted。整页重载后 Native 仅一个活动实例、一个 Hook、一个球和一个窗口，位置尺寸保留。本轮为最终构建简短烟测，不把此前 RC 结果算作本轮通过；最终构建的实体长按自动重复、完整 Safari 第三方及生命周期矩阵未在本轮重跑，不能由这 10 项代替。未更改 Safari 安全设置。
+
+原始 Phone 在正式 0.8.2 对照中复现 Standalone 恢复后 hidden/inert 的既有故障，最终构建的同一检查通过。原始 Phone 未接入 Native Window，以上结果不代表它自动获得完整原生拖动／缩放；私人适配副本没有进入 Hub 或官方发行附件。
+
+本轮 Managed Package 自动回归与 Runtime 回归分别通过；它们不代表当前生产 Registry 下所有 Origin 的实际安装／更新已经通过。Registry 0.6.1 HTTPS 健康检查正常，隔离 Origin 仍被精确策略拒绝，生产配置未修改。
+
+已知延期项保持原状：
+
+- **HUB TRANSITION RACE**：最终构建仍可复现收起动画中点击原生球重新展开 Hub。再次正常收起后交互可恢复；本次复现保留草稿、一个实例和一个业务 Hook，没有观察到 Runtime 被卸载或不可恢复锁死。此结论限于本次检查，计划 0.8.4 处理。
+- **REGISTRY ORIGIN COMPATIBILITY**：`localhost`、`127.0.0.1` 和端口差异可能拒绝目录及下载中转；这是 Registry 独立维护范围。失败不允许绕过下载／身份／hash 校验，不关闭 CORS。
+
+当前阶段只准备源码并 Push 到 `origin/main`，供 Owner 独立 GitHub 审核。Tag、GitHub Release、匿名附件复核和真实公开 0.8.2 → 0.8.3 自更新必须等待明确发布批准；本轮不宣称这些项目完成。

@@ -47,3 +47,9 @@ test('failed or detached mounts roll preference back and never report an active 
  }
  assert.equal(errors.length,2);manager.dispose();
 });
+
+test('captured focus target never follows a disabled mount into its replacement',async t=>{
+ const f=fixture(t);await f.register();f.manager.set('test.shortcut',true);const old=f.host.document.querySelector('button');old.click();await new Promise(r=>setImmediate(r));
+ const origin=f.origins[0];assert.equal(origin.focusElement(),old);f.manager.set('test.shortcut',false);assert.equal(origin.focusElement(),null);f.manager.set('test.shortcut',true);
+ const fresh=f.host.document.querySelector('button');assert.notEqual(fresh,old);assert.equal(origin.focusElement(),null);fresh.click();await new Promise(r=>setImmediate(r));assert.equal(f.origins[1].focusElement(),fresh);
+});

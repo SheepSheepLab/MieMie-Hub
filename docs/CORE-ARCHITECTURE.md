@@ -2,6 +2,21 @@
 
 本次是保持业务兼容的依赖整理，不修改 API v1、Package v1 或 MieMie Policy 2.0。
 
+## 0.8.3 运行期能力
+
+以双入口、单业务实例、独立窗口控制权为基准。Runtime 仍是唯一业务生命周期；
+蜂窝入口继续使用现有 Surface；可选 `registerNativeWindow` 在同一 Session 中
+借出已声明主面板的展示控制权。Surface Controller 保留一个按 Extension ID 登记
+的能力表及短期 ownership lease，Hub UI 复用原 borrowed-root 状态保存与恢复。
+没有第二套 Runtime、Window Manager、键盘路由器、轮询或 DOM 扫描。
+
+原生所有权期间 Hub 不写该根节点的显隐、inert、布局、动画或焦点。切回蜂窝先
+同步取消原生展示，再进入原 Surface；业务实例与草稿保持。旧 Shortcut 未接入
+时继续原来的 Hub 托管流程。具体契约以 [Extension API](EXTENSION-API.md#optional-native-window-ownership-api-v1) 为准。
+Back Navigation 复用现有 Runtime Session 与 Surface 导航，仅在 opt-in Surface 中同步委托内部返回；焦点恢复复用当前 Origin 和过渡有效性。Lifecycle Handoff 复用 AbortSignal、cleanup stack 和 `whenDisposed`，不改变公开事件时序。Foreground Priority 由现有 Shell 层级和展开期间的前景遮罩处理。
+历史 ARCHITECTURE-FREEZE / APPLICATION-PRESENTATION 文档作为历史保留；本轮
+增量属于 Owner 授权的可选能力，不改变 API v1 身份、Package v1 或已发布产物。
+
 | 层 | 内容 | 边界 |
 | --- | --- | --- |
 | Core | extension-runtime、script-host、extension-packages、registry-client、hub-self-update、hub-root、通用 bundled loader | 生命周期、包校验、安装/更新/物理卸载、联网、宿主保存确认、Shell 与 Launcher primitives |

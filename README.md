@@ -4,6 +4,8 @@
 
 当前公开正式版 **[MieMie Hub 0.8.2](https://github.com/SheepSheepLab/MieMie-Hub/releases/tag/v0.8.2)** 已发布，Production Registry 为 **0.6.1**。Core 负责 Extension Runtime、包管理与 Hub 自更新；扩展中心和设置是固定 System Modules。时间线为通过标准 API v1 加载的 Bundled Official Extension，官方默认捆绑时间线、随 Hub 整体更新，时间线只在 Launcher 打开，不进入已安装列表或包管理；仅架构测试可从构建声明移除。基础构建和测试不依赖 Registry 或 Polisher 源码。
 
+当前源码版本为 **0.8.3**，等待 Owner GitHub 审核，尚未创建 Tag 或 Release。该版本包含可选 Back Navigation、按实际入口恢复焦点、Hub → Standalone 生命周期交接、双入口与可选 Native Window，以及 Hub 展开时的前景优先级。Extension API v1、Package v1 和稳定身份保持不变。
+
 ## 扩展中心
 
 首页保留一个「扩展中心」入口，内部为 **发现 / 已安装 / 我的**。发现页始终是普通用户视角，编辑和上下架只在「我的」。在线服务尚未部署或离线时，Core、时间线和本地扩展照常运行。
@@ -49,8 +51,8 @@ MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL="$OFFICIAL_REGISTRY_HTT
 输出：
 
 ```text
-build/MieMie-Hub-0.8.2.json
-build/咩咩Hub-0.8.2.json
+build/MieMie-Hub-0.8.3.json
+build/咩咩Hub-0.8.3.json
 build/MieMie-Hub-update.json
 build/miemie-hub.js
 ```
@@ -66,6 +68,12 @@ build/miemie-hub.js
 本地 UI 检查可先运行 `npm run build`，再执行 `node tools/ui-review.mjs`，打开 http://127.0.0.1:5173 查看实际构建（宿主与目录使用本地假数据）。测试方式见 [TESTING.md](docs/TESTING.md)；早期界面审查保留在 [Final UI 历史记录](docs/FINAL-UI.md)。
 
 ## 开发者资料
+
+双入口遵循 Dual Entrance、Single Business Instance、Independent Presentation Ownership。
+蜂窝入口使用 Hub Surface；主动接入 [Native Window Ownership](docs/EXTENSION-API.md#optional-native-window-ownership-api-v1)
+的原生入口由扩展控制窗口操作。旧 Shortcut 保持原有托管行为；开启悬浮球不会自动适配第三方的拖动、缩放或其他原生功能。所有运行期能力按需采用，未注册 Back Handler 的扩展保留既有 Escape 行为。
+
+已知限制：Hub 收起动画尚未结束时快速点击原生球可能重新展开 Hub，计划在 0.8.4 处理；等待收起结束后可正常使用原生窗口。Registry 当前精确 Origin 策略可能拒绝不同地址或端口，相关调整由 Registry 独立维护，不能仅靠升级 Hub 解决。两项均未在 0.8.3 修复，当前验收范围见 [TESTING.md](docs/TESTING.md)。
 
 - [四层架构、时间线迁移与无时间线测试包](docs/CORE-ARCHITECTURE.md)
 

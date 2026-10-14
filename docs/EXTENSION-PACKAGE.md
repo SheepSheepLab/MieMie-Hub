@@ -2,7 +2,7 @@
 
 这是一份机器安装兼容规范，不是安全审核或作者认证。社区作者保留软件、仓库和 Release 的所有权与维护权；Registry 只保存目录元数据及投稿身份，不镜像软件文件。未适配本规范的公开 GitHub 项目仍可收录，按钮显示“查看 GitHub”；Discord 项目只跳转作者原帖，不保存附件地址，不自动安装。
 
-当前适用于 Hub 0.8.2 的 Package v1。适配路径与两个独立 Gate 见 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md)；Runtime 生命周期见 [Extension API v1](EXTENSION-API.md)。满足包格式不等于已验证 Runtime 运行兼容性。
+Hub 0.8.3 源码继续使用不变的 Package v1，没有为 Back Navigation 或 Native Window 增加必填字段。适配路径与两个独立 Gate 见 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md)；Runtime 生命周期见 [Extension API v1](EXTENSION-API.md)。满足包格式不等于已验证 Runtime 运行兼容性。
 
 ## 最小发布要求
 
@@ -103,7 +103,7 @@ ec6266a8cb4038dadf20c357ef1acb9b7d8239036467c8d13e6ec98ed3a000f4
 
 Hub 浏览器客户端公开读取不要求用户提供 GitHub Token，不发送聊天、设置、API Key、宿主 Cookie 或 Authorization。Registry 服务端的 GitHub App 认证独立配置，凭据不进入 Hub。teardown 取消请求，重复写操作拒绝并行；流式读取始终限制实际字节数。
 
-Hub 0.8.2 的默认下载时限如下（对应 [正式实现](../src/extension-packages.js) 的 Package Manager 默认参数）：
+Hub 0.8.2 引入、0.8.3 保持的默认下载时限如下（对应 [正式实现](../src/extension-packages.js) 的 Package Manager 默认参数）：
 
 | 阶段 | 默认时限与边界 |
 | --- | --- |

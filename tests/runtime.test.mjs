@@ -370,5 +370,5 @@ test('closePanel is session-bound, optional and does not deactivate or expose ru
  for(const id of ['test.surface.a','test.surface.b']){r.register(manifest(id),api=>{apis.push(api);return {activate(){api.attachPanel({});},open(){return api.showPanel();}};});await r.enable(id);}
  assert.ok(Object.isFrozen(apis[0]));await apis[0].closePanel('test.surface.b');assert.equal(calls.at(-1),'close:test.surface.a');assert.equal(cleaned,0);assert.equal(r.get('test.surface.a').enabled,true);
  await r.disable('test.surface.a');assert.equal(apis[0].closePanel(),false);assert.equal(cleaned,1);assert.equal(await apis[1].closePanel(),true);
- assert.deepEqual(Object.keys(apis[1]).sort(),['attachPanel','closePanel','guard','manifest','onCleanup','registerShortcutLauncher','showMessage','showPanel','signal'].sort());
+ assert.deepEqual(Object.keys(apis[1]).sort(),['attachPanel','closePanel','guard','manifest','onCleanup','registerBackHandler','registerNativeWindow','registerShortcutLauncher','showMessage','showPanel','signal'].sort());
 });

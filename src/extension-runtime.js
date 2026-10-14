@@ -23,6 +23,7 @@ export function createExtensionRuntime(options = {}) {
       error: record.error,
       launcherAvailable: record.state === 'enabled' && record.session?.launcherAvailable === true,
       launcherError: record.launcherError,
+      nativeWindowAvailable: record.state === 'enabled' && !!record.session?.hasNativeWindow,
       shortcutLauncherAvailable: record.state === 'enabled' && !!record.session?.hasShortcut && !!record.session?.launcherAvailable,
     };
   }
@@ -43,8 +44,8 @@ export function createExtensionRuntime(options = {}) {
     let timer;
     return Promise.race([
       Promise.resolve().then(fn),
-      new Promise((_, reject) => { timer = setTimeout(() => reject(Error(label + '超时。')), limit); }),
-    ]).finally(() => clearTimeout(timer));
+      new Promise((_, reject) => { timer = (options.setTimeout || setTimeout)(() => reject(Error(label + '超时。')), limit); }),
+    ]).finally(() => (options.clearTimeout || clearTimeout)(timer));
   }
   function report(record, phase, error) {
     record.error = phase + '：' + messageOf(error);
@@ -59,6 +60,7 @@ export function createExtensionRuntime(options = {}) {
   function revoke(record) {
     record.generation++;
     if (record.session) {
+      record.session.backHandler = null;
       record.session.active = false;
       record.session.controller.abort();
     }
@@ -71,6 +73,7 @@ export function createExtensionRuntime(options = {}) {
     const session = record.session;
     if (!session) return;
     record.session = null;
+    session.backHandler = null;
     session.active = false;
     session.closed = true;
     session.controller.abort();
@@ -113,7 +116,13 @@ export function createExtensionRuntime(options = {}) {
         const detach = options.onPanel?.(record.manifest.id, record.manifest.name, panel, presentation);
         if (typeof detach !== 'function') throw Error('Hub 未提供面板挂载功能。');
         session.hasPanel = true;
-        session.cleanups.push(detach);
+        // Release Hub-owned UI on revocation, before Extension cleanup or a
+        // Standalone handoff. The existing cleanup stack only retires this lease.
+        let attached = true;
+        const release = () => {if (!attached) return; attached = false; try {detach({handoff: disposed});} catch (error) {report(record, '清理', error);}};
+        session.controller.signal.addEventListener('abort', release, {once: true});
+        session.cleanups.push(() => {session.controller.signal.removeEventListener('abort', release); release();});
+        if (session.controller.signal.aborted) release();
         return true;
       },
       registerShortcutLauncher(provider) {
@@ -130,6 +139,21 @@ export function createExtensionRuntime(options = {}) {
         if(record.state==='enabled')notify('launcher',record);
         return true;
       },
+      registerNativeWindow(provider) {
+        if (!current(record,session)) return false;
+        if (!session.hasPanel || !record.manifest.contributes?.launcher) throw Error('Native Window 需要主面板和 Launcher。');
+        if (session.hasNativeWindow || typeof provider?.open !== 'function' || typeof provider?.release !== 'function' || (provider.ownsEvent !== undefined && typeof provider.ownsEvent !== 'function')) throw Error('Native Window capability 无效或重复。');
+        // Capture only declared functions. No mutable provider or Runtime record escapes.
+        const {open,release,ownsEvent}=provider;
+        if([open,release,ownsEvent].some(fn=>guardedCallbacks.has(fn)))throw Error('Native Window 回调不能使用异步 api.guard()。');
+        const detach=options.onNativeWindow?.(record.manifest.id,Object.freeze({open,release,ownsEvent}));
+        if(typeof detach!=='function')throw Error('Hub 未提供 Native Window capability。');
+        session.hasNativeWindow=true;
+        session.controller.signal.addEventListener('abort',detach,{once:true});
+        session.cleanups.push(()=>{session.controller.signal.removeEventListener('abort',detach);detach();});
+        if(record.state==='enabled')notify('launcher',record);
+        return true;
+      },
       showPanel() {
         if (!current(record, session) || record.state !== 'enabled') return false;
         if (!session.hasPanel) throw Error('扩展尚未挂载面板。');
@@ -138,6 +162,15 @@ export function createExtensionRuntime(options = {}) {
       closePanel() {
         if (!current(record,session) || record.state !== 'enabled' || !session.hasPanel) return false;
         return options.onClosePanel?.(record.manifest.id) ?? false;
+      },
+      registerBackHandler(handler) {
+        if (!current(record, session)) return false;
+        if (!session.hasPanel) throw Error('Back capability 需要已挂载的主面板。');
+        if (session.backHandler || typeof handler !== 'function') throw Error('Back capability 无效或重复。');
+        // guard() is asynchronous and tears down on error; Back must preserve drafts.
+        if (guardedCallbacks.has(handler)) throw Error('Back handler 必须同步返回 boolean，不能使用 api.guard()。');
+        session.backHandler = handler;
+        return true;
       },
       onCleanup(fn) {
         if (typeof fn !== 'function') throw Error('清理回调必须是函数。');
@@ -287,6 +320,7 @@ export function createExtensionRuntime(options = {}) {
         }
         const guarded = guardedCallbacks.get(handler);
         const callback = guarded?.session === session ? guarded.fn : handler;
+        if(session.hasNativeWindow&&options.onBeforeOpen?.(id)===false)throw Error('Native Window 未能释放控制权。');
         await bounded(() => current(record, session) ? callback.call(session.instance) : false, '打开');
         if (!current(record, session)) return record.error ? failResult(record.error) : {ok: false, cancelled: true};
         if (record.launcherError) { record.launcherError = ''; notify('launcher', record); }
@@ -307,8 +341,36 @@ export function createExtensionRuntime(options = {}) {
     }));
     records.clear();
   }
+  // Host-private dispatch. Never exported on publicHub.extensions or on api.
+  function hasBackHandler(id) {
+    const record = records.get(id), session = record?.session;
+    return !!(session && current(record, session) && record.state === 'enabled' && session.backHandler);
+  }
+  function requestBack(id, request) {
+    const record = records.get(id), session = record?.session;
+    if (!hasBackHandler(id)) return {handled: true}; // Revocation must not close a replacement.
+    if (session.backDispatching) return {handled: true};
+    const isCurrent = () => current(record, session) && record.state === 'enabled' && request.isCurrent();
+    if (!isCurrent()) return {handled: true};
+    session.backDispatching = true;
+    try {
+      const handler = session.backHandler;
+      const result = handler(Object.freeze({source: request.source, isCurrent}));
+      if (result !== true && result !== false) {
+        // Observe accidental async rejection without waiting or using guard teardown.
+        Promise.resolve(result).catch(() => {});
+        throw Error('Back handler 必须同步返回 true 或 false。');
+      }
+      return {handled: !isCurrent() || result};
+    } catch (error) {
+      let detail = '未知错误';
+      try { detail = messageOf(error); } catch (_) {}
+      return {handled: true, error: '返回处理失败：' + detail};
+    } finally { session.backDispatching = false; }
+  }
   return Object.freeze({
     register, enable, disable, uninstall, open, dispose,
+    hasBackHandler, requestBack,
     list: () => [...records.values()].map(snapshot),
     get: id => records.has(id) ? snapshot(records.get(id)) : null,
     // Internal validation for local source registration; not an installer API.

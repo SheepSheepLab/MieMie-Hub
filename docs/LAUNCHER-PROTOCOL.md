@@ -36,3 +36,13 @@ function stopStandaloneLauncher() { button.onclick = null; button.remove(); }
 Polisher 1.1.0是完整参考：[launcher-adapter.js](https://github.com/SheepSheepLab/MieMie-Polisher/blob/v1.1.0/launcher-adapter.js)。支持`keepStandalone:false/true`、双启动顺序、Hub重载、异步清理、原iframe保留、重复来源拒绝和页面内临时状态交接。该文件含Polisher专用身份，社区作者应实现自己的适配，不照搬品牌或ID。
 
 Registry和Package Manager都不抓取、模拟点击或删除第三方悬浮球。注册Extension、Launcher能力、固定到Hub是三个概念；当前没有Pinned功能。
+
+Hub 0.8.3 源码提供可选 [Native Window Ownership](EXTENSION-API.md#optional-native-window-ownership-api-v1)
+允许蜂窝和原生悬浮球同时存在，同一 Session 按入口切换展示所有权。原生窗口
+模式不退出 Runtime，不等于 Hub 消失后的 Standalone 恢复；本页 `whenDisposed`
+交接规则仍然有效。未采用新能力的旧 Shortcut 保持原有托管窗口行为。
+
+双入口遵循 **Dual Entrance / Single Business Instance / Independent Presentation Ownership**。
+Hub Runtime 存在不等于 Hub Surface 正在控制窗口；蜂窝打开先释放 Native lease，再调用既有实例的 `open()`，原生入口继续复用扩展自己的窗口函数。Source Lease 管理工厂来源，Native lease 管理当前窗口展示，两者不能互相代替，也不能用撤回来源来实现普通关闭。
+
+Hub 退出后的恢复先核对旧 Hub 身份与用户启停状态，再等待清理完成；不要在旧 Session 或旧 Native lease 已失效后执行迟到写入。用户停用扩展时应保留其选择，不能借 Hub 消失自动重建已停用业务。详细 API 签名与清理边界集中在 [Extension API](EXTENSION-API.md)。

@@ -3,7 +3,7 @@ export function createSubmissionSelects({host,form}) {
   const doc=host.document,cleanups=[],syncers=[];let popup=null,sequence=0;
   function close(focus=false){
     if(!popup)return;const old=popup;popup=null;old.menu.remove();old.trigger.setAttribute('aria-expanded','false');old.trigger.removeAttribute('aria-controls');
-    doc.removeEventListener('pointerdown',outside,true);doc.removeEventListener('scroll',scrolled,true);host.removeEventListener('keydown',key,true);host.removeEventListener('resize',resized);host.visualViewport?.removeEventListener('resize',resized);
+    doc.removeEventListener('pointerdown',outside,true);doc.removeEventListener('scroll',scrolled,true);old.menu.removeEventListener('keydown',key);host.removeEventListener('resize',resized);host.visualViewport?.removeEventListener('resize',resized);
     if(focus&&old.trigger.isConnected)old.trigger.focus({preventScroll:true});
   }
   function outside(event){if(popup&&!popup.wrap.contains(event.target))close();}
@@ -11,7 +11,6 @@ export function createSubmissionSelects({host,form}) {
   function resized(){close();}
   function key(event){
     if(!popup)return;
-    if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();close(true);return;}
     if(!popup.wrap.contains(event.target))return;
     if(event.key==='Tab'){close(true);return;}
     const buttons=[...popup.menu.children],at=buttons.indexOf(doc.activeElement);
@@ -34,10 +33,10 @@ export function createSubmissionSelects({host,form}) {
       menu.dataset.side=up?'above':'below';menu.style.maxHeight=Math.max(44,Math.min(280,up?above:below))+'px';
       trigger.setAttribute('aria-expanded','true');trigger.setAttribute('aria-controls',menu.id);popup={wrap,trigger,menu};
       const buttons=[...menu.children];(last?buttons.at(-1):buttons.find(b=>b.getAttribute('aria-selected')==='true')||buttons[0])?.focus({preventScroll:true});
-      doc.addEventListener('pointerdown',outside,true);doc.addEventListener('scroll',scrolled,true);host.addEventListener('keydown',key,true);host.addEventListener('resize',resized);host.visualViewport?.addEventListener('resize',resized);
+      doc.addEventListener('pointerdown',outside,true);doc.addEventListener('scroll',scrolled,true);menu.addEventListener('keydown',key);host.addEventListener('resize',resized);host.visualViewport?.addEventListener('resize',resized);
     }
     trigger.onclick=()=>show();trigger.onkeydown=event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();show(event.key==='ArrowUp');}};
     select.addEventListener('change',sync);sync();syncers.push(sync);cleanups.push(()=>select.removeEventListener('change',sync));
   }
-  return {add,refresh(){for(const sync of syncers)sync();},dispose(){close();for(const cleanup of cleanups)cleanup();}};
+  return {add,back(){if(!popup)return false;close(true);return true;},refresh(){for(const sync of syncers)sync();},dispose(){close();for(const cleanup of cleanups)cleanup();}};
 }

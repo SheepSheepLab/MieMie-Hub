@@ -2,6 +2,8 @@
 
 当前正式基线：Hub **0.8.2**，Production Registry **0.6.1**；各项目独立维护依赖、构建、测试与版本。开发适配从 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md) 开始。Registry是可选在线目录服务，不是Core启动依赖，不托管社区软件包。目录失效不会停用已安装代码。
 
+本仓库 0.8.3 源码等待 Owner 发布审核。Back Navigation 与 Native Window 属于可选 Runtime 能力，不改变 Catalog 投稿资格、产品身份、Package v1 或作者正式发行状态；第三方需主动接入 Native Window 才获得完整原生窗口控制。
+
 ## 社区作者的三种参与方式
 
 1. **普通投稿／外部项目**：公开 GitHub 项目填写 Repository，无需改业务或 UI，缺少机器包时跳转作者 GitHub。Discord 作品填写作者、名称、简介和原帖链接，只跳转原帖，不自动读取或永久缓存附件。

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {JSDOM, VirtualConsole} from 'jsdom';
 import {createRuntimeFixture} from './fixtures/runtime-extension.js';
+import {createBackFixture} from './fixtures/back-extension.js';
 
 const read = name => readFile(new URL('../' + name, import.meta.url), 'utf8');
 const pkg = JSON.parse(await read('package.json'));
@@ -35,7 +36,7 @@ async function fixture(t, releaseFetch = async () => ({ok: true, json: async () 
     scope.EventSource = class {constructor() {block('EventSource');}};
   }
   blockNetwork(host);
-  const types = new Set(['click', 'keydown', 'pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'lostpointercapture', 'resize', 'scroll', 'orientationchange']);
+  const types = new Set(['click', 'keydown', 'keyup', 'blur', 'pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'lostpointercapture', 'resize', 'scroll', 'orientationchange']);
   const eventPrototype = host.EventTarget.prototype;
   const add = eventPrototype.addEventListener, remove = eventPrototype.removeEventListener;
   const capture = options => typeof options === 'boolean' ? options : !!options?.capture;
@@ -541,4 +542,100 @@ test('description Escape closes only its dialog in the complete built Hub and di
  assert.equal(f.query('dialog'),null);assert.equal(panel.hidden,false);assert.equal(f.doc.activeElement,f.query('.mm-description-open'));
  await f.click('.mm-description-open');f.unmount();assert.equal(f.query('dialog'),null);
  assert.equal(f.listeners.filter(x=>x.type==='keydown').length,0);
+});
+
+function escape(f,{repeat=false,target=f.doc.activeElement,release=true,isComposing=false}={}){
+ const e=new f.host.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true,composed:true,repeat,isComposing});
+ target.dispatchEvent(e);if(release)f.doc.dispatchEvent(new f.host.KeyboardEvent('keyup',{key:'Escape',bubbles:true}));return e;
+}
+async function backFixture(f,options){const probe=createBackFixture(f.doc,options);const lease=f.host.__MieMieHub.extensions.provide(probe.manifest,probe.factory);await lease.ready;await f.launch(probe.manifest.id);return {probe,lease};}
+function nativeDialogStub(f){f.host.HTMLDialogElement.prototype.showModal=function(){this.open=true;};f.host.HTMLDialogElement.prototype.close=function(){this.open=false;};}
+
+test('optional Back consumes exactly one internal layer, then preserves the original honeycomb close',async t=>{
+ const f=await fixture(t),{probe}=await backFixture(f);const scroll=f.query('.mm-honeycomb-scroll');scroll.scrollTop=174;
+ for(let remaining=2;remaining>=0;remaining--){assert.equal(escape(f).defaultPrevented,true);await settle();assert.equal(probe.remaining,remaining);assert.equal(probe.panel.hidden,false);}
+ escape(f);await settle();assert.equal(probe.panel.hidden,true);assert.equal(probe.calls,4);assert.equal(probe.factories,1);
+ assert.equal(f.query('#meeme-combined-menu').hidden,false);assert.equal(f.doc.activeElement?.dataset.hubApp,probe.manifest.id);
+ await probe.api.showPanel();await probe.api.closePanel();assert.equal(probe.calls,4,'Explicit Close never delegates');
+ assert.equal(f.host.__MieMieHub.extensions.requestBack,undefined);assert.equal(f.host.__MieMieHub.back,undefined);
+});
+test('one held Escape cannot drain layers or subsequently close the returned Launcher; blur and independent presses recover',async t=>{
+ const f=await fixture(t),{probe}=await backFixture(f,{layers:1});
+ escape(f,{release:false});for(let i=0;i<5;i++)escape(f,{repeat:true,release:false});assert.equal(probe.calls,1);assert.equal(probe.panel.hidden,false);
+ f.host.dispatchEvent(new f.host.Event('blur'));escape(f,{release:false});await settle();assert.equal(probe.panel.hidden,true);
+ escape(f,{repeat:true,release:false});await settle();assert.equal(f.query('#meeme-combined-menu').hidden,false);
+ f.doc.dispatchEvent(new f.host.KeyboardEvent('keyup',{key:'Escape'}));escape(f);await settle();assert.equal(f.query('#meeme-combined-menu').hidden,true);
+});
+test('Back skips IME and already consumed input and blocks repeat even when first keydown was not observed',async t=>{
+ const f=await fixture(t),{probe}=await backFixture(f);
+ assert.equal(escape(f,{isComposing:true}).defaultPrevented,false);escape(f,{repeat:true});assert.equal(probe.calls,0);
+ const before=e=>{if(e.key==='Escape')e.preventDefault();};f.host.addEventListener('keydown',before,true);escape(f);f.host.removeEventListener('keydown',before,true);
+ assert.equal(probe.calls,0);escape(f);assert.equal(probe.calls,1);
+});
+test('legacy v1 fixture retains capture, repeat, close, reopening and lifecycle without manifest or code migration',async t=>{
+ const f=await fixture(t),a=await surfaceProbe(f,'test.legacy.back');let targetCalls=0;
+ a.panel.addEventListener('keydown',()=>targetCalls++);await f.launch('test.legacy.back');
+ escape(f,{repeat:true,target:a.panel});await settle();assert.equal(a.panel.hidden,true);assert.equal(targetCalls,0);
+ await f.launch('test.legacy.back');await a.api.closePanel();assert.equal(a.deactivations,0);
+ await f.host.__MieMieHub.extensions.disable('test.legacy.back');await f.host.__MieMieHub.extensions.enable('test.legacy.back');
+ await f.launch('test.legacy.back');escape(f);await settle();assert.equal(a.panel.hidden,true);
+ await f.host.__MieMieHub.extensions.uninstall('test.legacy.back');assert.equal(f.host.__MieMieHub.extensions.get('test.legacy.back'),null);
+});
+for(const [name,handler]of [['throw',()=>{throw Error('fixture draft');}],['promise',()=>Promise.reject(Error('async draft'))],['invalid',()=>undefined]])test('Back '+name+' preserves draft and offers safe recovery without trapping explicit close',async t=>{
+ const f=await fixture(t);nativeDialogStub(f);const a=await surfaceProbe(f,'test.back.fault');let calls=0;
+ a.api.registerBackHandler(()=>{calls++;return handler();});await f.launch('test.back.fault');escape(f);await settle();
+ assert.equal(a.panel.hidden,false);assert.equal(f.host.__MieMieHub.extensions.get('test.back.fault').enabled,true);
+ let dialog=f.query('[data-back-recovery]');assert.ok(dialog?.open);assert.match(dialog.textContent,/未保存/);
+ escape(f);await settle();assert.equal(f.query('[data-back-recovery]'),null);assert.equal(calls,1);assert.equal(a.panel.hidden,false);
+ escape(f);await settle();dialog=f.query('[data-back-recovery]');[...dialog.querySelectorAll('button')].find(b=>b.textContent==='关闭当前界面').click();await settle();
+ assert.equal(a.panel.hidden,true);assert.equal(calls,2);assert.equal(f.query('[data-back-recovery]'),null);
+ const b=await surfaceProbe(f,'test.back.other');await f.launch('test.back.other');escape(f);await settle();assert.equal(b.panel.hidden,true);
+});
+test('fault recovery retry can succeed and stale recovery cannot close the next Surface',async t=>{
+ const f=await fixture(t);nativeDialogStub(f);const a=await surfaceProbe(f,'test.back.retry'),b=await surfaceProbe(f,'test.back.next');let fail=true;
+ a.api.registerBackHandler(()=>{if(fail)throw Error('retry');return false;});await f.launch('test.back.retry');escape(f);await settle();
+ const stale=f.query('[data-back-recovery] button:last-child');await b.api.showPanel();stale.click();await settle();assert.equal(b.panel.hidden,false);
+ await a.api.showPanel();escape(f);await settle();fail=false;f.query('[data-back-recovery] button:nth-child(2)').click();await settle();assert.equal(a.panel.hidden,true);
+});
+test('Surface transition guard and request validity reuse existing queue across close/reopen and revoke',async t=>{
+ const f=await fixture(t),{probe,lease}=await backFixture(f,{layers:8});escape(f);const oldRequest=probe.request;
+ await probe.api.closePanel();await probe.api.showPanel();assert.equal(oldRequest.isCurrent(),false);
+ const motion=animationProbe(f,true);const closing=probe.api.closePanel();escape(f);assert.equal(probe.calls,1);await motion.finish();await closing;
+ const opening=probe.api.showPanel();await settle();escape(f);assert.equal(probe.calls,1);await motion.finish();await opening;
+ escape(f);assert.equal(probe.calls,2);const current=probe.request;const release=lease.release();assert.equal(current.isCurrent(),false);assert.equal(probe.api.registerBackHandler(()=>false),false);await release;
+ const {probe:replacement}=await backFixture(f,{id:probe.manifest.id,layers:1});assert.equal(current.isCurrent(),false);await motion.finish();escape(f);assert.equal(replacement.calls,1);
+});
+test('handlers dispatch by current owner, including body portals and closed Shadow DOM, without DOM ancestry inference',async t=>{
+ const f=await fixture(t),{probe:a}=await backFixture(f,{id:'test.back.a'}),{probe:b}=await backFixture(f,{id:'test.back.b'});
+ const portal=f.doc.createElement('button');f.doc.body.append(portal);escape(f,{target:portal});assert.equal(a.calls,0);assert.equal(b.calls,1);
+ const container=f.doc.createElement('div');f.doc.body.append(container);const shadow=container.attachShadow({mode:'closed'}),button=f.doc.createElement('button');shadow.append(button);
+ let local=0;button.addEventListener('keydown',()=>local++);escape(f,{target:button});assert.equal(b.calls,2);assert.equal(local,0);
+});
+test('handler switching Surface and returning false cannot close the destination; direct bridge and Orb bypass Back',async t=>{
+ const f=await fixture(t),a=await surfaceProbe(f,'test.back.switch'),b=await surfaceProbe(f,'test.back.destination');let calls=0;
+ a.api.registerBackHandler(()=>{calls++;void b.api.showPanel();return false;});await f.launch('test.back.switch');escape(f);await settle();assert.equal(b.panel.hidden,false);
+ await a.api.showPanel();await f.host.__meemeCombinedUI.back();assert.equal(a.panel.hidden,true);assert.equal(calls,1);
+ await a.api.showPanel();await f.click('.ts-orb');assert.equal(a.panel.hidden,true);assert.equal(f.query('#meeme-combined-menu').hidden,true);assert.equal(calls,1);
+});
+test('optional Back via Shortcut shares one instance and retains closed origin through handler and fallback',async t=>{
+ const f=await fixture(t),probe=createBackFixture(f.doc,{layers:1});const lease=f.host.__MieMieHub.extensions.provide(probe.manifest,probe.factory);await lease.ready;
+ let nativeOpen;probe.api.registerShortcutLauncher({mount({open}){nativeOpen=open;const orb=f.doc.createElement('button');f.doc.body.append(orb);return {getOrigin:()=>orb,dispose:()=>orb.remove()};}});
+ // Preference is set through the actual Installed-page switch.
+ await f.launch('extension-center');await f.click('[data-center-tab="installed"]');
+ const toggle=f.query('[data-shortcut="'+probe.manifest.id+'"]');assert.ok(toggle);toggle.click();await settle();
+ await f.click('.ts-orb');await nativeOpen();escape(f);await settle();assert.equal(probe.panel.hidden,false);escape(f);await settle();
+ assert.equal(probe.panel.hidden,true);assert.equal(f.query('#meeme-combined-menu').hidden,true);assert.equal(probe.factories,1);
+});
+test('source release and Hub disposal invalidate requests and remove the sole input listeners',async t=>{
+ const f=await fixture(t),{probe}=await backFixture(f);escape(f);const request=probe.request;
+ const counts=()=>['keydown','keyup','blur'].map(type=>f.listeners.filter(x=>x.type===type).length);const before=counts();
+ for(let i=0;i<3;i++){await probe.api.closePanel();await probe.api.showPanel();}assert.deepEqual(counts(),before);
+ f.unmount();await settle();assert.equal(request.isCurrent(),false);assert.equal(probe.api.registerBackHandler(()=>true),false);assert.deepEqual(counts(),[0,0,0]);
+});
+test('System description consumes repeats, native cancel and Back without window Escape capture',async t=>{
+ const f=await fixture(t,undefined,true);nativeDialogStub(f);await f.launch('extension-center');await f.click('.mm-description-open');
+ const panel=f.query('[data-hub-panel="extension-center"]');escape(f,{release:false});escape(f,{repeat:true,release:false});await settle();assert.equal(panel.hidden,false);assert.equal(f.query('dialog'),null);
+ await f.click('.mm-description-open');const dialog=f.query('dialog');dialog.dispatchEvent(new f.host.Event('cancel',{cancelable:true}));assert.equal(f.query('dialog'),null);assert.equal(panel.hidden,false);
+ await f.click('.mm-description-open');panel.querySelector('.mm-return').click();await settle();assert.equal(f.query('dialog'),null);assert.equal(panel.hidden,false);
+ panel.querySelector('.mm-return').click();await settle();assert.equal(panel.hidden,true);
 });

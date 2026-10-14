@@ -61,14 +61,48 @@ export function createSurfaceController({host,shell,root,launcher,panels,resolve
   function restore(origin,highlight=false){
     if(origin?.kind==='shortcut'){
       launcher.resume(origin.honeycomb);if(highlight)origin.highlight?.();
-    }else{launcher.resume(origin);if(highlight)launcher.highlight(origin);}
+    }else{launcher.resume(origin);if(highlight)launcher.highlight(origin,{focus:false});}
   }
-  const origins=new Map(),launching=new Map();
+  const origins=new Map(),launching=new Map(),nativeWindows=new Map();
+  let ownershipEpoch=0;
   let state='closed',disposed=false,serial=0,surfaceOrigin=null,transition=Promise.resolve(),pending=null;
   // Opt-in panels keep their original ancestry (and scoped Extension CSS).
   // Lift the explicit panel's stacking chain above the Hub backdrop only while
   // visible. Never scan or reparent third-party UI, and restore all inline styles.
   let releaseLayer=()=>{},stopFollowing=()=>{};
+  let stopFocusWatch=()=>{};
+  const deepFocus=()=>{let node=host.document.activeElement;while(node?.shadowRoot?.activeElement)node=node.shadowRoot.activeElement;return node;};
+  const within=(scope,node)=>{for(;node;node=node.parentNode||node.host)if(node===scope)return true;return false;};
+  function focusTarget(origin){
+    const node=origin?.kind==='shortcut'?origin.focusElement?.():launcher.originElement(origin);
+    if(!node)return null;
+    const selector='button,input:not([type="hidden"]),select,textarea,a[href],[tabindex],[contenteditable="true"]';
+    // Only the declared Origin subtree, including an open shadow root. Do not
+    // change third-party tabindex or assume that focus() on a wrapper succeeds.
+    const eligible=n=>{
+      if(!n?.isConnected||typeof n.focus!=='function'||n.matches(':disabled'))return false;
+      for(let ancestor=n;ancestor;ancestor=ancestor.parentElement||ancestor.getRootNode().host){
+        const style=host.getComputedStyle(ancestor);
+        if(ancestor.hidden||ancestor.inert||ancestor.hasAttribute('inert')||style.visibility==='hidden'||style.display==='none')return false;
+      }
+      return true;
+    };
+    const find=n=>{if(!eligible(n))return null;if(n.matches?.(selector))return n;for(const child of [...(n.shadowRoot?.children||[]),...n.children]){const found=find(child);if(found)return found;}return null;};
+    if(!eligible(node))return null;
+    return find(node);
+  }
+  function watchCloseFocus(old,origin){
+    stopFocusWatch();
+    const doc=host.document,active=deepFocus(),source=origin?.kind==='shortcut'?origin.focusElement?.():launcher.originElement(origin);
+    let allowed=!old||!active||active===doc.body||within(old,active)||within(root,active)||within(source,active)||active===shell.orb;
+    const abandon=()=>{allowed=false;};
+    const key=e=>{if(e.key!=='Escape')abandon();};
+    // Transition-local intent guard, removed on completion/revoke/dispose.
+    // focusout caused by hidden/inert is not new user intent; any new focus is.
+    doc.addEventListener('focusin',abandon,true);doc.addEventListener('pointerdown',abandon,true);doc.addEventListener('keydown',key,true);
+    const stop=()=>{doc.removeEventListener('focusin',abandon,true);doc.removeEventListener('pointerdown',abandon,true);doc.removeEventListener('keydown',key,true);if(stopFocusWatch===stop)stopFocusWatch=()=>{};};
+    stopFocusWatch=stop;return {allowed:()=>allowed,stop};
+  }
   function followShortcut(){
     if(nativePresentation?.available())return; // Native component owns drag/follow.
     stopFollowing();const node=surfaceOrigin?.kind==='shortcut'?surfaceOrigin.element?.():null;
@@ -82,7 +116,7 @@ export function createSurfaceController({host,shell,root,launcher,panels,resolve
   function raiseSurface(panel){
     releaseLayer();
     if(shell.root.contains(panel))return;
-    const saved=[],z=host.getComputedStyle(shell.root).getPropertyValue('--mie-z-surface').trim()||'2147483500';
+    const saved=[],z=host.getComputedStyle(shell.root).getPropertyValue('--mie-z-surface').trim()||'2147483646';
     const seen=new Set();
     function lift(start,level){for(let node=start;node&&node!==host.document.body&&node!==host.document.documentElement;node=node.parentElement){
       if(!seen.has(node)){for(const key of ['position','z-index'])saved.push([node,key,node.style.getPropertyValue(key),node.style.getPropertyPriority(key)]);seen.add(node);}
@@ -93,19 +127,26 @@ export function createSurfaceController({host,shell,root,launcher,panels,resolve
     if(surfaceOrigin?.kind==='shortcut'){const node=surfaceOrigin.element?.();if(node?.isConnected)lift(node,Number(z)+1);}
     releaseLayer=()=>{for(const[node,key,value,priority]of saved){if(value)node.style.setProperty(key,value,priority);else node.style.removeProperty(key);}releaseLayer=()=>{};};
   }
-  const hide=()=>{stopFollowing();releasePresentation();for(const p of panels){p.hidden=true;p.inert=true;}releaseLayer();};
-  function setState(next){state=next;onState(next);}
-  async function change(next,entry,returnToOrigin=false){
+  const hide=()=>{stopFollowing();releasePresentation();for(const p of panels){if(ownsNative(p))continue;p.hidden=true;p.inert=true;}releaseLayer();};
+  function setState(next){state=next;if(next==='closed')delete shell.root.dataset.hubForeground;else shell.root.dataset.hubForeground='true';onState(next);}
+  async function change(next,entry,returnToOrigin=false,isLatest=()=>true){
     if(disposed)return false;
-    if(state===next){entry?.prepare?.();entry?.panel.focus({preventScroll:true});return true;}
-    const freshEntry=state==='closed',id=++serial,old=resolve(state)?.panel;
+    // Business open() may reset its root's layout before showPanel(). Reapply
+    // the current entrance's presentation without changing Origin or motion.
+    if(state===next){entry?.prepare?.();if(entry)place();entry?.panel.focus({preventScroll:true});return true;}
+    const freshEntry=state==='closed',id=++serial,old=resolve(state)?.panel,origin=surfaceOrigin;
+    const returnFocusToOrigin=!!old&&next==='menu';
+    const focus=!entry&&(old||next==='closed')?watchCloseFocus(old,origin):null;
+    try{
     if(old&&!old.hidden){
       stopFollowing();old.inert=true;old.dataset.surfaceState='closing';restore(surfaceOrigin);root.inert=true;
       await runMotion(old,false);
+      // Ownership may already have returned to Standalone or a new Session.
+      if(id!==serial||disposed)return false;
       old.hidden=true;old.inert=true;old.dataset.surfaceState='closed';releaseLayer();
       releasePresentation();
       if(id!==serial||disposed)return false;
-      const returnState=surfaceOrigin?.returnState;restore(surfaceOrigin,true);surfaceOrigin=null;
+      const returnState=surfaceOrigin?.returnState;restore(surfaceOrigin);surfaceOrigin=null;
       if(returnToOrigin&&next==='menu'&&returnState==='closed')next='closed';
     }
     if(id!==serial||disposed)return false;
@@ -123,33 +164,106 @@ export function createSurfaceController({host,shell,root,launcher,panels,resolve
       panel.dataset.surfaceState='open';followShortcut();panel.inert=false;panel.focus({preventScroll:true});
     }else{
       hide();setState(next);launcher.resume();
-      if(next==='menu')await launcher.open({preserve:!freshEntry});else{await launcher.close();shell.orb.focus({preventScroll:true});}
+      if(next==='menu')await launcher.open({preserve:!freshEntry,focus:!focus});else await launcher.close();
+      if(id===serial&&!disposed&&isLatest()&&focus?.allowed()){
+        const target=returnFocusToOrigin?focusTarget(origin):shell.orb;
+        if(target?.isConnected&&!target.closest('[hidden],[inert]')){
+          focus.stop();target.focus({preventScroll:true});
+          if(returnFocusToOrigin)restore(origin,true);
+        }
+      }
     }
     return true;
+    }finally{focus?.stop();}
   }
   function go(next,entry=resolve(next),closingKey=null){
     if(disposed||(!entry&&next!=='menu'&&next!=='closed'))return Promise.resolve(false);
     if(pending?.next===next&&pending.entry===entry&&pending.closingKey===closingKey)return pending.task;
+    const epoch=ownershipEpoch;
     const task=transition.then(()=>{
+      if(epoch!==ownershipEpoch)return false;
       if(entry&&(resolve(closingKey||next)!==entry||(closingKey&&state!==closingKey)))return false;
-      return change(next,closingKey?null:entry,!!closingKey);
+      return change(next,closingKey?null:entry,!!closingKey,()=>transition===task);
     }).catch(error=>{
-      if(disposed)return false;
+      if(disposed||epoch!==ownershipEpoch)return false;
       cancelMotion();hide();setState('menu');restore(surfaceOrigin);surfaceOrigin=null;
-      void launcher.open({preserve:true});onError(error);return false;
+      void launcher.open({preserve:true,focus:false});onError(error);return false;
     });
     transition=task;pending={next,entry,closingKey,task};
     void task.finally(()=>{if(pending?.task===task)pending=null;});return task;
   }
   function revoke(owner){
     if(disposed)return;
+    acquireHub(owner,true);
     origins.delete(owner);
     if(resolve(state)?.owner!==owner)return;
-    ++serial;cancelMotion();hide();const next=surfaceOrigin?.returnState||'menu';setState(next);restore(surfaceOrigin);surfaceOrigin=null;
-    if(next==='menu')void launcher.open({preserve:true});else void launcher.close();
+    ++serial;stopFocusWatch();cancelMotion();hide();const next=surfaceOrigin?.returnState||'menu';setState(next);restore(surfaceOrigin);surfaceOrigin=null;
+    if(next==='menu')void launcher.open({preserve:true,focus:false});else void launcher.close();
+  }
+  function ownsNative(panel){if(!panel)return false;for(const n of nativeWindows.values())if(n.entry.panel===panel&&n.lease)return true;return false;}
+  function acquireHub(owner,force=false){
+    const n=nativeWindows.get(owner);if(!n?.lease)return true;
+    const lease=n.lease;lease.controller.abort();
+    // Only the native owner may complete/cancel its animation. Retire it before
+    // recording native layout and before any Hub write. No asynchronous release.
+    try{syncNative(n.provider.release);}catch(error){report(error);if(!force)return false;}
+    n.entry.saveNative();n.lease=null;n.origin=null;
+    n.entry.panel.hidden=true;n.entry.panel.inert=true;n.entry.panel.dataset.surfaceState='closed';return true;
+  }
+  function syncNative(fn,...args){
+    const value=fn(...args);
+    if(value&&typeof value.then==='function'){Promise.resolve(value).catch(report);throw Error('Native Window open/release 必须同步交接控制权；异步动画使用 lease.signal。');}
+  }
+  function openNative(owner,origin){
+    const n=nativeWindows.get(owner);if(!n)return null;
+    if(disposed||resolve('panel:'+owner)!==n.entry)return Promise.resolve(false);
+    try{
+      if(!n.lease){
+        // Cancel active AND queued Hub work before lending this root. Existing
+        // motion cancellation restores temporary styles synchronously.
+        ++ownershipEpoch;
+        if(resolve(state)?.owner===owner||pending){
+          ++serial;stopFocusWatch();cancelMotion();hide();
+          const next=surfaceOrigin?.returnState||(root.hidden?'closed':'menu');setState(next);restore(surfaceOrigin);surfaceOrigin=null;
+          if(next==='menu')void launcher.open({preserve:true,focus:false});else void launcher.close();
+          transition=Promise.resolve();pending=null;
+        }
+        origins.delete(owner);launching.delete(owner);
+        const controller=new host.AbortController(),lease={controller};n.lease=lease;n.origin=origin;
+        n.entry.restoreNative();
+        lease.context=Object.freeze({signal:controller.signal,isCurrent:()=>!disposed&&nativeWindows.get(owner)===n&&n.lease===lease&&!controller.signal.aborted});
+      }
+      syncNative(n.provider.open,n.lease.context);
+      return Promise.resolve({ok:true});
+    }catch(error){acquireHub(owner);report(error);return Promise.resolve({ok:false,error:String(error?.message||error)});}
+  }
+  function nativeEvent(event){
+    if(!nativeWindows.size)return false;
+    const path=event.composedPath?.()||[],active=deepFocus();
+    for(const n of nativeWindows.values()){
+      if(!n.lease)continue;
+      const orb=n.origin?.element?.();
+      if(path.includes(n.entry.panel)||path.includes(orb)||within(n.entry.panel,active)||within(orb,active))return true;
+      // Explicit portals only. Do not scan document for an Extension's dialogs.
+      try{const owns=n.provider.ownsEvent?.(event);if(owns===true)return true;if(owns&&typeof owns.then==='function'){Promise.resolve(owns).catch(report);report(Error('Native Window ownsEvent 必须同步返回 boolean。'));}}catch(error){report(error);}
+    }
+    return false;
   }
   return {
+    registerNativeWindow(owner,provider){
+      const entry=resolve('panel:'+owner);
+      if(disposed||!entry||nativeWindows.has(owner))throw Error('Native Window 未挂载或重复。');
+      const n={entry,provider,lease:null,origin:null};nativeWindows.set(owner,n);
+      return ()=>{if(nativeWindows.get(owner)!==n)return;acquireHub(owner,true);nativeWindows.delete(owner);};
+    },
+    ownsNative,openNative,acquireHub,nativeEvent,
     get state(){return state;},
+    // Reuse existing Surface identity and queue; no second navigation generation.
+    backContext(){
+      const key=state,entry=resolve(key),id=serial,task=transition;
+      const isCurrent=()=>!disposed&&state===key&&resolve(key)===entry&&serial===id&&transition===task;
+      return {key,owner:entry?.owner,ready:!!entry&&!pending&&entry.panel.dataset.surfaceState==='open',isCurrent};
+    },
     placeNative(panel){
       if(resolve(state)?.panel!==panel||!nativePresentation?.available())return false;
       const style=panel.getAttribute('style');
@@ -163,12 +277,13 @@ export function createSurfaceController({host,shell,root,launcher,panels,resolve
       if(launching.has(owner))return launching.get(owner);
       if(origin?.kind==='shortcut'){origin.returnState=root.hidden?'closed':'menu';origin.honeycomb=launcher.capture(owner);}
       origins.set(owner,origin||launcher.capture(owner));
-      const task=Promise.resolve().then(()=>disposed?false:open()).finally(()=>{launching.delete(owner);origins.delete(owner);});
+      const epoch=ownershipEpoch;
+      const task=Promise.resolve().then(()=>disposed||epoch!==ownershipEpoch?false:open()).finally(()=>{if(launching.get(owner)===task){launching.delete(owner);origins.delete(owner);}});
       launching.set(owner,task);return task;
     },
     // The lifecycle still completes at the newly laid-out endpoint. No stale flight
     // is resumed after rotation/keyboard resize; cancellation is not deactivation.
     resize(){cancelMotion();},
-    dispose(){if(disposed)return;disposed=true;++serial;cancelMotion();hide();origins.clear();launching.clear();},
+    dispose(){if(disposed)return;for(const owner of nativeWindows.keys())acquireHub(owner,true);nativeWindows.clear();++ownershipEpoch;disposed=true;++serial;stopFocusWatch();cancelMotion();hide();delete shell.root.dataset.hubForeground;origins.clear();launching.clear();},
   };
 }

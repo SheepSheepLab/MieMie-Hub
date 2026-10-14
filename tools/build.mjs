@@ -87,7 +87,6 @@ const content = [
   ...functions,
   ...bundledSources,
   'const BUNDLED_EXTENSIONS=[' + bundled.join(',') + '];',
-  'const hubShell=createHubRoot(h,HUB_ASSETS);',
   await read('src/bootstrap.js'),
   '})();\n',
 ].join('\n');

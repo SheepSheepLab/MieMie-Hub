@@ -534,7 +534,7 @@ test('full description is plain text in a separate dialog; Back/Escape restore f
  let dialog=f.body.querySelector('dialog');assert.equal(card.contains(dialog),false);assert.equal(dialog.open,true);
  assert.equal(dialog.querySelector('.mm-description-full').textContent,description);assert.equal(dialog.querySelector('img'),null);
  dialog.querySelector('button').click();assert.equal(f.body.querySelector('dialog'),null);assert.equal(f.host.document.activeElement,opener);
- let parentEscapes=0;f.host.document.addEventListener('keydown',()=>parentEscapes++,true);
+ let parentEscapes=0;f.host.document.addEventListener('keydown',event=>{if(event.key==='Escape'&&f.center.back()){event.preventDefault();event.stopImmediatePropagation();}else parentEscapes++;},true);
  opener.click();f.body.querySelector('.mm-description-full').dispatchEvent(new f.host.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
  assert.equal(parentEscapes,0);assert.equal(f.body.querySelector('dialog'),null);assert.equal(f.host.document.activeElement,opener);
  opener.click();f.center.leave();assert.equal(f.body.querySelector('dialog'),null);
@@ -566,4 +566,11 @@ test('ordinary confirmed listings do not replay ready effects and a running-vers
  f.packages.listInstalled=async()=>[{id:'fixture.background',version:mismatch?'2.0.0':'1.0.0',name:'Fixture',enabled:true,persistenceError:''}];
  await f.center.activate('installed');assert.equal(f.body.querySelector('[data-save-state]'),null);
  mismatch=true;await f.center.activate('installed');assert.ok(f.body.querySelector('[data-save-state=error]'));assert.equal(f.body.querySelector('[data-save-state=confirmed]'),null);assert.match(f.body.textContent,/尚未完成新版运行确认/);
+});
+test('System Back delegates to current submission picker without changing the form or keeping stale ownership',async t=>{
+ const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}}});await f.center.activate('mine');await f.click('提交扩展');
+ const form=f.body.querySelector('[data-submission-form]'),trigger=form.querySelector('[data-select-for=sourceType]');trigger.click();
+ assert.ok(form.querySelector('[role=listbox]'));assert.equal(f.center.back(),true);assert.equal(form.querySelector('[role=listbox]'),null);
+ assert.equal(f.body.querySelector('[data-submission-form]'),form);assert.equal(f.host.document.activeElement,trigger);assert.equal(f.center.back(),false);
+ trigger.click();await f.center.activate('discover');assert.equal(f.center.back(),false);assert.equal(f.body.querySelector('[role=listbox]'),null);
 });
