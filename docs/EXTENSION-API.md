@@ -2,19 +2,19 @@
 
 适用于 MieMie Hub Extension API v1。这里只记录现有接口，不增加 Runtime、包管理或权限机制。
 
-本文对应 Hub 0.8.3 源码的 API v1 契约；0.8.3 等待 Owner 发布审核，当前公开正式版仍为 0.8.2。[社区开发统一入口](EXTENSION-DEVELOPER-GUIDE.md)帮助选择适配路径。**Runtime Compatibility 与 Managed Package Compatibility 是两个独立 Gate**：本文定义 Runtime、生命周期及展示能力；物理安装、更新和卸载已由 Hub Package Manager 提供，格式与校验见 [Package v1](EXTENSION-PACKAGE.md)。Runtime 注册成功不代表发布包可在线安装。
+本文对应 Hub 0.8.3 的 API v1 契约；正式发布状态与附件见 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases)。[社区开发统一入口](EXTENSION-DEVELOPER-GUIDE.md)帮助选择适配路径。**Runtime Compatibility 与 Managed Package Compatibility 是两个独立 Gate**：本文定义 Runtime、生命周期及展示能力；物理安装、更新和卸载已由 Hub Package Manager 提供，格式与校验见 [Package v1](EXTENSION-PACKAGE.md)。Runtime 注册成功不代表发布包可在线安装。
 
 ## 三个独立概念
 
 - **Registered Extension**：Runtime 中的注册记录，可启用、停用、注销。`hub.extensions.uninstall(id)` 只注销 Runtime，不物理删除酒馆助手脚本。“已安装”页同时区分 Runtime 状态与可识别的 Managed Package；物理包操作不属于本页 Runtime API。
 - **Launcher Capability**：可选的快捷启动能力，以 `contributes.launcher` 声明。它不决定扩展是否能注册或运行。
-- **Pinned to Hub**：未来用户偏好，本版本没有实现。当前菜单根据可用 Launcher 展示入口，不是固定偏好。
+- **Managed Package**：物理脚本的安装、更新和卸载，按 [Package v1](EXTENSION-PACKAGE.md) 独立校验。Runtime 能力和 Launcher 显示不决定包管理资格。
 
 ## Manifest
 
 必填：`schemaVersion: 1`、`apiVersion: 1`、`id`、`name`、`version`。
 
-`id` 使用 2–80 位小写字母、数字、点、下划线或连字符，首字符是小写字母或数字；`name` 是非空文本，最多 80 字符；版本使用 `x.y.z`，可带 `-` 预发布后缀。当前校验器不支持 `+build` 后缀。
+`id` 使用 2–80 位小写字母、数字、点、下划线或连字符，首字符是小写字母或数字；`name` 是非空文本，最多 80 字符；版本使用 `x.y.z`，可带 `-` 预发布后缀。当前 Runtime 校验器不支持 `+build` 后缀。此兼容校验范围不作为官方发行命名规则：MieMie 官方产品版本与 Managed Package 版本使用无前导零、无后缀的 `MAJOR.MINOR.PATCH`，只有 Git Tag 使用 `v` 前缀；见 [版本规范](VERSIONING.md)。
 
 `description`、`entry`、`icon` 等元数据保留在 Manifest 中；Runtime 不按这些字段读取文件或下载资源。可选 Launcher 的 `title` 是非空文本、最多 60 字符；可选 `icon` 是最多 16 字符的短文本或 emoji。
 
@@ -74,12 +74,12 @@ Runtime 按普通函数调用 `factory(api)`，不提供内部记录作为 `this
 
 ## 版本与消费者
 
-Hub API 版本当前为 1；Hub 产品版本与扩展产品版本分别维护。MieMie Polisher 通过上述全局接口和事件协作，没有导入 Hub 的源文件。实际已验证的版本组合及产物校验值见 [测试说明](TESTING.md)。本协议不要求普通社区作品全部改成原生 MieMie Extension。
+Hub API 版本当前为 1；Hub 产品版本与扩展产品版本分别维护。扩展通过公开全局接口和事件协作，不依赖 Hub 源文件或私有 controller。实际已验证的版本组合及产物校验值见 [测试说明](TESTING.md)。各项能力按需选择；普通社区作品无需全部实现。
 
 
 ## 随包扩展
 
-Hub 0.6.1 的时间线使用标准 API v1 Manifest、provide 和生命周期。构建资源封装不是新的宿主权限。见 [Core 架构](CORE-ARCHITECTURE.md)。
+随包时间线使用标准 API v1 Manifest、provide 和生命周期。构建资源封装不是新的宿主权限。见 [Core 架构](CORE-ARCHITECTURE.md)。
 
 ## 可选 Surface API：Launcher Icon → Panel → 原 Icon
 
@@ -114,7 +114,7 @@ System Module（扩展中心 / 设置）使用内部导航，复用同一个私�
 
 关闭完成后，焦点优先回到本次真实 Origin：蜂窝对应 App Icon，或 Shortcut 原 mount 声明子树内的已有可聚焦节点；Hub 主界面收起回到 Hub 主球。关闭期间出现新的用户输入、焦点意图、导航、撤销或 dispose 时，旧请求不再恢复焦点。Origin 已移除或没有可聚焦节点时安全放弃，不改第三方 tabindex，也不以主球替代失效的 Extension Origin。原生 Native Window 的焦点由扩展负责。
 
-Polisher 以能力检测兼容旧 Hub：新 Hub 走 `api.closePanel()`，旧 Hub 保留原 `hub.open()` 返回方式；Standalone adapter 自己提供 showPanel / closePanel，没有 Hub 也能独立工作。
+若支持多个 Hub 版本，对可选方法进行能力检测。`api.closePanel()` 关闭当前实例的 Surface；`hub.open()` 打开 Hub 主界面，两者不是等价操作。Standalone 的展示与返回由扩展自己的适配器负责。
 
 ## Optional native Shortcut Launcher (API v1 additive capability)
 
@@ -148,7 +148,8 @@ open() { return api.showPanel(); }
 Hub calls mount only when the local Installed-page “显示悬浮球” preference is on
 (default off). `mount` receives a frozen object with **only `open()`**. Use this
 callback for shortcut clicks rather than `showPanel()` directly: it captures the
-shortcut origin and requests `open()` on the existing Extension instance. No
+shortcut origin. Without Native Window it requests `open()` on the existing
+Extension instance; with Native Window it follows the ownership contract below. No
 second factory, settings store, task or main panel is created. Treat `open()` as
 an asynchronous request; its result is the existing Runtime `{ok, ...}` result
 (or `false` once revoked). Do not rely on a callback `this` receiver.
@@ -164,7 +165,7 @@ of the entry. A non-round native launcher is supported.
 
 Presentation is selected by **entrance**, not by the presence of Hub. An optional
 `presentation` on the mounted handle lets an application reuse exactly its own
-Standalone floating presentation for Hub Shortcut. Polisher is the reference.
+Standalone floating presentation for Hub Shortcut while retaining Hub ownership.
 All four methods must be supplied:
 
 - `place(panel)`: synchronously fit the attached panel beside the native entry.
@@ -185,8 +186,8 @@ Shortcut is toggled off. Dispose only its presentation resources and entry.
 
 Honeycomb opens always use Hub Surface Motion, even when that Extension also has
 a native presentation. Repeated opens retain the first entrance. A removed mount
-is never rebound to a new mount; close falls back to its captured origin. Older
-Shortcut providers without this optional object retain the existing Hub fallback.
+is never rebound to a new mount; close falls back to its captured origin.
+Shortcut providers without this optional object use Hub Surface Motion.
 There is no change to `attachPanel/showPanel/closePanel` or API v1 identity.
 
 Provider failure is isolated within the current Surface. A synchronous `place()`
@@ -215,9 +216,8 @@ closing an already open panel.
 `miemie_hub_shortcuts_v1` is Hub-local UI preference keyed by Extension ID.
 Disable retains it, re-enable restores it, source replacement/update retains it,
 confirmed package uninstall or explicit Runtime uninstall removes it. A missing
-capability ignores old preference. Hub disposal unmounts all shortcuts. Polisher
-shares `miemie_polisher_dock_v1` between native Standalone and Shortcut modes;
-this is separate from the Hub legacy Dock key.
+capability ignores its stored preference. Hub disposal unmounts all shortcuts.
+Extension-owned launcher position storage remains separate from Hub preferences.
 
 This capability is optional for official **and third-party** extensions. No
 capability means no switch and no behavior change. It is unrelated to Catalog
@@ -225,12 +225,14 @@ Product Type, Distribution or Official/Community classification.
 
 ## Optional Native Window Ownership (API v1)
 
-This optional additive capability is available in the Hub 0.8.3 source. API and
-Package identity remain v1. Feature-detect `api.registerNativeWindow` before opting in.
-It does not change legacy Shortcut semantics above: legacy `{open}` still calls
-Runtime `open()` and uses a Hub-owned Surface, even with native geometry/motion.
+This optional capability lets an Extension own its native window presentation.
+API and Package identity remain v1. Feature-detect `api.registerNativeWindow`
+before opting in. Shortcut without this capability calls Runtime `open()` and
+uses a Hub-owned Surface, including when supplying native geometry/motion.
 
-After attaching the main panel, register once per session:
+After attaching the main panel, register once per session. The example uses
+application-owned window functions and an existing orb component; those helpers
+are not Hub APIs. The orb mount returns the Shortcut handle defined above:
 
 ```js
 if (typeof api.registerNativeWindow === 'function') {
@@ -316,20 +318,21 @@ or new resident key listener is installed. Unrelated Hub controls retain their
 existing key handling. An extension's native cancel/keydown/keyup implementation
 must preserve its own one-press policy; Hub Back handlers run only for Hub Surface.
 
-This is optional migration: old consumers keep existing Runtime/Surface/Shortcut
-behavior. It cannot restore private controls in an old adapter that explicitly
-disables dragging/resizing whenever `hubApi` exists. Such products need author
-adaptation to obtain full Native Window Parity; passing a generic fixture does not
-certify an unadapted release. Standalone restoration after Hub disposal continues
-to follow [LAUNCHER-PROTOCOL](LAUNCHER-PROTOCOL.md), including `whenDisposed`.
+Native Window is optional. Extensions using Runtime/Surface/Shortcut without it
+require no code, Manifest, Package or stable identity changes and no new release.
+Full Native Window Parity requires explicit integration: select controls according
+to current Presentation Ownership, preserve the application's native behavior, and
+validate both entrances on the actual product. Standalone restoration follows
+[LAUNCHER-PROTOCOL](LAUNCHER-PROTOCOL.md), including `whenDisposed`.
 
 ## Optional Back Navigation Capability (API v1)
 
 `api.registerBackHandler(handler)` lets an attached Extension handle an application
 Back request before Hub closes its Surface. It is optional for official and
 community extensions. **Zero mandatory migration:** an existing API v1 extension
-without this capability retains its original Escape, Launcher, Surface, Shortcut
-and lifecycle behavior. No Manifest field, API version, Package v1 change,
+without this capability uses the default Escape close path and its supported
+Launcher, Surface, Shortcut and lifecycle behavior. No Manifest field, API version,
+Package v1 change,
 rebuild or new release is required for those existing consumers.
 
 Register once per Runtime session, after `attachPanel()`, normally in `activate()`.
@@ -364,7 +367,7 @@ function factory(api) {
 
 The example's panel/state functions belong to the application. Standalone mode
 keeps its own input adapter. On a Hub without the capability, capability detection
-leaves the extension's previous behavior intact; it does not grant layered Back.
+keeps its supported default behavior; it does not grant layered Back.
 In capability mode, route internal Back actions to the same application function
 and avoid simultaneously claiming Escape in a window capture handler. Ordinary
 local key handling (Tab, arrows, etc.) remains the extension's responsibility.
@@ -427,7 +430,7 @@ the handler. The claimed physical press remains consumed after returning to the
 Launcher until keyup/blur or a fresh non-repeat keydown. Surface opening/closing
 requests are consumed without queuing an internal Back. Independent subsequent
 presses work normally, with no time-based cooldown. IME composition is left to the
-input system. Unregistered extensions retain the legacy keyboard branch.
+input system. Surfaces without a Back handler use the default keyboard close path.
 
 Hub consumes the keyboard event and cancels its default before delegation, to
 avoid both an application Back and a native dialog cancel from the same Escape.
@@ -437,8 +440,8 @@ cancelability/busy state. Browser and operating-system close requests are not
 universally equivalent to keydown. Browser-specific real-host validation is still
 required, especially Safari, focus changes and native dialogs.
 
-`api.closePanel()`, Hub Orb/toggle, explicit `hub.open()` and the historical
-`__meemeCombinedUI.back()` bridge retain their original direct navigation behavior;
+`api.closePanel()`, Hub Orb/toggle, explicit `hub.open()` and the supported
+`__meemeCombinedUI.back()` compatibility bridge perform direct navigation;
 they do not call a Back handler. Public `__MieMieHub` has no `back()` method.
 Extension-owned Back buttons can call the application's own one-layer function
 and use `closePanel()` only when that function leaves nothing to handle. Hub's

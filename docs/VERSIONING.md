@@ -6,6 +6,10 @@ SheepSheep 维护的 MieMie 官方项目，从本次发布起只使用无前导�
 
 Git Tag 使用 `v<version>`。GitHub 的 **Pre-release 是发布状态**，不是版本字符串的一部分，因此 `v0.2.1`、`v0.2.2`、`v1.0.1` 都可以标记为 Pre-release，不表示已完成所有真实宿主验证。
 
+产品版本在 `package.json`、Build Identity、Runtime、UI 和 Update Metadata 的 `version` 字段中保持相同的 `MAJOR.MINOR.PATCH`。只有 Git Tag 及明确指向它的 `tag` 字段、发布 URL 使用 `v` 前缀。例如 Hub 产品版本为 `0.8.3`，Git Tag 为 `v0.8.3`，GitHub Release Title 与 Release Notes Title 为 `MieMie Hub 0.8.3`，脚本附件为 `MieMie-Hub-0.8.3.json`。发布状态与附件以 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 为准。
+
+`Extension API v1`、`Package v1` 是协议版本标识，不是产品 SemVer。其他 Extension 与 Registry 独立维护产品版本，无需随 Hub 联动升级。
+
 ## 早期公开命名清理
 
 经 SheepSheep 授权，早期 Release 及其本地／远程 Tag `v0.2.0-alpha.3`、`v0.2.0-alpha.4`、`v1.0.1-hub.2` 已清理。没有删除仓库、重写 `main` 提交历史或 force-push，旧版本字符串仍可能出现在源码历史与兼容测试中。

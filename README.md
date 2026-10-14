@@ -2,9 +2,9 @@
 
 咩咩Hub 是咩咩（MieMie）开源软件与社区生态的官方项目。生态由 SheepSheep 发起和创建（Founder / 创始人）；SheepSheepLab 是官方 GitHub 开发、维护与发布命名空间，官方项目主要通过该命名空间维护和发布，并欢迎社区贡献者共同参与。
 
-当前公开正式版 **[MieMie Hub 0.8.2](https://github.com/SheepSheepLab/MieMie-Hub/releases/tag/v0.8.2)** 已发布，Production Registry 为 **0.6.1**。Core 负责 Extension Runtime、包管理与 Hub 自更新；扩展中心和设置是固定 System Modules。时间线为通过标准 API v1 加载的 Bundled Official Extension，官方默认捆绑时间线、随 Hub 整体更新，时间线只在 Launcher 打开，不进入已安装列表或包管理；仅架构测试可从构建声明移除。基础构建和测试不依赖 Registry 或 Polisher 源码。
+当前源码版本为 **0.8.3**；正式发布状态与附件以 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 为准。Production Registry 为 **0.6.1**。Core 负责 Extension Runtime、包管理与 Hub 自更新；扩展中心和设置是固定 System Modules。时间线为通过标准 API v1 加载的 Bundled Official Extension，官方默认捆绑时间线、随 Hub 整体更新，时间线只在 Launcher 打开，不进入已安装列表或包管理；仅架构测试可从构建声明移除。基础构建和测试不依赖 Registry 或 Polisher 源码。
 
-当前源码版本为 **0.8.3**，等待 Owner GitHub 审核，尚未创建 Tag 或 Release。该版本包含可选 Back Navigation、按实际入口恢复焦点、Hub → Standalone 生命周期交接、双入口与可选 Native Window，以及 Hub 展开时的前景优先级。Extension API v1、Package v1 和稳定身份保持不变。
+0.8.3 包含可选 Back Navigation、按实际入口恢复焦点、Hub → Standalone 生命周期交接、双入口与可选 Native Window，以及 Hub 展开时的前景优先级。Extension API v1、Package v1 和稳定身份保持不变。
 
 ## 扩展中心
 
@@ -26,9 +26,9 @@ Extension 安装和更新先验证 Release/Asset、Manifest、产品身份、版
 
 物理卸载会删除目标脚本条目及其 data，仅确认删除，不自动生成备份；不清空 localStorage、酒馆变量、Polisher 历史设置或其他脚本。请保存编辑并停止正在生成的任务后更新。Hash 校验不能保证作者代码安全，软件并未运行在完整沙盒里。
 
-GitHub Extension 下载首先直连作者 Release；浏览器因 CORS 无法读取附件时，使用内置官方服务（或开发者显式覆盖的 Registry）受限字节转发。转发无需 Discord 登录，不携带 Token、聊天、密钥或宿主凭据。Registry 必须先验证作者仓库、Release 与 Manifest，只能转发匹配的两个附件；Hub 再独立校验 digest／SHA-256／身份。Registry 不持久托管软件文件。没有配置服务、服务不可达、超时或校验失败时拒绝写入，不开启宿主 Proxy、不使用公共代理或 no-cors。当前下载规则见 [Package v1 网络与安全边界](docs/EXTENSION-PACKAGE.md#网络与安全边界)，历史排查见 [浏览器下载修复与复测](docs/DOWNLOAD-TRANSPORT.md)。Hub 0.5.1 自更新另有官方仓库限定的安全转发入口，需要 Registry 0.3.1 或以上，详见 [自更新说明](docs/SELF-UPDATE.md)。
+GitHub Extension 下载首先直连作者 Release；浏览器因 CORS 无法读取附件时，使用内置官方服务（或开发者显式覆盖的 Registry）受限字节转发。转发无需 Discord 登录，不携带 Token、聊天、密钥或宿主凭据。Registry 必须先验证作者仓库、Release 与 Manifest，只能转发匹配的两个附件；Hub 再独立校验 digest／SHA-256／身份。Registry 不持久托管软件文件。没有配置服务、服务不可达、超时或校验失败时拒绝写入，不开启宿主 Proxy、不使用公共代理或 no-cors。当前下载规则见 [Package v1 网络与安全边界](docs/EXTENSION-PACKAGE.md#网络与安全边界)，历史排查见 [浏览器下载修复与复测](docs/DOWNLOAD-TRANSPORT.md)。Hub 自更新使用官方仓库限定的安全转发入口，需要 Registry 0.3.1 或以上，详见 [自更新说明](docs/SELF-UPDATE.md)。
 
-Hub 自更新继续使用设置页独立流程，仅更新自己；[既有自更新说明](docs/SELF-UPDATE.md) 中的安装实例定位、content 与名称末尾版本号同步写入、新 iframe 交接与保存读回确认保持有效。旧 alpha.4 没有更新代码，首次仍需手动引导。
+Hub 自更新使用设置页独立流程，仅更新自己；安装实例定位、content 与名称末尾版本号同步写入、新 iframe 交接与保存读回确认见 [自更新说明](docs/SELF-UPDATE.md)。首次安装或从不支持自更新的版本引导时，手动导入正式包。
 
 ## 开发与构建
 
@@ -61,7 +61,7 @@ build/miemie-hub.js
 
 ## 当前安装体验与验证
 
-0.8.2 已完成真实 Tavern 慢速安装与 UI 验收：下载显示进度、速度与取消入口，返回可取消尚未写入的安装，完成后收起浮动进度条，并自动复核保存状态。简介预览最多两行，完整简介在独立窗口查看。Runtime Compatibility 与 Managed Package Compatibility 分别验证。
+安装下载显示进度、速度与取消入口，返回可取消尚未写入的安装，完成后收起浮动进度条，并自动复核保存状态。简介预览最多两行，完整简介在独立窗口查看。Runtime Compatibility 与 Managed Package Compatibility 分别验证。
 
 直连失败可由受限 Registry Relay 接管；脚本正文以无进展超时为主，并保留有界总时限与全部完整性校验。准确时限与失败边界集中在 [Package v1](docs/EXTENSION-PACKAGE.md#网络与安全边界)。阶段性调查保留在 [慢速下载验收记录](docs/PROGRESS-TIMEOUT-VALIDATION.md)，历史版本说明见 [Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases)。
 
@@ -71,7 +71,7 @@ build/miemie-hub.js
 
 双入口遵循 Dual Entrance、Single Business Instance、Independent Presentation Ownership。
 蜂窝入口使用 Hub Surface；主动接入 [Native Window Ownership](docs/EXTENSION-API.md#optional-native-window-ownership-api-v1)
-的原生入口由扩展控制窗口操作。旧 Shortcut 保持原有托管行为；开启悬浮球不会自动适配第三方的拖动、缩放或其他原生功能。所有运行期能力按需采用，未注册 Back Handler 的扩展保留既有 Escape 行为。
+的原生入口由扩展控制窗口操作。Shortcut 未接入 Native Window 时使用 Hub Surface 托管窗口；开启悬浮球不会自动适配第三方的拖动、缩放或其他原生功能。所有运行期能力按需采用，未注册 Back Handler 的扩展保留既有 Escape 行为。
 
 已知限制：Hub 收起动画尚未结束时快速点击原生球可能重新展开 Hub，计划在 0.8.4 处理；等待收起结束后可正常使用原生窗口。Registry 当前精确 Origin 策略可能拒绝不同地址或端口，相关调整由 Registry 独立维护，不能仅靠升级 Hub 解决。两项均未在 0.8.3 修复，当前验收范围见 [TESTING.md](docs/TESTING.md)。
 

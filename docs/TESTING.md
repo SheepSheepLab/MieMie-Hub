@@ -1,12 +1,12 @@
 # Hub 构建、更新与产物兼容验证
 
-当前正式基线：Hub **0.8.2** 已发布，完整产物组合为 Polisher **1.2.1**，Production Registry 为 **0.6.1**。适配验收先看 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md)。下文明示历史阶段的版本与验收数字保留原记录，不代替本次实际测试输出。
+当前源码测试基线：Hub **0.8.3**，完整产物组合为 Polisher **1.2.1**，Production Registry 为 **0.6.1**。正式发布状态与附件以 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 为准。适配验收先看 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md)。下文明示历史阶段的版本与验收数字保留原记录，不代替本次实际测试输出。
 
-本仓库源码为 **0.8.3**，等待 Owner GitHub 审核；本轮结果独立记录于下方 0.8.3 小节，不能据此宣称已经创建 Tag、发布附件或完成公开自更新。
+各次测试结果独立记录于对应版本／日期小节；本地源码测试不代表 Tag、公开附件或真实公开自更新验证已经完成。
 
 ## 独立构建与测试
 
-本地 Dual Entrance 增量使用 `tests/native-window.test.mjs` 检查所有权、单 Session、
+Dual Entrance 使用 `tests/native-window.test.mjs` 检查所有权、单 Session、
 草稿、原生 lease、动画中断、错误与撤销边界；独立测试应用位于
 `tests/fixtures/native-window-extension.js`，可导出为真实 Tavern Helper 脚本包。
 该通用 Fixture 的 Native Window Parity 结果不能替代 Tavern Phone 作者适配验收。
@@ -262,4 +262,16 @@ Safari 使用同一隔离 Tavern / Helper，通过原生应用输入操作；记
 - **HUB TRANSITION RACE**：最终构建仍可复现收起动画中点击原生球重新展开 Hub。再次正常收起后交互可恢复；本次复现保留草稿、一个实例和一个业务 Hook，没有观察到 Runtime 被卸载或不可恢复锁死。此结论限于本次检查，计划 0.8.4 处理。
 - **REGISTRY ORIGIN COMPATIBILITY**：`localhost`、`127.0.0.1` 和端口差异可能拒绝目录及下载中转；这是 Registry 独立维护范围。失败不允许绕过下载／身份／hash 校验，不关闭 CORS。
 
-当前阶段只准备源码并 Push 到 `origin/main`，供 Owner 独立 GitHub 审核。Tag、GitHub Release、匿名附件复核和真实公开 0.8.2 → 0.8.3 自更新必须等待明确发布批准；本轮不宣称这些项目完成。
+Release、匿名附件复核和真实公开自更新是独立验证项目，须依据实际发布资产记录结果；以上源码回归不代替这些验证。
+
+## 0.8.3 文档一致性验证 · 2026-10-14
+
+本次仅整理当前开发规范，产品源码、测试、品牌身份和机器包格式未修改。重新执行 `npm test` 为 **485 / 485 PASS**，0 失败、0 跳过。7 个 JavaScript 示例语法检查、3 个 JSON 示例解析和 6 项示例行为检查通过；行为检查使用实际 Runtime 与显式模拟宿主回调，不是新增真实 Tavern 验收。修改文档的 88 个本地链接／锚点通过，Developer Guide、API 与 Launcher Protocol 的章节标题保持不变。
+
+按 [生产构建配置](PRODUCTION.md) 重新构建后，`MieMie-Hub-0.8.3.json` 的 SHA-256 仍为：
+
+```text
+ffbca980fb2ada9055f94616a9060988463d4ba6b948a7cc3aa4d02e8ab9f2fc
+```
+
+构建与此前 0.8.3 产物完全相同。此前真实浏览器和第三方结果保留在各自记录中，本次没有把它们计为新执行结果；公开发布资产与真实公开自更新仍须独立验证。

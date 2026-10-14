@@ -4,22 +4,29 @@
 
 此协议对社区作者完全可选。没有Hub适配、没有open、没有Launcher的作品都可以被Catalog作为外部项目收录。原生Extension的生命周期与Launcher能力分离；是否具备机器安装包由Package规范决定，不能因为没有Launcher拒绝后台Extension。
 
-父页面 `window.parent.__MieMieHub` 提供API v1。兼容Hub发出 `miemie:hub-ready` / `miemie:hub-disposed`，event.detail为对应Hub对象；不能把旧实例的事件误认为当前实例。`extensions.provide(manifest,factory)` 返回 `{ok,ready,release}`。`ready`等待注册/激活，`release()`撤回来源。Hub新提供可选`whenDisposed`，在整个Runtime清理结束后完成；不能把disposed事件当成异步清理已完成。
+父页面 `window.parent.__MieMieHub` 提供API v1。兼容Hub发出 `miemie:hub-ready` / `miemie:hub-disposed`，event.detail为对应Hub对象；不能把旧实例的事件误认为当前实例。`extensions.provide(manifest,factory)` 返回 `{ok,ready,release}`。`ready`等待注册/激活，`release()`撤回来源。`hub.whenDisposed`在该Hub的Runtime有界异步清理完成后兑现；不能把disposed事件当成异步清理已完成。
 
-作者自己管理独立Launcher。默认收纳方式：
+作者自己管理 Standalone Launcher 与业务交接。Hub 接管时撤去冲突的独立展示；若复用同一业务实例，仅切换展示，不重新初始化业务。若适配器需要替换生命周期实例，先完成原实例清理，并保留应交接的状态。两种入口不能分别持有一份业务或 Hook。
 
 ```js
-// 概念顺序；实际应串行化并处理卸载、重复事件和错误。
-await startStandalone();
+// 概念顺序；由适配器串行处理重复事件、卸载、用户状态和错误。
 async function attach(hub) {
-  await stopStandalone();
-  const lease = hub.extensions.provide(manifest, createExtension);
-  if (!lease.ok) throw Error(lease.error);
-  await lease.ready;
-  return lease;
+  await prepareHubHandoff(); // 扩展自己的展示／业务交接，不是 Hub API
+  const source = hub.extensions.provide(manifest, createExtension);
+  if (!source.ok) throw Error(source.error);
+  const result = await source.ready;
+  if (!result.ok) {
+    await source.release();
+    throw Error(result.error || 'Extension registration failed');
+  }
+  // 核对 get(id)，尊重已保存的注册／启用偏好
+  return source;
 }
-// Hub消失：等待lease.release及旧Hub.whenDisposed，再startStandalone。
+// Hub消失：匹配 event.detail 的实例，等待 source.release() 和
+// 该实例的 whenDisposed；重新核对当前 Hub 与用户状态后恢复 Standalone。
 ```
+
+`source` 是 Source Lease：`release()` 撤回工厂来源并清理当前 Runtime 实例，保留用户偏好，不是窗口关闭。`ready` 完成不保证扩展已启用；用户可能已停用或注销该产品，适配器不能自行反向覆盖选择。支持不提供 `whenDisposed` 的宿主时须先检测该属性，不能把缺少完成边界解释为任意异步任务已经结束。
 
 独立入口最小例子使用作者自己的图标/名称：
 
@@ -31,16 +38,16 @@ parent.document.body.append(button);
 function stopStandaloneLauncher() { button.onclick = null; button.remove(); }
 ```
 
-作者可以选择Hub存在时仍保留独立球；此时球可以委托`hub.extensions.open(id)`，不要运行第二份业务或第二层Hook。Hub中停用或Runtime注销Extension后，只要Hub仍存在，适配器不能绕过用户状态立刻复活为独立业务。单个open失败不应撤销正常后台生命周期。
+作者可以选择 Hub 存在时仍保留独立球。`hub.extensions.open(id)` 通过 Hub Runtime 打开已有 Extension；对已接入 Surface 的扩展，该路径使用 Hub 管理的展示方式，不授予原生窗口控制权。使用 [Shortcut Launcher](EXTENSION-API.md#optional-native-shortcut-launcher-api-v1-additive-capability) 时，通过 mount 收到的 `open()` 打开，以记录实际入口；需要完整原生窗口时组合 Native Window 能力。Hub 中停用或 Runtime 注销 Extension 后，只要 Hub 仍存在，适配器不能绕过用户状态复活独立业务。单个 open 失败不应撤销正常后台生命周期。
 
-Polisher 1.1.0是完整参考：[launcher-adapter.js](https://github.com/SheepSheepLab/MieMie-Polisher/blob/v1.1.0/launcher-adapter.js)。支持`keepStandalone:false/true`、双启动顺序、Hub重载、异步清理、原iframe保留、重复来源拒绝和页面内临时状态交接。该文件含Polisher专用身份，社区作者应实现自己的适配，不照搬品牌或ID。
+按当前 API 实现自己的适配器，分别验证双启动顺序、Hub 重载、异步清理、重复来源拒绝、临时草稿与单实例。使用本项目自己的品牌、稳定 ID 和存储键；完整签名与可选能力见 [Extension API](EXTENSION-API.md)，验收入口见 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md#7-runtime-compatibility-gate)。
 
-Registry和Package Manager都不抓取、模拟点击或删除第三方悬浮球。注册Extension、Launcher能力、固定到Hub是三个概念；当前没有Pinned功能。
+Registry 和 Package Manager 不抓取、模拟点击或删除第三方悬浮球。蜂窝根据当前有效 Launcher 能力展示入口；注册、运行期展示和 Package 管理分别按对应规范处理。
 
-Hub 0.8.3 源码提供可选 [Native Window Ownership](EXTENSION-API.md#optional-native-window-ownership-api-v1)
+可选 [Native Window Ownership](EXTENSION-API.md#optional-native-window-ownership-api-v1)
 允许蜂窝和原生悬浮球同时存在，同一 Session 按入口切换展示所有权。原生窗口
 模式不退出 Runtime，不等于 Hub 消失后的 Standalone 恢复；本页 `whenDisposed`
-交接规则仍然有效。未采用新能力的旧 Shortcut 保持原有托管窗口行为。
+交接规则仍然有效。Shortcut 未接入 Native Window 时由 Hub Surface 托管窗口。开启独立球不退出 Runtime、不移除蜂窝入口，也不改变 Package 管理资格。
 
 双入口遵循 **Dual Entrance / Single Business Instance / Independent Presentation Ownership**。
 Hub Runtime 存在不等于 Hub Surface 正在控制窗口；蜂窝打开先释放 Native lease，再调用既有实例的 `open()`，原生入口继续复用扩展自己的窗口函数。Source Lease 管理工厂来源，Native lease 管理当前窗口展示，两者不能互相代替，也不能用撤回来源来实现普通关闭。

@@ -6,8 +6,7 @@ Current compatibility baseline：
 
 | 项目 | 当前基线 |
 | --- | --- |
-| MieMie Hub | [0.8.2 正式版](https://github.com/SheepSheepLab/MieMie-Hub/releases/tag/v0.8.2) |
-| 本仓库源码 | 0.8.3，等待 Owner GitHub 审核，尚未发布 |
+| MieMie Hub 源码 | 0.8.3；正式发布状态与附件见 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) |
 | Extension API | v1 |
 | Extension Package | v1 |
 | Production Registry | 0.6.1 |
@@ -23,9 +22,9 @@ Current compatibility baseline：
 | Runtime registration | 想由 Hub 管理运行期生命周期时需要；普通外部投稿无需接入 | [EXTENSION-API](EXTENSION-API.md) |
 | Honeycomb Launcher | 可选；需要蜂窝入口时声明，后台扩展无需提供 | [EXTENSION-API](EXTENSION-API.md) |
 | Surface | 可选；使用 Hub 面板展开／返回动画时接入 | [EXTENSION-API](EXTENSION-API.md) |
-| Back Navigation | 可选；希望 Escape 先处理内部交互层时采用；未采用者保留原行为 | [EXTENSION-API](EXTENSION-API.md#optional-back-navigation-capability-api-v1) |
-| Shortcut Launcher | 可选；需已挂载主面板、声明 Launcher，并提供实例 `open()` | [EXTENSION-API](EXTENSION-API.md) |
-| Native Window | 可选；双入口共享业务实例，原生入口保留扩展自己的窗口控制 | [EXTENSION-API](EXTENSION-API.md#optional-native-window-ownership-api-v1) |
+| Back Navigation | 可选；希望 Escape 先处理内部交互层时采用；未采用时使用默认返回 | [EXTENSION-API](EXTENSION-API.md#optional-back-navigation-capability-api-v1) |
+| Shortcut Launcher | 可选；提供扩展自己的独立悬浮球入口，需主面板、Launcher 和实例 `open()` | [EXTENSION-API](EXTENSION-API.md) |
+| Native Window | 可选；与 Shortcut 组合，原生入口自行管理窗口，与蜂窝共享业务实例 | [EXTENSION-API](EXTENSION-API.md#optional-native-window-ownership-api-v1) |
 | Standalone dual-mode | 可选；承诺有无 Hub 均可运行时，需要正确处理交接 | [LAUNCHER-PROTOCOL](LAUNCHER-PROTOCOL.md) |
 
 ## 1. 我只想把作品投稿到 Hub
@@ -74,9 +73,9 @@ Extension 保持业务内容所有权；Hub 负责已接入面板的展示、位
 处理器同步返回 `true` 表示已处理；同步返回 `false` 才由 Hub 关闭 Surface、恢复原入口。
 扩展自己管理内部状态，Hub 不读取内部 DOM 或页面栈。
 
-该能力不是适配 Hub 的必选项。现有 API v1 扩展不需要修改代码、Manifest、Package、
-稳定 ID、Launcher 或重新发布；没有注册处理器时，Escape 继续原有关闭行为。
-旧扩展不会因此自动获得逐层返回能力。
+该能力不是适配 Hub 的必选项。未注册 Handler 时，Escape 使用默认 Surface 关闭行为，
+不会推断内部返回层级。保持默认行为无需修改代码、Manifest、Package、稳定 ID
+或 Launcher，也无需重新发布。
 
 动画或草稿确认可异步执行，但处理器必须立即返回 `true`，不能返回 Promise，
 也不能用 `api.guard()` 包装。异步完成前检查 `api.signal`、请求的 `isCurrent()`
@@ -93,13 +92,14 @@ Hub 不扫描第三方 DOM。用户在已安装页开启「显示悬浮球」后
 
 ### 可选：双入口与完整原生窗口操作
 
-旧 Shortcut 提供外部入口及可选动画，窗口显隐、焦点与关闭仍由 Hub Surface
-控制。完整原生操作使用 [Optional Native Window Ownership](EXTENSION-API.md#optional-native-window-ownership-api-v1)。
-这是 0.8.3 源码提供的可选能力：同一 Session 的蜂窝入口走 Hub Surface，原生入口
-复用扩展自己的窗口控制逻辑。不要再用“存在 hubApi”判断是否允许拖动或缩放。
+Shortcut Launcher 提供独立入口及可选动画；未接入 Native Window 时，窗口显隐、
+焦点与关闭由 Hub Surface 控制。完整原生操作使用 [Optional Native Window Ownership](EXTENSION-API.md#optional-native-window-ownership-api-v1)。
+同一 Session 的蜂窝入口走 Hub Surface，原生入口复用扩展自己的窗口控制逻辑。
+依据当前 Presentation Ownership 决定拖动、缩放和输入行为；Hub Runtime 存在
+不等于 Hub 正在控制当前窗口。
 同步交接控制权、取消原生动画及手势，异步完成检查 lease，不复制业务实例。
-旧扩展可以不接入，继续原有行为；需要完整原生操作的扩展由作者自愿适配。
-Runtime Gate、Native Window Parity Gate 与 Managed Package Gate 分别验证。
+不需要完整原生窗口的扩展无需接入；需要时由作者主动适配。
+Runtime Gate、Native Window Parity Gate 与 Managed Package Gate 分别验证。开启独立入口不删除蜂窝入口，也不改变符合 Package v1 的安装、更新和物理卸载资格。
 
 原生显隐、拖动、缩放、位置／尺寸记忆、动画、Esc 和焦点由扩展维护；Hub 不替作者实现这些业务 UI。Hub 展开时拥有前景，收起后恢复普通原生窗口交互。未适配该能力的正式第三方不会因升级 Hub 或开启悬浮球而自动获得完整原生操作。
 
@@ -109,7 +109,7 @@ Runtime Gate、Native Window Parity Gate 与 Managed Package Gate 分别验证�
 
 Hub 接管前撤去冲突的独立展示，按自身适配器完成必要的串行清理，再通过 `extensions.provide()` 提供同一产品的工厂。保留既有业务实例的适配器只切换展示；不要为第二个入口重复初始化业务或 Hook。Hub 消失时，等待来源 lease 释放及旧 Hub 的 `whenDisposed` 清理完成，再恢复 Standalone。串行处理重复事件、双启动顺序、Hub 重载和异步清理，不把 disposed 事件等同于清理已完成。
 
-Hub 仍存在而用户已停用／注销扩展时，不得绕过用户选择自动复活独立业务。协议中的 Polisher 1.1.0 链接是固定参考快照，包含产品专用身份，不能原样复制其 ID、品牌或存储 key；当前 Shortcut 契约以 API 文档为准。
+Hub 仍存在而用户已停用／注销扩展时，不得绕过用户选择自动复活独立业务。窗口关闭、Source Lease 撤回和 Runtime 停用各有不同用途，不能用其中一个代替其他操作。身份与存储继续使用本项目自己的稳定值。
 
 ## 7. Runtime Compatibility Gate
 
@@ -159,11 +159,11 @@ Hub 仍存在而用户已停用／注销扩展时，不得绕过用户选择自�
 ```text
 读取 MieMie Hub 的 docs/EXTENSION-DEVELOPER-GUIDE.md，以及其中链接的现行 API、Package、Launcher、Icon、身份与生态规范。不要把历史 Review / Audit 当作当前 API 或发布状态。
 
-先审计本项目，分别报告 Catalog 投稿、Runtime Compatibility、Managed Package Compatibility、Launcher、Surface、Shortcut 和 Standalone dual-mode 的现状、所需变更与验证方法；不适用项明确标为 N/A。根据 Owner 的目标确定本次适配范围，再实施，不默认开启全部可选能力。
+先审计本项目，分别报告 Catalog 投稿、Runtime Registration、Managed Package、Honeycomb Launcher、Surface、Shortcut Launcher、Native Window、Back Navigation 和 Standalone dual-mode 的现状、适用性、所需变更与验证方法；不适用项明确标为 N/A。根据 Owner 的目标确定本次适配范围，再实施，不默认开启全部可选能力。
 
-适配时保持既有业务行为，并保留本项目自身 author、repository、license、product identity、stable IDs、storage keys 以及真实 Contributor / Git / PR / history 归属。不得复制官方 productId、scriptId、storage key、品牌、作者或仓库地址。官方项目继续遵守既有 SheepSheep 产品作者、SheepSheepLab 官方命名空间及贡献归属规则，不把命名空间当作产品 author，不自动把 Contributor 追加到产品 author。
+适配时保留第三方原有功能，不因接入 Hub 删除拖动、缩放、点击开关、原生输入或草稿。双入口共用一个业务实例，不重复初始化 Hook、监听器或业务模块，不改变原有业务数据格式；保留本项目自身 author、repository、license、product identity、stable IDs、storage keys 以及真实 Contributor / Git / PR / history 归属。不得复制官方 productId、scriptId、storage key、品牌、作者或仓库地址。官方项目继续遵守既有 SheepSheep 产品作者、SheepSheepLab 官方命名空间及贡献归属规则，不把命名空间当作产品 author，不自动把 Contributor 追加到产品 author。
 
-Runtime Compatibility 与 Managed Package Compatibility 分别实现和验证。不能把“在 Hub 可运行”当成“可在线安装更新”；Runtime uninstall 不是物理删除。可选入口共用单个业务实例。所有样例占位值必须替换为本项目的真实值，不能伪造 hash、digest 或实机验收结论。
+Runtime Compatibility 与 Managed Package Compatibility 分别实现和验证。不能把“在 Hub 可运行”当成“可在线安装更新”；Runtime uninstall 不是物理删除。采用 Native Window 时，再独立验证 Native Window Parity：原生功能、双入口控制权、单业务实例、状态保留和生命周期清理。采用 Back Navigation 时按同步 boolean、有效请求与草稿保护契约验证；没有接入时验证默认返回行为。所有样例占位值必须替换为本项目的真实值，不能伪造 hash、digest 或实机验收结论。
 ```
 
 ## 11. Release Checklist 与文档职责
@@ -173,7 +173,7 @@ Runtime Compatibility 与 Managed Package Compatibility 分别实现和验证。
 | 文档 | 权威职责 |
 | --- | --- |
 | 本 Developer Guide | Entry / Navigation，选择路径及验收清单，不重复定义底层协议 |
-| [EXTENSION-API](EXTENSION-API.md) | Runtime / Lifecycle / Surface / Shortcut public API |
+| [EXTENSION-API](EXTENSION-API.md) | Runtime / Lifecycle / Surface / Shortcut / Native Window / Back public API |
 | [EXTENSION-PACKAGE](EXTENSION-PACKAGE.md) | Managed install / update / physical uninstall 的包格式、验证与边界 |
 | [LAUNCHER-PROTOCOL](LAUNCHER-PROTOCOL.md) | Standalone ↔ Hub dual-mode integration |
 | [ICON-GUIDELINE](ICON-GUIDELINE.md) | Presentation asset guidance |

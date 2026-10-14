@@ -1,14 +1,14 @@
 # Extension Ecosystem
 
-当前正式基线：Hub **0.8.2**，Production Registry **0.6.1**；各项目独立维护依赖、构建、测试与版本。开发适配从 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md) 开始。Registry是可选在线目录服务，不是Core启动依赖，不托管社区软件包。目录失效不会停用已安装代码。
+当前 Hub 源码版本为 **0.8.3**，正式发布状态与附件见 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases)；Production Registry **0.6.1**。各项目独立维护依赖、构建、测试与版本。开发适配从 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md) 开始。Registry是可选在线目录服务，不是Core启动依赖，不托管社区软件包。目录失效不会停用已安装代码。
 
-本仓库 0.8.3 源码等待 Owner 发布审核。Back Navigation 与 Native Window 属于可选 Runtime 能力，不改变 Catalog 投稿资格、产品身份、Package v1 或作者正式发行状态；第三方需主动接入 Native Window 才获得完整原生窗口控制。
+Back Navigation 与 Native Window 属于可选 Runtime 能力，不改变 Catalog 投稿资格、产品身份、Package v1 或作者正式发行状态；第三方需主动接入 Native Window 才获得完整原生窗口控制。
 
 ## 社区作者的三种参与方式
 
 1. **普通投稿／外部项目**：公开 GitHub 项目填写 Repository，无需改业务或 UI，缺少机器包时跳转作者 GitHub。Discord 作品填写作者、名称、简介和原帖链接，只跳转原帖，不自动读取或永久缓存附件。
 2. **GitHub Managed Package**：酒馆扩展在作者自己的公开 Release 提供标准 [Package v1](EXTENSION-PACKAGE.md)，通过校验后由 Hub 安装、更新和物理卸载。仓库布局不受要求。
-3. **Hub-native Runtime Integration**：通过 [Extension API v1](EXTENSION-API.md) 接入生命周期，并按需选择蜂窝 Launcher、Surface 和外部 Shortcut；这是运行期协作，不会自动产生机器安装包。
+3. **Hub-native Runtime Integration**：通过 [Extension API v1](EXTENSION-API.md) 接入生命周期，并按需选择蜂窝 Launcher、Surface、Shortcut、Native Window 和 Back Navigation；这是运行期协作，不会自动产生机器安装包。
 
 三种路径可以组合。**能被 Catalog 收录 ≠ 支持 Managed Install；Runtime Compatibility ≠ Managed Package Compatibility。** Launcher 和双模式可选，后台 Extension 无需 `open()`。
 
