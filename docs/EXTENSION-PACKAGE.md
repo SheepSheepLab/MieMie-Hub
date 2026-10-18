@@ -2,7 +2,7 @@
 
 这是一份机器安装兼容规范，不是安全审核或作者认证。社区作者保留软件、仓库和 Release 的所有权与维护权；Registry 只保存目录元数据及投稿身份，不镜像软件文件。未适配本规范的公开 GitHub 项目仍可收录，按钮显示“查看 GitHub”；Discord 项目只跳转作者原帖，不保存附件地址，不自动安装。
 
-Hub 0.8.3 使用 Package v1；Shortcut、Back Navigation 与 Native Window 是可选 Runtime 能力，不增加 Package 必填字段。开启或关闭独立悬浮球不改变符合本规范的安装、更新和物理卸载资格。适配路径与两个独立 Gate 见 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md)；Runtime 生命周期见 [Extension API v1](EXTENSION-API.md)。满足包格式不等于已验证 Runtime 运行兼容性。
+Hub 0.9.0 开发候选使用 Runtime API v2 + Package v1（尚未发行）；Back Navigation 与 Unified Native Window 是可选 Runtime 能力，不增加 Package 必填字段。开启或关闭独立悬浮球不改变符合本规范的安装、更新和物理卸载资格。适配路径与两个独立 Gate 见 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md)；Runtime 生命周期见 [Extension API v2](EXTENSION-API.md)。满足包格式不等于已验证 Runtime 运行兼容性。
 
 ## 最小发布要求
 
@@ -13,7 +13,7 @@ Hub 0.8.3 使用 Package v1；Shortcut、Back Navigation 与 Native Window 是�
 3. `MieMie-Extension-update.json`，最大 64 KiB。
 4. GitHub Release Asset API 为以上两个文件提供 `sha256:<hex>` digest。缺失 digest 时拒绝安装。
 
-下载来自作者自己仓库的官方 GitHub API/Release，不接受机器元数据中另行指定的任意下载 URL。最高有效三段式 SemVer Release 作为当前候选；忽略 draft 和无效 tag，包含 Pre-release。第一版最多扫描 1,000 个 Release，超出时失败而不猜测。最新版缺少机器元数据时按外部项目处理，不默默安装旧版。
+下载来自作者自己仓库的官方 GitHub API/Release，不接受机器元数据中另行指定的任意下载 URL。最高有效三段式 SemVer Release 作为当前候选；忽略 draft 和无效 tag，包含 Pre-release。第一版最多扫描 1,000 个 Release，超出时失败而不猜测。最新版缺少机器元数据时按外部项目处理；最高版本 API 不兼容时明确拒绝，不默默选择旧版。
 
 ## Manifest
 
@@ -22,7 +22,7 @@ Hub 0.8.3 使用 Package v1；Shortcut、Back Navigation 与 Native Window 是�
 ```json
 {
   "schemaVersion": 1,
-  "apiVersion": 1,
+  "apiVersion": 2,
   "id": "example.background-helper",
   "name": "Development Fixture",
   "version": "1.2.3",
@@ -33,15 +33,29 @@ Hub 0.8.3 使用 Package v1；Shortcut、Back Navigation 与 Native Window 是�
   "homepage": "https://github.com/ExampleAuthor/ExampleRepository",
   "license": "MIT",
   "icon": "assets/icon.png",
-  "hubApi": {"min": 1, "max": 1}
+  "hubApi": {"min": 2, "max": 2}
 }
 ```
 
-必填：schemaVersion、apiVersion、稳定 id、name、version、author、description、entry、repository、license。`entry` 说明作者入口，第一版实际执行的是发布 JSON 中已经构建的完整 `content`，不会从元数据动态 import。`hubApi` 可选，若提供则须包含 API v1。仓库和作者不必使用 MieMie 品牌视觉或 GPL；作者声明自身许可证。
+必填：schemaVersion、apiVersion、稳定 id、name、version、author、description、entry、repository、license。`entry` 说明作者入口，第一版实际执行的是发布 JSON 中已经构建的完整 `content`，不会从元数据动态 import。`hubApi` 可选，若提供则 min/max 必须为正的安全整数，min≤max，且包含所声明的 apiVersion。仓库和作者不必使用 MieMie 品牌视觉或 GPL；作者声明自身许可证。
 
-`id` 使用小写字母/数字开头、其余小写字母/数字/点/下划线/短横线，共 2～80 字符；名称最多 80 字符。`contributes.launcher` 若提供则标题为 1～60 字符，`launcher.icon` 仍是最多 16 字符的短文本/emoji，图片使用顶层 `icon`，与 Runtime v1 既有校验一致。
+`id` 使用小写字母/数字开头、其余小写字母/数字/点/下划线/短横线，共 2～80 字符；名称最多 80 字符。`contributes.launcher` 若提供则标题为 1～60 字符，`launcher.icon` 仍是最多 16 字符的短文本/emoji，图片使用顶层 `icon`，与 Runtime 的标题和图标校验一致。
 
 `icon`、`homepage` 和 `contributes.launcher` 均可选。没有 Launcher 的后台 Extension 仍可安装、启停和卸载。不要求 `open()`；Runtime 单独处理无效 Launcher。`icon` 可使用 HTTPS URL 或指向固定 Release tag 对应源码的相对路径，不使用 `javascript:`、`data:`、上级目录或协议相对 URL。Hub 按 Manifest → Catalog → 默认图标选择资源，并使用统一圆形容器；不猜测仓库图片。
+
+## Runtime 兼容与机器格式
+
+Manifest Schema、Managed Package、Machine Metadata、Build Identity 的 Schema 均保持 **1**。`apiVersion` 独立声明 Runtime 契约。Package 结构校验可识别合法 API 1、2 及未知正整数声明；只有 API 2 可成为当前 Hub 的安装／更新目标。缺失、错误类型、非法范围属于 `manifest` 错误；结构合法但 Runtime 不支持属于 `api-incompatible`，不能混称包格式损坏。
+
+Hub 在预览和写入前重新校验目标 API，并继续执行全部附件及身份验证。`packageValid` 表示机器元数据与 Release 附件锁一致，尚不表示脚本附件已下载或 Runtime 成功；`installable` 还要求目标 API 受支持，实际写入仍须完成全部字节验证。Catalog 的安装状态仅是服务端快照，客户端必须独立验证，不接受 Catalog 的兼容声明代替本机判断。
+
+## 已有安装的 API 状态
+
+构建身份行没有 apiVersion。已识别物理安装默认为 **API 未确认**；不从产品名、仓库名、业务字符串或最新 Release 猜测已安装版本的 API。
+
+用户选择“核验 API”时，读取原仓库 `v<已安装版本>` 对应的 Release，验证元数据、两个 Asset digest、完整附件、contentSha256、Product ID、固定 Script ID、Repository 及 Release 复读，并要求发行包 content 与当前安装内容逐字相同。仅此证据可标为“API 2 声明已核验”或“版本不兼容”。证据仅在当前管理器内存保留并绑定完整 content；更改内容或重载后需要重新核验。无法取得可靠证据时保持未确认，不删除脚本或数据。
+
+合法 API1 包仍可识别物理身份、显式停用、确认卸载，以及在原身份、稳定 Script ID、数据保护、目标 Release 和 API2 校验全部满足时升级。不运行 API1 Runtime。开启物理脚本前也需核验对应版本，未确认或不兼容时拒绝；不会为历史脚本恢复 Legacy Shortcut 或旧窗口系统。
 
 ## 构建身份行
 
@@ -124,4 +138,8 @@ Hash 只验证完整性和一致性，不证明作者身份、代码善意或安
 
 更新同时写入原全局脚本的 content 和名称末尾版本号，保留实例 ID、用户自定义名称主体、data、启用状态和文件夹位置。与 Hub 自更新共用同一字段写入函数；名称没有版本时追加，有旧版本时替换（无需与当前运行版本一致）。名称只用于展示，安装版本与身份仍来自严格校验的构建标记。
 
-写入前确认内存内容及名称与 SillyTavern 服务器已保存记录一致。写入后重新读取宿主树和同源保存接口，只有实例 ID、完整内容与目标包一致，且保存后的名称与写入目标一致，且原本运行中的原生 Extension 已注册目标版本，才显示更新完成。保存延迟期间等待确认；超时、拒绝保存或内容不一致均不宣称成功。保存版本与运行版本不一致时分别显示，不自动刷新、不回滚覆盖并发编辑。没有保存核验接口时拒绝写入更新。宿主设置只在本机同源接口读取，不发送给 GitHub 或 Registry。
+写入前确认内存内容及名称与 SillyTavern 服务器已保存记录一致。写入后重新读取宿主树和同源保存接口，只有实例 ID、完整内容与目标包一致，且保存后的名称与写入目标一致，且启用状态与文件夹均开启、存在 Runtime 确认接口时，Extension 已注册并启用目标 API2 版本（Bootstrap 同时核对 Product ID 与 Repository），才显示更新完成。保存延迟期间等待确认；超时、拒绝保存或内容不一致均不宣称成功。保存版本与运行版本不一致时分别显示，不自动刷新、不回滚覆盖并发编辑。没有保存核验接口时拒绝写入更新。停用脚本或停用文件夹仍保留停用状态，保存可以确认，但不会宣称新版运行；API1→API2 且脚本开启时，同样等待首次 API2 注册，不能因旧 Runtime 不存在而跳过确认。宿主设置只在本机同源接口读取，不发送给 GitHub 或 Registry。
+
+## 生产服务 Gate
+
+Registry 0.6.1 的实际 Manifest 校验仅接受 API1。Hub API2 的客户端与隔离 Fixture 通过不代表生产 Catalog／Relay 兼容。Registry API2 Compatibility 与 Registry Origin Compatibility 分别 Pending；不通过改变 Origin、关闭 CORS 或跳过验证补救。正式官方 API2 产品与 Managed Package 生产验收另行进行。

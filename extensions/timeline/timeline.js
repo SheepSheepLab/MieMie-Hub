@@ -4,7 +4,7 @@ export function createTimelineExtension(extensionAPI, resources) {
   let controller;
   return {
     activate() { controller = mountTimeline(extensionAPI, resources); },
-    open() { return controller.open(); },
+    open(surfaceLease) { return controller.open(surfaceLease); },
     deactivate() { controller?.dispose(); },
   };
 }
@@ -13,6 +13,8 @@ function mountTimeline(extensionAPI, resources) {
   const host = window.parent, doc = host.document;
   const KEY = '__timelineSwitcherV1';
   if (host[KEY]) throw Error('独立时间线已运行，请停用旧时间线后再启用此扩展。');
+  let surfaceLease=null;
+  const currentSurface=lease=>!disposed&&!extensionAPI.signal.aborted&&lease===surfaceLease&&lease?.isCurrent()===true;
   let disposed = false, busy = false, epoch = 0, snapshot = null, needsReload = false;
   const root = doc.createElement('div'), view = doc.createElement('div');
   root.id = 'miemie-timeline-extension'; root.className = 'miemie-extension-surface';
@@ -139,6 +141,7 @@ function mountTimeline(extensionAPI, resources) {
     root.querySelectorAll('[data-refresh],.ts-choice,select,input,.ts-route-trigger,.ts-mode-button').forEach(b => { b.disabled = busy || needsReload || (b.className==='ts-mode-button'&&!autoAvailable); });
   }
   async function refresh() {
+    const lease=surfaceLease;if(!currentSurface(lease))return;
     paintTimelineCard();
     if (busy || disposed || needsReload) return;
     closePicker();
@@ -147,14 +150,14 @@ function mountTimeline(extensionAPI, resources) {
     try {
       const id = identity();
       if (!id) { status.textContent = '请打开一个角色的单人聊天。群聊暂不支持。'; return; }
-      await api();
+      await api();if(!currentSurface(lease))return;
       const books = [];
       for (const name of id.books) {
-        const data = await read(name); assertCurrent(id.key, token);
+        const data = await read(name); if(!currentSurface(lease))return;assertCurrent(id.key, token);
         const found = identify(Object.values(data.entries));
         if (found.entries.length) books.push({name,data,...found});
       }
-      assertCurrent(id.key, token);
+      if(!currentSurface(lease))return;assertCurrent(id.key, token);
       snapshot = {id,books};
       status.textContent = books.length ? id.name + ' · 点击一项即可切换' : '当前角色绑定的世界书中没有识别到时间线。请确认已导入并绑定角色世界书，再刷新。';
       for (const book of books) {
@@ -170,7 +173,7 @@ function mountTimeline(extensionAPI, resources) {
         }
       }
       controls();
-    } catch (error) { if (token === epoch && !disposed) { snapshot=null; list.replaceChildren(); status.textContent=error.message; } }
+    } catch (error) { if (token === epoch && currentSurface(lease)) { snapshot=null; list.replaceChildren(); status.textContent=error.message; } }
   }
   async function writeBook(name,uid,expected,guard) {
     let committed=false;
@@ -410,17 +413,18 @@ function mountTimeline(extensionAPI, resources) {
     trigger.addEventListener('click',()=>show());
     trigger.addEventListener('keydown',event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();show(event.key==='ArrowUp');}});
   }
-  function open(){
-    if(disposed)return false;
+  function open(lease){
+    if(disposed||!lease?.isCurrent()||extensionAPI.signal.aborted)return false;
+    surfaceLease=lease;
     refresh();
-    return extensionAPI.showPanel();
+    return extensionAPI.showPanel(lease);
   }
   function outsidePointer(event){if(picker&&!picker.popup.contains(event.target)&&!picker.trigger.contains(event.target))closePicker();}
   function resized(){closePicker();}
   function panelScrolled(){closePicker();}
   root.querySelector('[data-close]').hidden=true;
   const back=doc.createElement('button');back.type='button';back.className='mm-return';back.textContent='返回';
-  back.onclick=()=>extensionAPI.closePanel();panel.appendChild(back);
+  back.onclick=()=>currentSurface(surfaceLease)?extensionAPI.closePanel(surfaceLease):false;panel.appendChild(back);
   panel.querySelector('[data-tool-icon]').src=resources.icon;
   panel.tabIndex=-1;
   doc.addEventListener('pointerdown',outsidePointer,true);host.addEventListener('resize',resized);panel.addEventListener('scroll',panelScrolled);
@@ -437,7 +441,7 @@ function mountTimeline(extensionAPI, resources) {
   },800);
   function cleanup(){
     if(disposed)return;
-    disposed=true;epoch++;cleanupPresentation();cancelGeneration();
+    disposed=true;surfaceLease=null;epoch++;cleanupPresentation();cancelGeneration();
     subscriptions.forEach(s=>s.stop());clearInterval(timer);root.remove();
     extensionAPI.signal.removeEventListener('abort',cleanup);
     if(host[KEY]?.root===root)delete host[KEY];
@@ -446,6 +450,7 @@ function mountTimeline(extensionAPI, resources) {
   extensionAPI.signal.addEventListener('abort',cleanup,{once:true});
   installEvents();
   extensionAPI.attachPanel(panel,{icon:resources.icon});
+  extensionAPI.registerBackHandler(()=>{if(!picker)return false;closePicker(true);return true;});
   const controller={open,root,closePicker,dispose:cleanup};
   host[KEY]=controller; // Compatibility bridge owned solely by the Extension.
   return controller;

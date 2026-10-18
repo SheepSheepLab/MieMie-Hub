@@ -13,7 +13,7 @@ const encode = value => new TextEncoder().encode(typeof value === 'string' ? val
 const hash = value => createHash('sha256').update(value).digest('hex');
 const clone = value => structuredClone(value);
 const code = expected => error => error?.code === expected;
-const manifest = (version = '1.0.1', extra = {}) => ({schemaVersion: 1, apiVersion: 1, id: ID, name: 'Development Fixture', author: 'Test Data', version,
+const manifest = (version = '1.0.1', extra = {}) => ({schemaVersion: 1, apiVersion: 2, id: ID, name: 'Development Fixture', author: 'Test Data', version,
   description: 'Inert package test data', entry: 'extension.js', repository: REPO, license: 'GPL-3.0-or-later', ...extra});
 const content = (version = '1.0.1', extra = {}) => '// MieMie-Extension-Build: ' + JSON.stringify({schemaVersion: 1, productId: ID, version, scriptId: PACKAGE_ID, repository: REPO, ...extra}) + '\n(() => { /* Development Fixture: never evaluated by manager tests */ })();';
 const script = (version = '1.0.1', extra = {}) => ({type: 'script', enabled: true, name: 'My renamed script', id: 'installed-instance', content: content(version), info: 'My custom information',
@@ -39,6 +39,7 @@ function setup(t, f = fixture(), options = {}) {
     calls.push({url, init});
     if (url === API) return response(encode(options.repoInfo || {private: false, full_name: 'DevelopmentFixture/Example'}), url);
     if (url.startsWith(API + '/releases?')) return response(encode(options.releases || [f.release]), url);
+    if (url === API + '/releases/tags/v1.0.1') return response(encode(f.release), url);
     if (url === API + '/releases/201') {releaseReads++; return response(encode(options.releaseAt ? options.releaseAt(releaseReads, clone(f.release)) : f.release), url);}
     if (url === API + '/releases/assets/302') return response(options.metadataBytes || f.metadataBytes, options.redirect || url);
     if (url === API + '/releases/assets/301') {options.beforeDownload?.(); return response(options.bytes || f.bytes, options.redirect || url);}
@@ -63,7 +64,7 @@ test('repository URLs accept only public GitHub repo shape, never proxies or cre
 test('optional Launcher, background extension, manifest identity and icon constraints', () => {
   assert.equal(validateExtensionManifest(manifest(), REPO).id, ID);
   assert.equal(validateExtensionManifest(manifest('1.0.1', {contributes: {launcher: {title: 'Development Fixture', icon: '🧩'}}}), REPO).id, ID);
-  for (const patch of [{version: '1.0.1-alpha.1'}, {version: '01.1.1'}, {version: '1.0.1\n'}, {id: 'miemie.hub'}, {author: ''}, {apiVersion: 2}, {hubApi: {min: 2, max: 2}}, {repository: 'https://github.com/Someone/Else'}, {icon: 'javascript:alert(1)'}, {icon: '../private.png'}, {icon: '//evil.test/icon.png'}]) assert.throws(() => validateExtensionManifest(manifest('1.0.1', patch), REPO));
+  for (const patch of [{version: '1.0.1-alpha.1'}, {version: '01.1.1'}, {version: '1.0.1\n'}, {id: 'miemie.hub'}, {author: ''}, {apiVersion: '2'}, {hubApi: {min: 1, max: 1}}, {repository: 'https://github.com/Someone/Else'}, {icon: 'javascript:alert(1)'}, {icon: '../private.png'}, {icon: '//evil.test/icon.png'}]) assert.throws(() => validateExtensionManifest(manifest('1.0.1', patch), REPO));
   assert.equal(validateExtensionManifest(manifest('1.0.1', {icon: 'assets/icon.png'}), REPO).icon, 'assets/icon.png');
 });
 
@@ -164,7 +165,7 @@ test('non-global and unknown host fields refuse mutation', async t => {
 });
 
 test('physical enable/disable and uninstall never affect other scripts and create no backup', async t => {
-  const sys = setup(t, fixture(), {trees: [folder([script(), other()])]}); const untouched = sys.read()[0].scripts[1];
+  const sys = setup(t, fixture({version: '1.0.1'}), {trees: [folder([script(), other()])]}); const untouched = sys.read()[0].scripts[1];
   await sys.manager.setEnabled(ID, false); assert.equal(sys.read()[0].scripts[0].enabled, false);
   await sys.manager.setEnabled(ID, true); assert.equal(sys.read()[0].scripts[0].enabled, true);
   const result = await sys.manager.uninstall(ID); assert.equal(result.physical, true); assert.equal(sys.backups.length, 0);
@@ -248,7 +249,7 @@ test('untrusted old Polisher name or header alone never becomes manageable', asy
   await assert.rejects(sys.manager.update('miemie.polisher'), code('not-global'));
 });
 
-test('installable manifest is compatible with Runtime v1 ID, name and launcher structural limits', () => {
+test('installable manifest is compatible with Runtime v2 ID, name and launcher structural limits', () => {
   assert.equal(validateExtensionManifest(manifest('1.0.1', {id: 'ab'}), REPO).id, 'ab');
   for (const patch of [{id: 'a'.repeat(81)}, {name: 'a'.repeat(81)}, {contributes: {launcher: {}}}, {contributes: {launcher: null}},
     {contributes: {launcher: {title: 'a'.repeat(61)}}}, {contributes: {launcher: {title: 'valid', icon: 'a'.repeat(17)}}}]) assert.throws(() => validateExtensionManifest(manifest('1.0.1', patch), REPO), code('manifest'));

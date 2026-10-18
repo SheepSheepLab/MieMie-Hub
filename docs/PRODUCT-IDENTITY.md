@@ -25,5 +25,5 @@ stable. Historical strings in published artifacts and compatibility detectors
 must remain intact.
 
 A native launcher is an application-owned presentation component. Reuse it in
-Standalone (calls the application's own Surface adapter) and opt-in Hub Shortcut
-(calls the supplied `open`). Neither mount creates an application instance.
+Standalone (calls the application's own window adapter) and opt-in Hub Native Window
+(`mount` receives the supplied `open` callback; see [Extension API](EXTENSION-API.md#unified-native-window)). Neither mount creates an application instance.

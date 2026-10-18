@@ -1,6 +1,6 @@
 {
   "name": "miemie-hub",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "license": "GPL-3.0-or-later",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "node tools/build.mjs",
-    "pretest": "node tools/build.mjs",
+    "pretest": "node tools/build.mjs && node tools/build.mjs --bundled= --output-dir=build/phase1",
     "test": "node --test tests/*.test.mjs",
     "test:integration": "node tools/build.mjs && node tests/integration/run.mjs",
     "test:ecosystem": "node tests/ecosystem/run.mjs"

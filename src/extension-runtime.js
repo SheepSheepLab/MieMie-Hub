@@ -1,4 +1,21 @@
 import {HUB_PRODUCT} from './product-identity.js';
+// The schema describes the declaration; the Runtime supports exactly API 2.
+// Package identity and machine format validation do not grant execution rights.
+export function validateExtensionAPIDeclaration(manifest) {
+  const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (!object(manifest) || manifest.schemaVersion !== 1 || !Number.isSafeInteger(manifest.apiVersion) || manifest.apiVersion < 1) {
+    throw Object.assign(Error('Manifest Schema 1 与正整数 apiVersion 必须明确声明。'), {code: 'manifest'});
+  }
+  const range = manifest.hubApi;
+  if (range !== undefined && (!object(range) || !Number.isSafeInteger(range.min) || !Number.isSafeInteger(range.max)
+      || range.min < 1 || range.min > range.max || range.min > manifest.apiVersion || range.max < manifest.apiVersion)) {
+    throw Object.assign(Error('hubApi 范围必须有效并包含声明的 API 版本。'), {code: 'manifest'});
+  }
+}
+export function assertExtensionRuntimeCompatibility(manifest) {
+  validateExtensionAPIDeclaration(manifest);
+  if (manifest.apiVersion !== 2) throw Object.assign(Error('此扩展声明 API ' + manifest.apiVersion + '，当前 Hub 仅支持 Extension API 2；未执行安装或启用。'), {code: 'api-incompatible'});
+}
 // Local, cooperative extensions only. This is not a package loader or sandbox.
 export function createExtensionRuntime(options = {}) {
   const records = new Map();
@@ -7,7 +24,7 @@ export function createExtensionRuntime(options = {}) {
   let disposed = false;
   const messageOf = error => error instanceof Error ? error.message : String(error);
   const copy = value => JSON.parse(JSON.stringify(value));
-  const failResult = error => ({ok: false, error: messageOf(error)});
+  const failResult = error => ({ok: false, error: messageOf(error), ...(error?.code ? {code: error.code} : {})});
 
   function notify(kind, record) {
     try { options.onChange?.({kind, extension: snapshot(record)}); }
@@ -24,15 +41,14 @@ export function createExtensionRuntime(options = {}) {
       launcherAvailable: record.state === 'enabled' && record.session?.launcherAvailable === true,
       launcherError: record.launcherError,
       nativeWindowAvailable: record.state === 'enabled' && !!record.session?.hasNativeWindow,
-      shortcutLauncherAvailable: record.state === 'enabled' && !!record.session?.hasShortcut && !!record.session?.launcherAvailable,
     };
   }
   function validate(manifest) {
     const m = copy(manifest);
-    if (m.schemaVersion !== 1 || m.apiVersion !== 1) throw Error('仅支持 Manifest / API 版本 1。');
+    assertExtensionRuntimeCompatibility(m);
     if (typeof m.id !== 'string' || !/^[a-z0-9][a-z0-9._-]{1,79}$/.test(m.id)) throw Error('扩展 ID 无效。');
     if (typeof m.name !== 'string' || !m.name.trim() || m.name.length > 80) throw Error('扩展名称无效。');
-    if (typeof m.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(m.version)) throw Error('扩展版本需使用 x.y.z 格式。');
+    if (typeof m.version !== 'string' || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?$(?![\s\S])/.test(m.version)) throw Error('扩展版本需使用合法的 x.y.z 格式。');
     if (m.contributes?.launcher !== undefined) {
       const launcher = m.contributes.launcher;
       if (!launcher || typeof launcher !== 'object' || typeof launcher.title !== 'string' || !launcher.title.trim() || launcher.title.length > 60) throw Error('快捷入口标题无效。');
@@ -125,28 +141,15 @@ export function createExtensionRuntime(options = {}) {
         if (session.controller.signal.aborted) release();
         return true;
       },
-      registerShortcutLauncher(provider) {
-        if (!current(record,session)) return false;
-        if (!session.hasPanel || !record.manifest.contributes?.launcher) throw Error('Shortcut 需要主面板和 Launcher。');
-        if (session.hasShortcut || typeof provider?.mount !== 'function') throw Error('Shortcut capability 无效或重复。');
-        const mount=provider.mount;
-        const detach=options.onShortcut?.(record.manifest.id, context=>mount(context));
-        if(typeof detach!=='function')throw Error('Hub 未提供 Shortcut capability。');
-        session.hasShortcut=true;
-        // Revoke presentation immediately, before asynchronous business teardown.
-        session.controller.signal.addEventListener('abort',detach,{once:true});
-        session.cleanups.push(()=>{session.controller.signal.removeEventListener('abort',detach);detach();});
-        if(record.state==='enabled')notify('launcher',record);
-        return true;
-      },
       registerNativeWindow(provider) {
         if (!current(record,session)) return false;
         if (!session.hasPanel || !record.manifest.contributes?.launcher) throw Error('Native Window 需要主面板和 Launcher。');
-        if (session.hasNativeWindow || typeof provider?.open !== 'function' || typeof provider?.release !== 'function' || (provider.ownsEvent !== undefined && typeof provider.ownsEvent !== 'function')) throw Error('Native Window capability 无效或重复。');
+        if (session.hasNativeWindow || typeof provider?.mount !== 'function' || typeof provider?.open !== 'function' || typeof provider?.release !== 'function' || (provider.ownsEvent !== undefined && typeof provider.ownsEvent !== 'function')) throw Error('Native Window capability 无效或重复。');
         // Capture only declared functions. No mutable provider or Runtime record escapes.
-        const {open,release,ownsEvent}=provider;
-        if([open,release,ownsEvent].some(fn=>guardedCallbacks.has(fn)))throw Error('Native Window 回调不能使用异步 api.guard()。');
-        const detach=options.onNativeWindow?.(record.manifest.id,Object.freeze({open,release,ownsEvent}));
+        const {mount,open,release,ownsEvent}=provider;
+        if([mount,open,release,ownsEvent].some(fn=>guardedCallbacks.has(fn)))throw Error('Native Window 回调不能使用异步 api.guard()。');
+        const retire=options.onNativeWindow?.(record.manifest.id,Object.freeze({mount,open,release,ownsEvent}));
+        const detach=typeof retire==='function'?()=>retire(disposed?'hub-dispose':'session-end'):null;
         if(typeof detach!=='function')throw Error('Hub 未提供 Native Window capability。');
         session.hasNativeWindow=true;
         session.controller.signal.addEventListener('abort',detach,{once:true});
@@ -154,14 +157,16 @@ export function createExtensionRuntime(options = {}) {
         if(record.state==='enabled')notify('launcher',record);
         return true;
       },
-      showPanel() {
+      showPanel(lease) {
         if (!current(record, session) || record.state !== 'enabled') return false;
         if (!session.hasPanel) throw Error('扩展尚未挂载面板。');
-        return options.onShowPanel?.(record.manifest.id);
+        if (!lease || session.surfaceLease !== lease || !lease.isCurrent()) return false;
+        return options.onShowPanel?.(record.manifest.id, lease) ?? false;
       },
-      closePanel() {
+      closePanel(lease) {
         if (!current(record,session) || record.state !== 'enabled' || !session.hasPanel) return false;
-        return options.onClosePanel?.(record.manifest.id) ?? false;
+        if (!lease || session.surfaceLease !== lease || !lease.isCurrent()) return false;
+        return options.onClosePanel?.(record.manifest.id, lease) ?? false;
       },
       registerBackHandler(handler) {
         if (!current(record, session)) return false;
@@ -308,8 +313,13 @@ export function createExtensionRuntime(options = {}) {
   function open(id) {
     const record = records.get(id), session = record?.session;
     if (!record || record.state !== 'enabled' || !session || !current(record, session)) return Promise.resolve(failResult('请先启用扩展。'));
+    // Capture intent before the Runtime queue; a late completion cannot mint one.
+    const lease = options.onRequestOpen?.(id);
+    session.surfaceLease = lease;
+    const valid = () => current(record, session) && record.state === 'enabled' && lease?.isCurrent() === true;
+    if (!valid()) return Promise.resolve({ok:false,cancelled:true});
     return enqueue(record, async () => {
-      if (!current(record, session) || record.state !== 'enabled') return {ok: false, cancelled: true};
+      if (!valid()) return {ok: false, cancelled: true};
       try {
         const handler = session.instance.open;
         if (typeof handler !== 'function') {
@@ -320,14 +330,15 @@ export function createExtensionRuntime(options = {}) {
         }
         const guarded = guardedCallbacks.get(handler);
         const callback = guarded?.session === session ? guarded.fn : handler;
-        if(session.hasNativeWindow&&options.onBeforeOpen?.(id)===false)throw Error('Native Window 未能释放控制权。');
-        await bounded(() => current(record, session) ? callback.call(session.instance) : false, '打开');
-        if (!current(record, session)) return record.error ? failResult(record.error) : {ok: false, cancelled: true};
+        if(options.onBeforeOpen?.(id,lease)===false)throw Error('Native Window 未能释放控制权。');
+        await bounded(() => valid() ? callback.call(session.instance, lease) : false, '打开');
+        if (!valid()) return record.error ? failResult(record.error) : {ok: false, cancelled: true};
         if (record.launcherError) { record.launcherError = ''; notify('launcher', record); }
         return {ok: true};
       }
       catch (error) {
-        if (!current(record, session)) return {ok: false, cancelled: true};
+        if (!valid()) return {ok: false, cancelled: true};
+        options.onCancelOpen?.(id,lease);
         return launcherFailure(record, '扩展界面打开失败：' + messageOf(error));
       }
     });

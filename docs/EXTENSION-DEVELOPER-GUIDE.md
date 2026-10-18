@@ -1,4 +1,4 @@
-# MieMie Hub Extension Developer Guide v1
+# MieMie Hub Extension Developer Guide
 
 社区 Extension 作者与 Codex、Claude 等 coding agent 从这里选择适配路径。
 
@@ -6,10 +6,10 @@ Current compatibility baseline：
 
 | 项目 | 当前基线 |
 | --- | --- |
-| MieMie Hub 源码 | 0.8.3；正式发布状态与附件见 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) |
-| Extension API | v1 |
+| MieMie Hub 源码 | 0.9.0 开发候选，未发行；正式发布状态与附件见 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) |
+| Extension API | v2 |
 | Extension Package | v1 |
-| Production Registry | 0.6.1 |
+| Registry 依赖 | 0.6.1 仅校验 API1 Manifest；API2 与 Origin 生产兼容须分别验证 |
 
 本指南只负责入口与导航，不新增 Protocol、Package Format 或 API Version；详细契约仍以各自规范为准。**Catalog 收录、Runtime Compatibility 和 Managed Package Compatibility 是不同判断。** 能在 Hub 运行，不代表可以由 Hub 在线安装更新；有安装包，也不代表其 Runtime、业务或安全性已经验收。
 
@@ -22,9 +22,8 @@ Current compatibility baseline：
 | Runtime registration | 想由 Hub 管理运行期生命周期时需要；普通外部投稿无需接入 | [EXTENSION-API](EXTENSION-API.md) |
 | Honeycomb Launcher | 可选；需要蜂窝入口时声明，后台扩展无需提供 | [EXTENSION-API](EXTENSION-API.md) |
 | Surface | 可选；使用 Hub 面板展开／返回动画时接入 | [EXTENSION-API](EXTENSION-API.md) |
-| Back Navigation | 可选；希望 Escape 先处理内部交互层时采用；未采用时使用默认返回 | [EXTENSION-API](EXTENSION-API.md#optional-back-navigation-capability-api-v1) |
-| Shortcut Launcher | 可选；提供扩展自己的独立悬浮球入口，需主面板、Launcher 和实例 `open()` | [EXTENSION-API](EXTENSION-API.md) |
-| Native Window | 可选；与 Shortcut 组合，原生入口自行管理窗口，与蜂窝共享业务实例 | [EXTENSION-API](EXTENSION-API.md#optional-native-window-ownership-api-v1) |
+| Back Navigation | 可选；希望 Escape 先处理内部交互层时采用；未采用时使用默认返回 | [EXTENSION-API](EXTENSION-API.md#optional-back-navigation) |
+| Native Window | 可选；统一注册 mount/open/release，原生入口自行管理窗口，与蜂窝共享业务实例 | [EXTENSION-API](EXTENSION-API.md#unified-native-window) |
 | Standalone dual-mode | 可选；承诺有无 Hub 均可运行时，需要正确处理交接 | [LAUNCHER-PROTOCOL](LAUNCHER-PROTOCOL.md) |
 
 ## 1. 我只想把作品投稿到 Hub
@@ -41,10 +40,13 @@ Current compatibility baseline：
 按 [Extension Package v1](EXTENSION-PACKAGE.md) 准备作者自己的 Public GitHub Repository 和 Release：
 
 - 纯三段式 SemVer `x.y.z` 与对应 `vX.Y.Z` tag；Release 可标为 Pre-release，但版本字符串本身不带后缀。
+- Manifest `schemaVersion:1, apiVersion:2`；可选 hubApi 范围包含声明的 API2，格式以 Package 规范为准。
 - 标准酒馆助手单脚本 JSON，包含完整构建内容及空 `data`。
 - `MieMie-Extension-update.json` 和完整 Manifest。
 - 稳定的 `productId`、固定导出 `scriptId`、匹配的构建身份行与 repository identity。
 - GitHub 为两个 Release Assets 提供的 digest、最终脚本附件 SHA-256，以及解析后 `content` 的 `contentSha256`。
+
+API2 是 Runtime 契约；Package v1 是机器安装契约，机器元数据与构建身份 Schema 均为 1。已有包的身份行没有 API 版本；必须核验对应已安装版本的 Manifest 和 content，不能使用最新 Release 代替。旧 API1 包保留符合安全条件的升级／卸载能力，不恢复 API1 Runtime。
 
 这是 **Managed Package Compatibility**。文件格式、字段限制、版本选择、Release 复读、下载与写入边界均以 Package 规范为准，不自行增加下载 URL、跳过验证或要求用户提供 GitHub Token。
 
@@ -52,7 +54,7 @@ Current compatibility baseline：
 
 ## 3. 我要让工具进入 Hub 蜂窝 Launcher
 
-先完成 [Extension API v1](EXTENSION-API.md) 的 Runtime 注册与生命周期接入，再提供 `contributes.launcher` 和可调用的 `instance.open()`。Hub 负责蜂窝入口及布局，作者无需复制或实现蜂窝 UI。
+先完成 [Extension API v2](EXTENSION-API.md) 的 Runtime 注册与生命周期接入，再提供 `contributes.launcher` 和可调用的 `instance.open(surfaceLease)`。Hub 负责蜂窝入口及布局，作者无需复制或实现蜂窝 UI。
 
 Launcher 是可选运行期能力，不决定 Package 是否可安装。没有 Launcher 的后台扩展仍可运行、启停，并可按 Package 规范制作可管理的发行包。声明入口但没有可调用的 `open()`，不会获得可用 Launcher。
 
@@ -61,53 +63,37 @@ Launcher 是可选运行期能力，不决定 Package 是否可安装。没有 L
 按 [API 的 Surface 规范](EXTENSION-API.md) 组织已有面板：
 
 1. 在 `activate()` 中将主面板挂载到宿主 document，然后调用 `api.attachPanel(panel)`，并登记最终资源清理。
-2. 实例 `open()` 返回 `api.showPanel()`，让 Hub 从对应蜂窝入口展开面板。
-3. 面板关闭／返回调用 `api.closePanel()`，回到对应入口。
+2. 实例 `open(surfaceLease)` 返回 `api.showPanel(surfaceLease)`，让 Hub 从对应蜂窝入口展开面板。
+3. 面板关闭／返回调用 `api.closePanel(surfaceLease)`，回到对应入口。
 
 Extension 保持业务内容所有权；Hub 负责已接入面板的展示、位置和过渡。关闭面板不是停用、卸载或重置设置；不要在返回时创建第二个实例。完整示例、能力检测和清理要求见 API 文档。
 
 ### 可选：让 Escape 先返回工具内部一层
 
-使用 [Optional Back Navigation Capability](EXTENSION-API.md#optional-back-navigation-capability-api-v1)：
+使用 [Optional Back Navigation Capability](EXTENSION-API.md#optional-back-navigation)：
 在 `attachPanel()` 后，通过能力检测调用 `api.registerBackHandler(handler)`。
 处理器同步返回 `true` 表示已处理；同步返回 `false` 才由 Hub 关闭 Surface、恢复原入口。
 扩展自己管理内部状态，Hub 不读取内部 DOM 或页面栈。
 
 该能力不是适配 Hub 的必选项。未注册 Handler 时，Escape 使用默认 Surface 关闭行为，
-不会推断内部返回层级。保持默认行为无需修改代码、Manifest、Package、稳定 ID
-或 Launcher，也无需重新发布。
+不会推断内部返回层级。API2 扩展采用默认行为时，无需为 Back 增加额外的 Manifest 或 Package 字段。
 
 动画或草稿确认可异步执行，但处理器必须立即返回 `true`，不能返回 Promise，
 也不能用 `api.guard()` 包装。异步完成前检查 `api.signal`、请求的 `isCurrent()`
-和自己的操作有效性；`api.closePanel()` 始终是直接关闭，不再次触发处理器。
+和自己的操作有效性；`api.closePanel(surfaceLease)` 始终是直接关闭，不再次触发处理器。
 异常处理、长按、原生 Dialog、清理和完整示例以正式 API 文档为准。
 
-## 5. 我要保留自己的外部悬浮球
+## 5. 可选独立原生悬浮球
 
-可选使用 `api.registerShortcutLauncher({mount})`。先 `attachPanel()`，Manifest 声明 Launcher，同一实例提供 `open()`。Shortcut 是额外入口，不替代蜂窝入口，也不创建第二份业务。
+使用 [统一 Native Window](EXTENSION-API.md#unified-native-window)。在 `api.attachPanel(panel)` 后调用一次 `api.registerNativeWindow({mount, open, release, ownsEvent})`；`ownsEvent` 可选。`mount` 挂载入口并返回清理句柄，`open` 接收当前 Native Lease，`release` 同步释放展示控制权；蜂窝与原生入口共用业务实例。原生展示、手势、动画、弹窗、焦点由扩展负责；Hub 只管理控制权与系统前景。同步 release 必须取消旧任务，异步 UI 更新必须检查捕获的 Native Lease。
 
-作者控制 appearance、drag、dock、位置保存和自己的 presentation。`mount` 同步接收 `{open}`，点击入口使用这个回调，以便 Hub 捕获正确的打开来源；返回符合 API 契约的 `getOrigin`、`dispose` 等句柄。不要把自己实现的私有 controller 传作 Hub Runtime。
-
-Hub 不扫描第三方 DOM。用户在已安装页开启「显示悬浮球」后才挂载该入口，默认关闭；移除入口必须清理其 DOM 和事件。可选原生动画的完整契约见 [API 的 Shortcut 与 Native Presentation 说明](EXTENSION-API.md)。
-
-### 可选：双入口与完整原生窗口操作
-
-Shortcut Launcher 提供独立入口及可选动画；未接入 Native Window 时，窗口显隐、
-焦点与关闭由 Hub Surface 控制。完整原生操作使用 [Optional Native Window Ownership](EXTENSION-API.md#optional-native-window-ownership-api-v1)。
-同一 Session 的蜂窝入口走 Hub Surface，原生入口复用扩展自己的窗口控制逻辑。
-依据当前 Presentation Ownership 决定拖动、缩放和输入行为；Hub Runtime 存在
-不等于 Hub 正在控制当前窗口。
-同步交接控制权、取消原生动画及手势，异步完成检查 lease，不复制业务实例。
-不需要完整原生窗口的扩展无需接入；需要时由作者主动适配。
-Runtime Gate、Native Window Parity Gate 与 Managed Package Gate 分别验证。开启独立入口不删除蜂窝入口，也不改变符合 Package v1 的安装、更新和物理卸载资格。
-
-原生显隐、拖动、缩放、位置／尺寸记忆、动画、Esc 和焦点由扩展维护；Hub 不替作者实现这些业务 UI。Hub 展开时拥有前景，收起后恢复普通原生窗口交互。未适配该能力的正式第三方不会因升级 Hub 或开启悬浮球而自动获得完整原生操作。
+用户默认 OFF，ON 才挂载；入口偏好由 Hub 管理。挂载失败保留 ON 意图；OFF 后 release 失败显示错误并支持显式重试。详细签名和失败恢复以 API 文档为准。
 
 ## 6. 我要同时支持 Standalone + Hub
 
 按 [LAUNCHER-PROTOCOL](LAUNCHER-PROTOCOL.md) 管理交接，始终保持 **single business instance**。不能让 Standalone 启动一份业务，再由 Hub 启动第二份业务或第二层 Hook。
 
-Hub 接管前撤去冲突的独立展示，按自身适配器完成必要的串行清理，再通过 `extensions.provide()` 提供同一产品的工厂。保留既有业务实例的适配器只切换展示；不要为第二个入口重复初始化业务或 Hook。Hub 消失时，等待来源 lease 释放及旧 Hub 的 `whenDisposed` 清理完成，再恢复 Standalone。串行处理重复事件、双启动顺序、Hub 重载和异步清理，不把 disposed 事件等同于清理已完成。
+先区分 Hub 不存在与 Hub 存在但 API 不兼容：只有 `hub.apiVersion === 2` 才接入本契约；不兼容时明确提示，不能当作 Hub 不存在而绕过用户选择。Hub 接管前撤去冲突的独立展示，按自身适配器完成必要的串行清理，再通过 `extensions.provide()` 提供同一产品的工厂。保留既有业务实例的适配器只切换展示；不要为第二个入口重复初始化业务或 Hook。Hub 消失时，等待来源 lease 释放及旧 Hub 的 `whenDisposed` 清理完成，再恢复 Standalone。串行处理重复事件、双启动顺序、Hub 重载和异步清理，不把 disposed 事件等同于清理已完成。
 
 Hub 仍存在而用户已停用／注销扩展时，不得绕过用户选择自动复活独立业务。窗口关闭、Source Lease 撤回和 Runtime 停用各有不同用途，不能用其中一个代替其他操作。身份与存储继续使用本项目自己的稳定值。
 
@@ -115,15 +101,14 @@ Hub 仍存在而用户已停用／注销扩展时，不得绕过用户选择自�
 
 按 [EXTENSION-API](EXTENSION-API.md) 验证；可选项未采用时记录 N/A，不把它们当成所有扩展的强制要求。
 
-- [ ] Manifest 符合 API v1，使用项目自己的稳定 Extension ID。
+- [ ] Manifest 符合 API v2，使用项目自己的稳定 Extension ID。
 - [ ] `factory(api)` 返回符合契约的实例；`activate`／`deactivate` 可选，若提供则正确管理资源。
 - [ ] Hook、事件、请求、计时器、DOM 等均有清理；停用后迟到任务不会重新写入。
 - [ ] `provide`／`register`、启停、Runtime 注销及重复来源处理符合 API，尊重用户状态。
 - [ ] 若提供 Launcher，`contributes.launcher` 与 `open()` 配套，反复打开不新增业务实例。
 - [ ] 若采用 Surface，打开／返回／停用过程中面板与资源状态正确。
-- [ ] 若采用 Shortcut，开关、入口来源和 dispose 正确，与蜂窝共用实例和面板。
 - [ ] 若采用 Back Handler，独立 Escape 一次返回一层、长按不连退，异常保留草稿，关闭后焦点与真实 Origin 相符；未接入时维持原行为。
-- [ ] 若采用 Native Window，蜂窝与原生入口共用同一业务实例；拖动、缩放、开关、草稿和原生输入保持，切换及撤销同步结束旧手势／动画，失效 lease 不再写入。
+- [ ] 若采用 Native Window，入口开关、Mount signal 和 dispose 正确；蜂窝与原生入口共用同一业务实例；拖动、缩放、开关、草稿和原生输入保持，切换及撤销同步结束旧手势／动画，失效 lease 不再写入。
 - [ ] Hub 展开时原生普通窗口／球不穿透前景；收起完成后恢复交互。浏览器 top-layer modal 按原生规则单独验收。
 - [ ] 若支持 dual-mode，双启动顺序、Hub 重载和异步 handoff 均保持单实例。
 
@@ -139,6 +124,7 @@ Hub 仍存在而用户已停用／注销扩展时，不得绕过用户选择自�
 - [ ] `content` 第一行构建身份与 Manifest、repository、Release 和 metadata 一致。
 - [ ] `MieMie-Extension-update.json` 字段与最终脚本包一致。
 - [ ] 两个附件均有 GitHub digest；原始附件 SHA-256 和 `contentSha256` 正确。
+- [ ] 目标 API 在安装／更新写入前通过当前 Hub 的兼容检查，最高版本不兼容不静默回退旧 Release。
 - [ ] 正式 Package validator 接受；Release／Asset 锁定、复读和完整性校验不被跳过。
 - [ ] 真实 Tavern clean install 成功，保存确认与 Runtime／业务状态分别记录。
 - [ ] 使用已发布旧包验证 update，保留实例 ID、自定义名称主体和用户数据，核对保存及适用的运行版本确认。
@@ -159,7 +145,7 @@ Hub 仍存在而用户已停用／注销扩展时，不得绕过用户选择自�
 ```text
 读取 MieMie Hub 的 docs/EXTENSION-DEVELOPER-GUIDE.md，以及其中链接的现行 API、Package、Launcher、Icon、身份与生态规范。不要把历史 Review / Audit 当作当前 API 或发布状态。
 
-先审计本项目，分别报告 Catalog 投稿、Runtime Registration、Managed Package、Honeycomb Launcher、Surface、Shortcut Launcher、Native Window、Back Navigation 和 Standalone dual-mode 的现状、适用性、所需变更与验证方法；不适用项明确标为 N/A。根据 Owner 的目标确定本次适配范围，再实施，不默认开启全部可选能力。
+先审计本项目，分别报告 Catalog 投稿、Runtime Registration、Managed Package、Honeycomb Launcher、Surface、Native Window（含 mount）、Back Navigation 和 Standalone dual-mode 的现状、适用性、所需变更与验证方法；不适用项明确标为 N/A。根据 Owner 的目标确定本次适配范围，再实施，不默认开启全部可选能力。
 
 适配时保留第三方原有功能，不因接入 Hub 删除拖动、缩放、点击开关、原生输入或草稿。双入口共用一个业务实例，不重复初始化 Hook、监听器或业务模块，不改变原有业务数据格式；保留本项目自身 author、repository、license、product identity、stable IDs、storage keys 以及真实 Contributor / Git / PR / history 归属。不得复制官方 productId、scriptId、storage key、品牌、作者或仓库地址。官方项目继续遵守既有 SheepSheep 产品作者、SheepSheepLab 官方命名空间及贡献归属规则，不把命名空间当作产品 author，不自动把 Contributor 追加到产品 author。
 
@@ -168,12 +154,12 @@ Runtime Compatibility 与 Managed Package Compatibility 分别实现和验证。
 
 ## 11. Release Checklist 与文档职责
 
-发布前分别记录两个 Gate 的适用范围和结果，确认最终包身份、字段和 hash 一致，按 [Package v1](EXTENSION-PACKAGE.md) 完成作者仓库的 Release 附件准备。保留适用的软件许可证及贡献归属，区分模拟测试与真实安装验证；发布操作仍按项目 Owner 的授权执行。Hub 产品版本、作者扩展版本、API v1 和 Package v1 不要混为同一个版本号。
+发布前分别记录两个 Gate 的适用范围和结果，确认最终包身份、字段和 hash 一致，按 [Package v1](EXTENSION-PACKAGE.md) 完成作者仓库的 Release 附件准备。保留适用的软件许可证及贡献归属，区分模拟测试与真实安装验证；发布操作仍按项目 Owner 的授权执行。Hub 产品版本、作者扩展版本、API v2 和 Package v1 不要混为同一个版本号。
 
 | 文档 | 权威职责 |
 | --- | --- |
 | 本 Developer Guide | Entry / Navigation，选择路径及验收清单，不重复定义底层协议 |
-| [EXTENSION-API](EXTENSION-API.md) | Runtime / Lifecycle / Surface / Shortcut / Native Window / Back public API |
+| [EXTENSION-API](EXTENSION-API.md) | Runtime / Lifecycle / Surface / Native Window / Back public API |
 | [EXTENSION-PACKAGE](EXTENSION-PACKAGE.md) | Managed install / update / physical uninstall 的包格式、验证与边界 |
 | [LAUNCHER-PROTOCOL](LAUNCHER-PROTOCOL.md) | Standalone ↔ Hub dual-mode integration |
 | [ICON-GUIDELINE](ICON-GUIDELINE.md) | Presentation asset guidance |

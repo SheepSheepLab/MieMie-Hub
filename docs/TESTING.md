@@ -1,5 +1,7 @@
 # Hub 构建、更新与产物兼容验证
 
+> **版本与记录范围。** 本文件保留 GitHub v0.8.3 的测试规范与历史记录。自下段至“0.8.3 文档一致性验证 · 2026-10-14”章节末的版本、命令、接口、成绩及 Pending 均属于对应历史阶段，不代表 0.9.0 的当前规范或验收状态；其中“当前基线”也是当时措辞。0.9.0 的方法与结果见后文 [当前候选验证](#090-开发候选验证)；当前 Runtime 契约见 [Extension API v2](EXTENSION-API.md)。
+
 当前源码测试基线：Hub **0.8.3**，完整产物组合为 Polisher **1.2.1**，Production Registry 为 **0.6.1**。正式发布状态与附件以 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 为准。适配验收先看 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md)。下文明示历史阶段的版本与验收数字保留原记录，不代替本次实际测试输出。
 
 各次测试结果独立记录于对应版本／日期小节；本地源码测试不代表 Tag、公开附件或真实公开自更新验证已经完成。
@@ -275,3 +277,133 @@ ffbca980fb2ada9055f94616a9060988463d4ba6b948a7cc3aa4d02e8ab9f2fc
 ```
 
 构建与此前 0.8.3 产物完全相同。此前真实浏览器和第三方结果保留在各自记录中，本次没有把它们计为新执行结果；公开发布资产与真实公开自更新仍须独立验证。
+
+## 0.9.0 开发候选验证
+
+当前契约是 Runtime API2 + Managed Package v1；Manifest、Machine Metadata 和 Build Identity Schema 均为 1。候选未发行，不能导入日常酒馆或分发给普通用户。第三方适配统一从 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md) 开始。
+
+### 构建与自动化
+
+Node 22+，安装依赖后执行：
+
+```sh
+npm ci
+npm test
+node --test tests/phase1-*.test.mjs
+node --test tests/phase2-*.test.mjs
+node --test tests/phase4-package.test.mjs
+node --test tests/documentation.test.mjs
+```
+
+`npm test` 先构建默认 Bundled Timeline，再生成原始 49 项测试使用的无 Timeline 附加产物。主功能验收始终使用默认构建；49 项以及各聚焦 suite 已包含于完整总数，不相加。测试数量以当次日志为准。
+
+| 测试 | 范围 |
+|---|---|
+| package-manager / phase4-package | 机器结构与 API 分离；对应版本证明；API1 安全管理／升级；新安装；最高不兼容版本拒绝；双 hash、身份、Release 复读、data、并发、取消、超时、备份失败、保存回读及运行版本不一致 |
+| extension-center | 物理安装、API 未确认／不兼容、Runtime、更新候选、写入与保存状态；进度取消；更新后移除过期候选 |
+| runtime / back-runtime / core-panels | API2 注册、生命周期、严格 Surface Lease、Back 与系统模块 |
+| phase1 / phase2 / surface / lifecycle | 原始 49 项、Native 单实例、Race A/B、焦点、前景、失效请求、release 故障恢复与资源清理 |
+| bundled-extensions / compatibility | 默认 Timeline、原业务 golden、迟到读取取消、世界书安全边界 |
+| build / self-update / script-host / update-check | Build Identity、版本规则、字节／内容 hash、宿主树、安全写入、Hub 自更新与持久保存 |
+| documentation | 现行文档相对链接／锚点、JSON 与 JS 示例；真实构建在模拟宿主中的 Surface、Native 和来源交接示例；不计为真实浏览器或生产包验收 |
+| registry-client / submission-select | 现有认证、Origin/source 交接、目录 ACL 展示、投稿选择；不证明生产服务通过 |
+
+包管理单元测试使用通用 Fixture、模拟 GitHub 与内存宿主，不能计为生产下载或真实宿主验收。API1 锁定官方产物组合只用于其对应旧客户端基线，不允许改 hash 或版本冒充 API2 正式产品验收。
+
+### 真实隔离 Tavern
+
+先确认测试服务器仅监听本机，使用新建、明确命名的专用 dataRoot，并安装正式 Tavern Helper；不得指向日常角色、世界书、聊天、Key 或脚本目录。测试会替换专用宿主全局脚本树，不调用模型。允许端口 48190、48193 本身不是隔离证明。
+
+`PLAYWRIGHT_MODULE` 指向已安装 Playwright 的 `index.mjs`。`TEST_HOST` 默认 `http://127.0.0.1:48190/`；补充宿主可用 `http://127.0.0.1:48193/`，配合 `TEST_TAVERN_VERSION=1.18.0`。
+
+```sh
+node tests/browser-host/run.mjs
+node tests/browser-host/packages.mjs
+```
+
+`run.mjs` 使用真实 Tavern、Helper、默认 Hub 构建与同一 Standalone/Native Fixture，验证实际指针／键盘、WAAPI、Pointer Capture、top-layer、Back、Focus、Race A/B、Timeline 保存回读、disable/source release/Hub reload 和清理。它只创建命名为 `PHASE3_ONLY_Character` / `PHASE3_ONLY_Timeline` 的测试数据。Ctrl+Alt+N 属于 Fixture 作者自己的快捷键，不是 Core 新增入口。
+
+`packages.mjs` 通过完整 Hub UI 和正式 Helper API 执行 API2 首次安装、更新、API1→API2 升级、用户字段保留、服务器回读、新运行版本确认、取消卸载、实际卸载与重载。**GitHub 响应由本地通用 Fixture 提供；宿主、脚本执行和同源持久保存是真实的，Registry 生产服务没有参与。** 不得将此结果称为生产 API2 Managed Package 验收。
+
+输出在 `test-results/host-<browser>/`、`test-results/phase4-packages/`；记录实际 Tavern／Helper／浏览器版本、完整构建 SHA-256、步骤、错误和截图。证据必须与实际执行候选绑定，修改源码后重新构建和计算哈希。
+
+资源计时保留 rawTimeouts；仅将空白页也可复现、堆栈精确匹配的 Safari WebDriver 30 秒看门狗单列为 automationTimeouts。其他计时器仍必须清零，不能用整页计数将宿主／驱动资源直接判为 Hub 泄漏。
+
+Safari 使用 Apple 官方 safaridriver：经 Owner 允许临时启用远程自动化并启动端口 48191，设置 `TEST_BROWSER=safari` 执行 `run.mjs`，完成后恢复原设置。不得将 Playwright WebKit 当作真实 Safari。Package 专用浏览器脚本当前使用 Chromium 的网络 Fixture。
+
+### 独立浏览器与资源测试
+
+`tests/browser-native/run.mjs` 和 `tests/browser-back/run.mjs` 使用真实 Chromium、模拟 Tavern，分别验证 Native 输入与 Back；不计为真实宿主结果。使用相同 PLAYWRIGHT_MODULE。
+
+`tests/fixtures/measure-phase2.mjs` 可通过 `HUB_ARTIFACT` 指定默认构建，测 0/1/4 个 Native 的相同负载与最终清理。`tests/browser-host/resource-audit.mjs` 用两个专用真实宿主测卸载及宿主保存完成边界。计数包括指定事件与 Observer/timer，真实宿主自己的残余监听不能自动归因于 Hub；不是整页 Heap 或性能提升证明。
+
+### 独立 Release Gates
+
+正式官方 Extension API2 适配、同版本 Native Parity、正式 API2 Managed Package 生产验收、Registry API2 Compatibility、Registry Origin Compatibility、移动 Safari、真实系统 IME、Safari OS Reduced Motion、Owner 手工验收分别记录。合成 composition、Chromium 触屏／reduced-motion 模拟、Node/jsdom、真实浏览器、真实宿主和 Owner 验收不能互相替代。
+
+每次报告区分本轮重新执行、历史证据和 Pending。失败尝试保留，最终通过需有对应新候选证据；不删除测试换取绿色。禁止因 API2 改造绕过 CORS、Origin allowlist、认证、完整性验证或恢复 API1 Runtime。
+
+### 性能对照与动态 Native 交互
+
+`tests/browser-performance/run.mjs` 对固定 0.8.3 与当前候选的真实隔离 Tavern/Chromium 执行交错采样。它要求相邻 `benchmark-baseline` 的固定历史源码构建，比较零普通扩展、仅 Timeline、1 个 Native、4 个 Native；每版每负载默认预热2轮、测量12轮。记录 wrapper eval→ready、操作到动画结束与两帧的时间、CDP renderer 默认 timeTicks 的 Task/Script/Layout/RecalcStyle 持续时间、GC 后堆、DOM 及指定资源。Wrapper 不改变被测产品内容，但测试导入内容含计时器，必须分别记录原产物和夹具 hash。测量 API 响应与渲染等待，不冒充可信输入延迟或全系统 CPU 百分比。
+
+`tests/browser-deep/run.mjs` 使用同一夹具字节分别运行 Standalone 和 Hub Native，动态创建视图、新事件路径、closed Shadow、同源 iframe，检查结构、样式、布局、真实键盘及事件阶段、滚动、动画、草稿、持久存储，随后100次交接和ON/OFF/清理。设置 `TEST_BROWSER=safari` 使用官方 Safari Driver。它不能覆盖所有未知第三方行为，也不把程序化 iframe 按钮点击记为真实指针。
+
+性能采样期间不并行运行测试、不切换系统 Reduced Motion；先完成试跑，保存预热与异常样本，不删除离群值制造收益。统计至少包括 n/median/p95/min/max 与误差边界。实际存活监听、静态调用点、宿主资源、业务 Hook 和包装仪器分别报告。堆趋势不是无限时长无泄漏证明。
+
+系统 IME、Safari OS Reduced Motion、移动 Safari 使用独立证据。涉及全局设置时先核查原值，取得本阶段授权，测后恢复；模拟器会话失败保留原始错误，不以浏览器模拟顶替。
+
+`tests/browser-performance/focused.mjs` 对四个 Native 的 Surface 打开单独复测，预热2轮、正式12轮，每轮5次，交错版本。优先请求 CDP threadTicks，并在结果记录实际 timeDomain；组内重复不能视为独立机器样本。`resources.mjs` 在宿主及 iframe 库加载前插桩并记录归属，释放诊断引用后再检查 GC 和 DOM。性能结果使用独立输出目录，不能覆盖既有证据。
+
+## 0.9.0 候选验证记录 · 2026-10-17
+
+以下依据已交付 Phase 5、Phase 6 日志和本轮文档修正核验记录。0.9.0 仍是本地审核候选，测试成绩不构成正式发行授权。旧章节的 Pending 保留原意，不追溯改写。
+
+| 阶段与检查 | 结果 | 证据性质与边界 |
+| --- | --- | --- |
+| Phase 6 完整 npm test | 514 PASS / 0 FAIL / 0 SKIP | Phase 6 当轮执行；包含 API2 Runtime、Package v1、Native、Lease、Lifecycle、Race A/B、Back / Focus / Foreground、Timeline、自更新及文档测试 |
+| Phase 6 原始 Phase 1 / Phase 2 Core / 文档套件 | 49 / 9 / 7 PASS | 都是 514 的子集，不能累加；文档行为例子使用实际构建与模拟宿主 |
+| 本轮文档修正完整 npm test | 514 PASS / 0 FAIL / 0 SKIP | 本轮重新执行；测试文件与生产源码未变；不计为新浏览器实测 |
+| 本轮 Development / Production 配置 / Unbundled | 三种构建通过，完整 JSON SHA-256 分别与 Phase 6 相同 | 实际重新构建与计算；Production 配置通过不代表生产 Registry 通过；Unbundled 只作架构验证 |
+| Phase 5 真实 ST 1.19 Chromium / ST 1.18 Chromium / ST 1.19 Safari | 25 / 25 / 24 PASS | 保留历史实测，Phase 6 与本轮均未重跑；含 Race A/B、Native / Surface、导航及 Timeline 保存回读 |
+| Phase 5 动态 Native 深化 | Chromium 9 PASS / Safari 9 PASS | 同一通用 Fixture 的 Standalone 与 Native 对照；Dual Entrance / Single Business Instance、动态视图、交接与清理，不替代正式产品 Native Parity |
+| Phase 5 真实 ST 1.19 Package Fixture | 8 PASS | 真实 Helper、脚本执行与服务器保存回读；GitHub 响应是 Fixture，未调用生产 Registry，不是正式 Package 生产验收 |
+| Phase 5 模拟宿主真实 Chromium Native / Back | 6 / 8 PASS | 浏览器真实，宿主模拟；与真实 SillyTavern 结果分列 |
+| Phase 5 本机真实拼音 IME | 已测范围 PASS | Standalone / Native 各 39 个可信事件，覆盖提交、取消、草稿；不推及所有输入法或设备 |
+| Phase 5 Safari OS Reduced Motion | 已测范围 PASS | 实际系统开关、媒体查询与动画验证，测试后恢复；不是 Chromium 模拟媒体条件 |
+
+保留实测环境为 macOS 26.6、Chromium 151.0.7922.34、Safari 26.6、Tavern Helper 4.11.3，以及 SillyTavern 1.19.0 / 1.18.0 的表中组合。本轮没有修改浏览器或系统设置，没有重新取得移动设备结果。生产构建输入逐字节未变且三种重建相同，是继续引用 Phase 5 证据的范围依据；源码清单仍须为文档修正重新生成。
+
+性能对照保留 Phase 5 的固定 0.8.3 对当前候选实验：主实验 112 个原始样本、96 个正式样本；四 Native 专项 140 个原始样本、120 个正式样本。普通初始化基本持平，Core 模块由 21 收敛为 20，但整体源码字节未减少。快速废弃请求减少无效工作，不代表相同数量完整渲染普遍加速；资源稳定只覆盖受测负载和时长，不证明无限运行零泄漏。原始样本、异常及首次信号均应保留。
+
+### 架构回归边界
+
+当前架构验证继续检查一个 Runtime、一套 Hub Surface 和一个 `nativeWindows` Map；`nativeEntries` 是 UI 委托 Surface 偏好的 facade，不是独立 registry / controller。Runtime 队列负责生命周期串行化，Surface 过渡 serial 负责动画取消，ownership epoch 在请求到达时撤销旧权限；不能因合并入口而省略这些不同边界。双入口共享 Session、面板与业务 Hook，release 先撤销 Lease 再同步清理，失败保留 blocked 独占保护与显式重试；Hub 前景和浏览器 top-layer 分别检查。当前签名见 [Extension API](EXTENSION-API.md)，迁移说明见 [发行草稿](RELEASE-0.9.0-DRAFT.md)。
+
+### 当前独立验收状态
+
+| Gate | 状态与边界 |
+| --- | --- |
+| Extension Runtime API v2 | Core / 通用 Fixture 已测范围通过；不执行 API1 Runtime |
+| Managed Package v1 | 客户端机器格式、安全校验和隔离流程通过；物理安装、API 声明、保存回读和新版本运行分别确认 |
+| Native Window Parity / Dual Entrance / Surface Lease / Lifecycle / Transition Race | 通用 Fixture 和已测桌面环境通过，不代替各正式扩展适配 |
+| Bundled Timeline | 自动化与保留的真实宿主用例通过；随 Hub 构建，不冒充独立生产 Package |
+| 正式官方 Extension API2 适配及对应 Native Parity | PENDING；Polisher、Preset Manager、Story Director 分项目验收，Worldbook Manager 按实际初始项目状态处理 |
+| 正式 API2 Managed Package 生产验收 | PENDING；不能由 Fixture 或 Runtime 通过推导 |
+| 生产 Registry API2 Compatibility | PENDING；0.6.1 实际 Manifest validator 仅接受 API1 |
+| Registry Origin Compatibility | PENDING；独立于 API2，不扩大 allowlist 或绕过 CORS |
+| 移动 Safari | PENDING；官方驱动会话未建立，不以桌面或 WebKit 模拟替代 |
+| 真实系统 IME / Safari OS Reduced Motion | Phase 5 本机已测范围 PASS；保留历史实测，不计为本轮重测 |
+| Owner 人工验收 | PENDING |
+
+### 报告与原始证据索引
+
+已发布的历史文档原文见 [固定 0.8.3 源码](https://github.com/SheepSheepLab/MieMie-Hub/blob/v0.8.3/docs/TESTING.md)。0.9.0 详细审核证据尚未公开；以下是 Owner 本地审核包内的相对位置说明，不是公开下载链接或仓库内文件承诺，不用本机绝对路径充当公开证据。
+
+| 审核包 | 包内证据 |
+| --- | --- |
+| Phase 6 RC 原审核包 | `审计报告.md`、`Release-Readiness-Matrix.md`、`Retained-Browser-Evidence.md`；`evidence/npm-test-final.log`、`evidence/SOURCE-SHA256SUMS.txt`、`evidence/rc-integrity.json` |
+| Phase 6 RC 原审核包保留的 Phase 5 | `retained-phase5/` 内的真实宿主、Native、IME、OS Reduced Motion、性能原始证据；`prior-reports/` 保留更早阶段报告 |
+| Phase 6 Documentation Correction 审核包 | `审计报告.md`、`Historical-Preservation.md`、`Other-Documents-Audit.md`；`evidence/npm-test.log`、`evidence/validation.json`、`evidence/SOURCE-SHA256SUMS.txt`；`prior-phase6/` 原样保留上表 Phase 6 审核包内容 |
+
+原始证据必须按各阶段源码清单及构建 SHA-256 关联；本轮文档修正的源码清单不能冒用旧清单。后续若公开证据，应链接实际发布的位置，并继续保留阶段与环境边界。
