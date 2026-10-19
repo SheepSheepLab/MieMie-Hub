@@ -310,6 +310,32 @@ node --test tests/documentation.test.mjs
 
 包管理单元测试使用通用 Fixture、模拟 GitHub 与内存宿主，不能计为生产下载或真实宿主验收。API1 锁定官方产物组合只用于其对应旧客户端基线，不允许改 hash 或版本冒充 API2 正式产品验收。
 
+### Core CI（隔离实现，远端运行待验证）
+
+`.github/workflows/ci.yml` 为面向 main 的 Pull Request（包括 Draft）、main push 和手动触发定义最小 Core 回归。使用 Ubuntu 24.04 GitHub-hosted runner，固定 Node 22.23.3 / npm 10.9.9 与 Node 24.22.0 / npm 11.19.1；这些是本次核验的版本，不使用浮动 latest。实际 GitHub/Linux 结果以工作流运行记录为准，本地通过不能代替 Runner 验收。
+
+本地使用相应 Node/npm，可复现：
+
+```sh
+node tools/ci-source-check.mjs --self-test
+node tools/ci-source-check.mjs
+npm ci --ignore-scripts --no-audit --no-fund
+npm test
+node --test tests/docs/back-examples.test.mjs
+node tools/ci-artifact-check.mjs --self-test
+node tools/ci-artifact-check.mjs --build
+```
+
+Back 入口执行 API 文档中命名的两个实际示例，保留独立 10 项行为验证；不纳入原 `tests/*.test.mjs` 的统计，也不替代已有 Back/Lease 测试。主套件基线为历史 514 项，实际数量以运行日志为准，不通过固定数量或删减断言获得通过。
+
+Source Policy 扫描 Git tracked 与未忽略的新文件，阻断明确的凭据格式、完整私钥块、真实本机用户路径、数据库／备份、意外生成产物、缺失必要文件与符号链接；不输出命中的秘密内容。普通署名、版权、历史 API 说明、正常 Fixture 和合法新源码不按 hash 锁死。证书、Fixture 压缩文件及 npm 配置等模糊项单列人工 review；这不是完整 Secrets 检测或代码安全认证，审核者仍须检查 diff，不得用扫描结果替代 Contributor 归属核验。
+
+Artifact Check 复用现有构建器及产品验证函数，分别生成 Development、Production Configuration、Unbundled，两次同环境输出逐文件比较。检查身份、版本、Schema、双 hash、大小、空 data、JS 语法、当前构建输入及随包 Manifest／资源。输出在忽略的 `build/ci/`；Production 仅嵌入公开 HTTPS 配置，不访问生产服务。检查当前输入和产物，不固定历史 Release hash。三模式不能互相代替，机器完整性不能证明 Runtime 或真实宿主运行成功。
+
+工作流仅 `contents: read`，关闭 checkout 凭据保留和包缓存，官方 Action 固定完整 SHA；不使用 Secrets、特权触发器、自托管 runner、产物上传或部署。`ci-required` 要求 source-policy、两个 Node 测试结果及 build-integrity 全部成功，失败／取消／跳过均不能产生绿色汇总。运行旧任务被取消不代表新任务通过。分支保护和 Required Checks 需另行授权配置。
+
+Core CI 不适配 API1 扩展、不放宽 Package 安全、不修改 Registry；Registry API2、Origin、官方扩展 Runtime、Native Parity、生产 Managed Package、移动、Owner 手验与发行授权继续分层独立验收。扩展迁移未完成不能被记为通用 API2 Core 回归失败，也不能由 Core 通过宣称其自身 Gate 完成。历史章节和既有成绩保持原文。
+
 ### 真实隔离 Tavern
 
 先确认测试服务器仅监听本机，使用新建、明确命名的专用 dataRoot，并安装正式 Tavern Helper；不得指向日常角色、世界书、聊天、Key 或脚本目录。测试会替换专用宿主全局脚本树，不调用模型。允许端口 48190、48193 本身不是隔离证明。
