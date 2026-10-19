@@ -4,9 +4,12 @@ import {webcrypto} from 'node:crypto';
 import {createRegistryClient,registryBaseURL} from '../src/registry-client.js';
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json'}});
 const tick=()=>new Promise(r=>setImmediate(r));
+function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
 function fixture(handler,{exchange={},clientOptions={}}={}){
  const host=new EventTarget();host.location={origin:'https://tavern.example'};host.btoa=x=>Buffer.from(x,'binary').toString('base64');
- const popup={closed:false,location:{href:''},close(){this.closed=true;}};host.open=()=>{popup.closed=false;popup.location.href='';return popup;};
+ let navigation=deferred(),href='';
+ const popup={closed:false,location:{get href(){return href;},set href(value){href=value;if(value)navigation.resolve(value);}},close(){this.closed=true;}};
+ host.open=()=>{navigation=deferred();popup.closed=false;href='';return popup;};
  const requests=[];let challenge, loggedIn=false;
  const client=createRegistryClient({host,crypto:webcrypto,timeoutMs:30,loginTimeoutMs:1000,fetch:async(url,init)=>{requests.push({url,init});
   if(url.endsWith('/api/auth/start')){challenge=JSON.parse(init.body).codeChallenge;return json({requestId:'request',authorizationUrl:'https://registry.example/api/auth/authorize?requestId=request'});}
@@ -15,8 +18,11 @@ function fixture(handler,{exchange={},clientOptions={}}={}){
   return handler?handler(url,init):json({ok:true});
  },...clientOptions});client.setBase('https://registry.example');
  function message(overrides={}){const event=new Event('message');Object.assign(event,{origin:'https://registry.example',source:popup,data:{type:'miemie-registry-auth',requestId:'request',code:'bridge-code'},...overrides});host.dispatchEvent(event);}
- async function login(){const promise=client.login();for(let i=0;i<20&&!popup.location.href;i++)await tick();message();return promise;}
- return {client,host,popup,requests,message,login};
+ // The client installs its message listener before navigating the popup.
+ // Observe early rejection too; cancellation must not leave a readiness wait hanging.
+ const ready=pending=>Promise.race([navigation.promise,pending.then(()=>{throw Error('Login completed before authorization navigation.');})]);
+ async function login(){const promise=client.login();await ready(promise);message();return promise;}
+ return {client,host,popup,requests,message,login,ready};
 }
 test('Registry base is explicit HTTPS or loopback development; no credential or URL injection',()=>{
  assert.equal(registryBaseURL('https://registry.example/'),'https://registry.example');assert.equal(registryBaseURL('http://127.0.0.1:8787'),'http://127.0.0.1:8787');
@@ -24,7 +30,7 @@ test('Registry base is explicit HTTPS or loopback development; no credential or 
 });
 test('public catalog sends no session and offline failure leaves client usable',async()=>{let failed=true;const f=fixture(()=>{if(failed)throw Error('offline');return json({items:[]});});await assert.rejects(f.client.api('/api/catalog'),/offline/);failed=false;assert.deepEqual(await f.client.api('/api/catalog'),{items:[]});assert.ok(f.requests.every(x=>!x.init.headers.Authorization&&x.init.credentials==='omit'));f.client.dispose();});
 test('popup login validates Registry origin, window and requestId; PKCE then memory-only session',async()=>{
- const f=fixture();const pending=f.client.login();assert.equal(f.client.login(),pending);for(let i=0;i<20&&!f.popup.location.href;i++)await tick();
+ const f=fixture();const pending=f.client.login();assert.equal(f.client.login(),pending);await f.ready(pending);
  f.message({origin:'https://evil.example'});f.message({source:{}});f.message({data:{type:'miemie-registry-auth',requestId:'wrong',code:'x'}});await tick();assert.equal(f.requests.filter(x=>x.url.endsWith('/exchange')).length,0);
  f.message();await pending;assert.equal(f.client.getIdentity().profile.displayName,'Development Fixture');await f.client.api('/api/submissions',{authenticated:true});await f.client.api('/api/catalog');
  assert.equal(f.requests.at(-2).init.headers.Authorization,'Bearer test-opaque-registry-session');assert.equal(f.requests.at(-1).init.headers.Authorization,undefined);assert.equal(f.popup.closed,true);f.client.dispose();
@@ -44,17 +50,33 @@ test('logout immediately clears UI identity and discards a delayed authorized Ca
  const request=f.client.api('/api/catalog',{authenticated:'optional'});await f.client.logout();assert.equal(f.client.getIdentity(),null);assert.equal(seen.at(-1),null);
  finish(json({items:[{name:'Restricted Development Fixture'}]}));await assert.rejects(request,/登录状态已改变/);f.client.dispose();
 });
-test('a stale 401 or me response cannot clear or resurrect a different login',async()=>{
- let finish;const f=fixture(url=>url.endsWith('/api/me')?new Promise(r=>{finish=r;}):json({ok:true}));await f.login();const pending=f.client.me();await f.client.logout();await f.login();
- finish(json({error:'stale expired session'},401));await assert.rejects(pending,/登录状态已改变/);assert.equal(f.client.getIdentity().profile.displayName,'Development Fixture');f.client.dispose();
- let finishOther;const g=fixture(url=>url.endsWith('/api/me')?new Promise(r=>{finishOther=r;}):json({ok:true}));await g.login();const me=g.client.me();await g.client.logout();finishOther(json({profile:{displayName:'Old Profile'}}));await assert.rejects(me,/登录状态已改变/);assert.equal(g.client.getIdentity(),null);g.client.dispose();
+test('a stale 401 or me response cannot clear or resurrect a different login',async t=>{
+ // This test controls response order, not elapsed time. Keep the configured
+ // deadlines intact while preventing them from racing deliberate held responses.
+ t.mock.timers.enable({apis:['setTimeout','setInterval']});
+ const response=deferred(),started=deferred();
+ const f=fixture(url=>{if(url.endsWith('/api/me')){started.resolve();return response.promise;}return json({ok:true});});
+ await f.login();const pending=assert.rejects(f.client.me(),/登录状态已改变/);await started.promise;
+ await f.client.logout();await f.login();response.resolve(json({error:'stale expired session'},401));await pending;
+ assert.equal(f.client.getIdentity().profile.displayName,'Development Fixture');f.client.dispose();
+ const otherResponse=deferred(),otherStarted=deferred();
+ const g=fixture(url=>{if(url.endsWith('/api/me')){otherStarted.resolve();return otherResponse.promise;}return json({ok:true});});
+ await g.login();const me=assert.rejects(g.client.me(),/登录状态已改变/);await otherStarted.promise;
+ await g.client.logout();otherResponse.resolve(json({profile:{displayName:'Old Profile'}}));await me;
+ assert.equal(g.client.getIdentity(),null);g.client.dispose();
 });
 test('session deadline notifies the UI without waiting for another API call',async()=>{
  const f=fixture(undefined,{exchange:{expiresAt:new Date(Date.now()+80).toISOString()}});const seen=[];f.client.subscribe(identity=>seen.push(identity));await f.login();assert.ok(f.client.getIdentity());
  await new Promise(r=>setTimeout(r,100));assert.equal(f.client.getIdentity(),null);assert.equal(seen.at(-1),null);await f.client.api('/api/catalog',{authenticated:'optional'});assert.equal(f.requests.at(-1).init.headers.Authorization,undefined);f.client.dispose();
 });
-test('public profile projection excludes identity, email and OAuth fields even from a malformed server',async()=>{
- const f=fixture(undefined,{exchange:{profile:{displayName:'Visible Fixture',avatarUrl:'/api/avatars/test',id:'123456789012345678',email:'private@example.invalid',access_token:'test-only-oauth'}}});await f.login();assert.deepEqual(f.client.getIdentity().profile,{displayName:'Visible Fixture',avatarUrl:'/api/avatars/test'});assert.doesNotMatch(JSON.stringify(f.client.getIdentity()),/private|123456|access_token/);f.client.dispose();
+test('public profile projection excludes identity, email and OAuth fields even from a malformed server',async t=>{
+ t.mock.timers.enable({apis:['setTimeout','setInterval']});
+ const preparation=deferred(),entered=deferred();let first=true;
+ const crypto={getRandomValues:x=>webcrypto.getRandomValues(x),subtle:{digest:async(...args)=>{if(first){first=false;entered.resolve();await preparation.promise;}return webcrypto.subtle.digest(...args);}}};
+ const f=fixture(undefined,{clientOptions:{crypto},exchange:{profile:{displayName:'Visible Fixture',avatarUrl:'/api/avatars/test',id:'123456789012345678',email:'private@example.invalid',access_token:'test-only-oauth'}}});
+ const pending=f.login();await entered.promise;assert.equal(f.requests.length,0);assert.equal(f.client.getIdentity(),null);
+ preparation.resolve();await pending;
+ assert.deepEqual(f.client.getIdentity().profile,{displayName:'Visible Fixture',avatarUrl:'/api/avatars/test'});assert.doesNotMatch(JSON.stringify(f.client.getIdentity()),/private|123456|access_token/);f.client.dispose();
 });
 test('logout during initial PKCE preparation cannot complete a stale login',async()=>{
  let digest;const crypto={getRandomValues:x=>webcrypto.getRandomValues(x),subtle:{digest:()=>new Promise(r=>{digest=r;})}};
@@ -82,11 +104,17 @@ test('detached popup with no message completes via PKCE polling, me, and UI subs
 });
 test('poll timeout and teardown stop future requests without resurrecting identity',async()=>{
  const f=pollingFixture({readyAfter:10000,timeout:30});await assert.rejects(f.client.login(),/超时/);const n=f.requests.length;await new Promise(r=>setTimeout(r,20));assert.equal(f.requests.length,n);assert.equal(f.client.getIdentity(),null);f.client.dispose();
- const g=pollingFixture({readyAfter:10000});const pending=g.client.login();await new Promise(r=>setTimeout(r,15));g.client.dispose();await assert.rejects(pending,/取消/);assert.equal(g.client.getIdentity(),null);
+ const started=deferred(),response=deferred();const g=pollingFixture({complete:()=>{started.resolve();return response.promise;}});
+ const pending=assert.rejects(g.client.login(),/取消/);await started.promise;g.client.dispose();await pending;
+ response.resolve(json({token:'late',profile:{displayName:'Late'}}));await tick();assert.equal(g.client.getIdentity(),null);assert.ok(g.changes.every(x=>x===null));
 });
 test('logout or Registry switch cancels polling and late result; failed me never publishes identity',async()=>{
- let finish;const f=pollingFixture({complete:()=>new Promise(r=>finish=r)});const pending=f.client.login();while(!finish)await tick();await f.client.logout();await assert.rejects(pending,/取消/);finish(json({token:'late',profile:{displayName:'Late'}}));await tick();assert.equal(f.client.getIdentity(),null);f.client.dispose();
- const g=pollingFixture({readyAfter:10000});const changed=g.client.login();await new Promise(r=>setTimeout(r,10));g.client.setBase('https://other.example');await assert.rejects(changed,/取消/);assert.equal(g.client.getIdentity(),null);g.client.dispose();
+ const started=deferred(),response=deferred();const f=pollingFixture({complete:()=>{started.resolve();return response.promise;}});
+ const pending=assert.rejects(f.client.login(),/取消/);await started.promise;await f.client.logout();await pending;
+ response.resolve(json({token:'late',profile:{displayName:'Late'}}));await tick();assert.equal(f.client.getIdentity(),null);f.client.dispose();
+ const otherStarted=deferred(),otherResponse=deferred();const g=pollingFixture({complete:()=>{otherStarted.resolve();return otherResponse.promise;}});
+ const changed=assert.rejects(g.client.login(),/取消/);await otherStarted.promise;g.client.setBase('https://other.example');await changed;
+ otherResponse.resolve(json({token:'late',profile:{displayName:'Late'}}));await tick();assert.equal(g.client.getIdentity(),null);g.client.dispose();
  const h=pollingFixture({readyAfter:1,me:()=>json({error:'expired'},401)});await assert.rejects(h.client.login(),/expired/);assert.equal(h.client.getIdentity(),null);assert.ok(h.changes.every(x=>x===null));h.client.dispose();
 });
 
@@ -141,8 +169,8 @@ test('consumed handoffs and rejected sessions are never retried or accepted as l
  try{await assert.rejects(g.client.login(),/确认账号状态失败.*denied/);assert.equal(g.requests.filter(r=>r.url.endsWith('/me')).length,1);assert.equal(g.client.getIdentity(),null);}finally{g.client.dispose();}
 });
 test('logout during profile retry cancels future attempts and cannot publish stale identity',async()=>{
- let attempts=0;const f=pollingFixture({readyAfter:1,me:()=>{attempts++;throw new TypeError('offline');}});
- try{const pending=f.client.login();while(!attempts)await tick();await f.client.logout();await assert.rejects(pending,/取消|上下文/);await new Promise(r=>setTimeout(r,20));assert.equal(attempts,1);assert.equal(f.client.getIdentity(),null);assert.ok(f.changes.every(x=>x===null));}finally{f.client.dispose();}
+ const started=deferred();let attempts=0;const f=pollingFixture({readyAfter:1,me:()=>{attempts++;started.resolve();throw new TypeError('offline');}});
+ try{const pending=assert.rejects(f.client.login(),/取消|上下文/);await started.promise;await f.client.logout();await pending;await new Promise(r=>setTimeout(r,20));assert.equal(attempts,1);assert.equal(f.client.getIdentity(),null);assert.ok(f.changes.every(x=>x===null));}finally{f.client.dispose();}
 });
 
 test('a timed-out poll is retried rather than mistaken for deliberate cancellation',async()=>{
