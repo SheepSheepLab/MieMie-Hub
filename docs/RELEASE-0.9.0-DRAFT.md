@@ -28,6 +28,12 @@ Hub 自更新保留安装实例 ID、用户字段和业务存储；成功写入�
 
 Core 控制路径已收敛，但不宣称全面性能提升；普通初始化表现基本持平，源码字节未下降。通用 Fixture 的 Native 行为验证不替代正式产品的业务一致性验收。
 
-正式官方扩展的 Runtime API2、Native Parity、Managed Package，以及 Registry API2、Registry Origin、生产安装更新、移动 Safari 和 Owner 人工验收仍须分别完成。桌面简体拼音 IME 与 Safari 系统 Reduced Motion 的既有本机证据不泛化到所有设备或输入法。技术审核通过不等于生产放行，正式发行仍需 Owner 独立授权。
+三款官方 Extension 开发候选的 Runtime API2、Native Parity 及隔离 Managed Package 已通过已测范围；正式新版本／资产、生产 Registry API2、Registry Origin、生产安装更新、物理移动 Safari、真实外部模型服务和 Owner 人工验收仍分别 Pending。桌面简体拼音 IME 与 Safari 系统 Reduced Motion 的既有本机证据不泛化到所有设备或输入法。技术审核通过不等于生产放行，正式发行仍需 Owner 独立授权。
 
 预期正常发布附件为 `MieMie-Hub-0.9.0.json`、`MieMie-Hub-update.json` 与最终字节的 SHA-256 清单；还须按既有许可提供对应源码、构建材料和许可／品牌／素材说明。审核包中的夹具、日志、测试工具和无 Timeline 构建不是正式 Release Assets。
+
+## 官方 Extension 最低 Runtime 与候选证据
+
+新版 Polisher、Preset Manager、Story Director 最低要求 **Hub Runtime API2**；Standalone 独立运行、Package v1 校验和用户数据保护保留。旧 Hub Runtime 向后兼容不是新版的开发、测试或发行要求，不添加自动降级或旧 Runtime 分支。
+
+2026-10-20 Pre-Main 已完成五仓 1,858 项主测试、五个 Linux CI Run／九个 Job、ST 1.18.0／1.19.0 与 Chromium／真实 Safari 的隔离验收。当前构建、范围及私有原始证据索引见 [TESTING](TESTING.md#pre-main-验收记录2026-10-20)。这些结果不等于生产或正式发行批准；本草稿仍不提供未发行附件下载。

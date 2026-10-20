@@ -142,4 +142,4 @@ Hash 只验证完整性和一致性，不证明作者身份、代码善意或安
 
 ## 生产服务 Gate
 
-Registry 0.6.1 的实际 Manifest 校验仅接受 API1。Hub API2 的客户端与隔离 Fixture 通过不代表生产 Catalog／Relay 兼容。Registry API2 Compatibility 与 Registry Origin Compatibility 分别 Pending；不通过改变 Origin、关闭 CORS 或跳过验证补救。正式官方 API2 产品与 Managed Package 生产验收另行进行。
+已发布 Registry 0.6.1 基线的 Manifest 校验仅接受 API1；同版本未发行的 API2 开发候选已通过隔离 Catalog／Relay 合同检查，尚未部署。Hub API2 的客户端与隔离 Fixture 通过不代表生产 Catalog／Relay 兼容。Registry API2 Compatibility 与 Registry Origin Compatibility 分别 Pending；不通过改变 Origin、关闭 CORS 或跳过验证补救。正式官方 API2 产品与 Managed Package 生产验收另行进行。

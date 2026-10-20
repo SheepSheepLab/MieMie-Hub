@@ -9,7 +9,7 @@ Current compatibility baseline：
 | MieMie Hub 源码 | 0.9.0 开发候选，未发行；正式发布状态与附件见 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) |
 | Extension API | v2 |
 | Extension Package | v1 |
-| Registry 依赖 | 0.6.1 仅校验 API1 Manifest；API2 与 Origin 生产兼容须分别验证 |
+| Registry 依赖 | 已发布 0.6.1 基线仅校验 API1；未发行 API2 候选已通过隔离合同测试；API2 与 Origin 生产兼容分别 Pending |
 
 本指南只负责入口与导航，不新增 Protocol、Package Format 或 API Version；详细契约仍以各自规范为准。**Catalog 收录、Runtime Compatibility 和 Managed Package Compatibility 是不同判断。** 能在 Hub 运行，不代表可以由 Hub 在线安装更新；有安装包，也不代表其 Runtime、业务或安全性已经验收。
 
@@ -93,9 +93,9 @@ Extension 保持业务内容所有权；Hub 负责已接入面板的展示、位
 
 按 [LAUNCHER-PROTOCOL](LAUNCHER-PROTOCOL.md) 管理交接，始终保持 **single business instance**。不能让 Standalone 启动一份业务，再由 Hub 启动第二份业务或第二层 Hook。
 
-先区分 Hub 不存在与 Hub 存在但 API 不兼容：只有 `hub.apiVersion === 2` 才接入本契约；不兼容时明确提示，不能当作 Hub 不存在而绕过用户选择。Hub 接管前撤去冲突的独立展示，按自身适配器完成必要的串行清理，再通过 `extensions.provide()` 提供同一产品的工厂。保留既有业务实例的适配器只切换展示；不要为第二个入口重复初始化业务或 Hook。Hub 消失时，等待来源 lease 释放及旧 Hub 的 `whenDisposed` 清理完成，再恢复 Standalone。串行处理重复事件、双启动顺序、Hub 重载和异步清理，不把 disposed 事件等同于清理已完成。
+只有 `hub.apiVersion === 2` 才接入本契约；不支持的 Hub 不得触发 provide 或旧 Shortcut 注册，也不能宣称 API2 集成成功。扩展可以继续提供自身独立的 Standalone；这不构成对旧 Hub Runtime 的支持。Hub 接管前撤去冲突的独立展示，按自身适配器完成必要的串行清理，再通过 `extensions.provide()` 提供同一产品的工厂。保留既有业务实例的适配器只切换展示；不要为第二个入口重复初始化业务或 Hook。Hub 消失时，等待来源 lease 释放及旧 Hub 的 `whenDisposed` 清理完成，再恢复 Standalone。串行处理重复事件、双启动顺序、Hub 重载和异步清理，不把 disposed 事件等同于清理已完成。
 
-Hub 仍存在而用户已停用／注销扩展时，不得绕过用户选择自动复活独立业务。窗口关闭、Source Lease 撤回和 Runtime 停用各有不同用途，不能用其中一个代替其他操作。身份与存储继续使用本项目自己的稳定值。
+兼容的 API2 Hub 仍存在而用户已停用／注销扩展时，不得绕过用户选择自动复活独立业务。窗口关闭、Source Lease 撤回和 Runtime 停用各有不同用途，不能用其中一个代替其他操作。身份与存储继续使用本项目自己的稳定值。
 
 ## 7. Runtime Compatibility Gate
 

@@ -6,7 +6,7 @@
 
 当前契约为 Extension API v2：统一 Native Window、严格 Surface Lease。Core 负责 Runtime、Package 安全及 Self Update；扩展中心和设置为 System Modules。Bundled Timeline 使用 API2，随 Hub 打包并通过 Launcher 打开。
 
-当前客户端支持 API2 + Package v1，目标 API 在写入前检查；物理安装、API 声明与 Runtime 运行分别显示。正式官方 API2 产品、Managed Package 生产验收、Registry API2 与 Registry Origin 仍分别 Pending；隔离测试不是发行批准。
+当前客户端支持 API2 + Package v1，目标 API 在写入前检查；物理安装、API 声明与 Runtime 运行分别显示。三款官方 Extension 的 API2 开发候选与隔离 Runtime／Native／Package 已有验收；正式新版资产、Managed Package 生产验收、Registry API2 与 Registry Origin 仍分别 Pending；隔离测试不是发行批准。
 
 ## 扩展中心
 
@@ -22,7 +22,7 @@
 
 ## 安装、更新与数据
 
-只启用 Hub 即可使用时间线。官方 Polisher 等 API1 消费者需另行迁移并验证。Hub 不扫描或删除第三方悬浮球。Launcher 是可选能力，后台 Extension 不需要 open()。
+只启用 Hub 即可使用时间线。Polisher、Preset Manager、Story Director 的新版候选只接入 API2，并保留自身 Standalone；版本与实测范围见下方测试文档。Hub 不扫描或删除第三方悬浮球。Launcher 是可选能力，后台 Extension 不需要 open()。
 
 Extension 安装和更新先验证目标 API2 兼容性、Release/Asset、Manifest、产品身份、版本、大小和双 SHA-256，才写入酒馆助手全局脚本。更新同时写入目标 content 与名称末尾版本，保留实例 ID、自定义名称主体、data、文件夹与其他脚本；同源保存回读必须同时确认内容和名称。公开包 data 必须为空。脚本 API 返回不等于服务器持久保存或作者代码已成功启动；界面明确提示保存/运行待确认。更新前请求导出旧脚本，作者代码启动失败时可手工恢复，第一版没有自动回滚。
 

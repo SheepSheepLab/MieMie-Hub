@@ -1,5 +1,7 @@
 # MieMie Hub Extension API v2
 
+> 历史规范导航：[Hub 0.8.3 / API1 完整参考](https://github.com/SheepSheepLab/MieMie-Hub/blob/d6486096a1dd54bbe7c0b62bf182faa84cbb1296/docs/EXTENSION-API.md)保留原版接口与技术细节；本页继续作为现行 API2 完整参考，不迁移历史审计记录。
+
 适用于 MieMie Hub Extension API v2。这里只记录现有接口，不增加 Runtime、包管理或权限机制。
 
 本文对应 0.9.0 本地审核候选，尚未发行；正式发布状态与附件见 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases)。[社区开发统一入口](EXTENSION-DEVELOPER-GUIDE.md)帮助选择适配路径。**Runtime Compatibility 与 Managed Package Compatibility 是两个独立 Gate**：本文定义 Runtime、生命周期及展示能力；Package v1 独立校验机器结构，安装／更新目标还必须通过 API2 检查；正式产品与生产 Registry 安装验收仍 Pending。格式与校验见 [Package v1](EXTENSION-PACKAGE.md)。Runtime 注册成功不代表发布包可在线安装。
@@ -294,7 +296,7 @@ Hub 复用宿主 document capture 的键盘入口。对已注册 Back 的 Surfac
 - 独立非重复 Escape keydown 处理一次。repeat keydown 被消费，不再次调用处理器；即使未观察到首个 keydown，也不把 repeat 当成新的 Back。
 - 已认领的一次长按在返回 Launcher 后仍保持消费，直到 Escape keyup、宿主 blur 或新一次非重复 Escape keydown。keyup／blur 只释放认领，不触发第二次返回；新非重复 keydown 可恢复丢失 keyup 的情况。关闭 Hub 或转交 Native 事件时也清理该认领。
 - Surface 打开／关闭过渡中的请求被消费，不排队补发内部 Back；等界面就绪后独立的新按键正常工作。
-- 新的 `isComposing` Escape 留给输入法，不执行 Back、不取消默认行为。已被 Hub 认领的长按 repeat 优先保持消费，不能把“IME 保护”解释成所有事件顺序下的绝对放行。
+- 新的 `isComposing` 或 `keyCode === 229` Escape 留给输入法，不执行 Back、不取消默认行为。已被 Hub 认领的长按 repeat 优先保持消费，不能把“IME 保护”解释成所有事件顺序下的绝对放行。
 - 在 Hub capture 处理前已经 `defaultPrevented` 的 Escape 不分派 Back；Hub 仍消费该事件并认领按键，避免后续 repeat 穿透。它无法预知之后才运行的处理器是否打算消费事件。
 
 Hub 在委托前 `preventDefault()` 并停止同一事件后续传播，避免一次 Escape 同时触发应用返回和浏览器 Dialog cancel。未注册 Back 的 Surface 继续默认 capture／关闭行为，不能把上述 opt-in 保护推广到它。
@@ -320,3 +322,11 @@ Hub dispose 移除其 keydown／keyup／blur 监听；反复打开与关闭不�
 ## 验证与发布边界
 
 隔离 Fixture 和 Bundled Timeline 通过不能替代官方扩展升级。Runtime Compatibility、Native Parity、Managed Package Compatibility、Registry API v2 和 Registry Origin 各自保留 Gate；Schema / Package / Machine Metadata / Build Identity 都仍为 1。验证方法见 [TESTING](TESTING.md)，升级差异见 [0.9.0 发行说明草稿](RELEASE-0.9.0-DRAFT.md)。
+
+## Honeycomb Surface 几何、滚动与焦点
+
+以下仅适用于 Hub 借用的 Honeycomb Surface，不用于 Native Window。`surface-controller.js` 串行处理打开／返回，`surface-motion.js` 执行原有动画；显式登记的主根节点保留原父级与 scoped CSS，Hub 临时提升其 stacking chain，归还时恢复借用字段，不复制业务 DOM 或事件。
+
+Launcher 捕获入口身份、图标 rect 与滚动位置。返回时按同一身份重新查找当前图标和 rect；不可取得当前几何时使用受视口约束的快照，无法取得 Origin 则使用缩放／淡出。完整收起再打开蜂窝重新居中，Surface 返回保留原滚动。Extension Center 与 Settings 走同一内部 Surface 通路，仍是 System Modules。
+
+resize、旋转及可视区变化取消旧 flight，在重新布局后的端点完成，不停用 Runtime，不清空草稿；Reduced Motion 跳过复杂动画，仍完成状态交接。正常返回向实际蜂窝 Origin 的可聚焦子树恢复焦点；完整关闭返回主球。过渡中出现新的 pointer、键盘或 focus 意图时放弃延迟焦点恢复。Native 模式的几何、滚动、动画与焦点始终由扩展自己管理。

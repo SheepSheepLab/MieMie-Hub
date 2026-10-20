@@ -48,7 +48,7 @@ OAuth 使用弹窗进行 Discord 授权；当前 `poll-v1` 交接通过 `/api/au
 
 Catalog下架只影响发现及Catalog新安装，不远程删除、禁用或重写已安装代码。已安装Extension仍可从原来记录的作者GitHub检查更新；管理员隐藏目前也不充当远程kill switch。新的来源URL不会改动本机既有来源绑定。直接输入作者GitHub获取是用户独立选择，不冒充目录仍上架。
 
-Catalog 保存 GitHub 检测快照，投稿／编辑及目录读取时的有界刷新会更新它；这不保证每次展示都实时对应作者最新 Release。安装／更新仍重新读取作者 Release 并独立校验。Registry不可用时发现/我的提示错误，本地 API2 Runtime、时间线和符合安全条件的物理管理不依赖目录；旧官方 API1 扩展需另行适配。
+Catalog 保存 GitHub 检测快照，投稿／编辑及目录读取时的有界刷新会更新它；这不保证每次展示都实时对应作者最新 Release。安装／更新仍重新读取作者 Release 并独立校验。Registry不可用时发现/我的提示错误，本地 API2 Runtime、时间线和符合安全条件的物理管理不依赖目录；三款官方 Extension 的 API2 开发候选已完成隔离验收，正式新版发行与生产 Managed Package 仍 Pending。
 
 ## 安装与信任
 

@@ -14,7 +14,7 @@ MIEMIE_BUILD_MODE=production npm run build
 
 production 模式要求真实域名 HTTPS 根地址；空值、凭据、路径、query、fragment、示例域名、本机/私网 IP 均拒绝。构建校验不替代部署联通检查，也不证明域名由官方控制。发布前须核对域名、TLS、Registry 健康检查、允许的酒馆 Origin、Discord 回调地址和真实登录。客户端只嵌入公开地址，不能在此传入 Discord Secret、Session Secret 或管理员 ID。
 
-当前官方公开根地址为 `https://registry.sheepsheeplab.com`。Registry 使用精确 Origin 策略；`localhost`、`127.0.0.1`、协议或端口不同均可能产生拒绝。此限制由 Registry 独立维护，Hub 升级不自动扩大 allowlist；保持正常 CORS，不以测试需要关闭生产检查。在线访问失败不得写入未校验的软件包，本地 Runtime 不依赖目录可用性。Registry 0.6.1 仅接受 API1 Manifest；API2 Catalog／Relay 兼容和 Origin 兼容须分别验收。Production 配置构建成功不代表上述服务验证已经通过。
+当前官方公开根地址为 `https://registry.sheepsheeplab.com`。Registry 使用精确 Origin 策略；`localhost`、`127.0.0.1`、协议或端口不同均可能产生拒绝。此限制由 Registry 独立维护，Hub 升级不自动扩大 allowlist；保持正常 CORS，不以测试需要关闭生产检查。在线访问失败不得写入未校验的软件包，本地 Runtime 不依赖目录可用性。已发布 Registry 0.6.1 基线仅接受 API1 Manifest；未发行 API2 候选已通过隔离合同测试，尚未部署；API2 Catalog／Relay 兼容和 Origin 兼容须分别验收。Production 配置构建成功不代表上述服务验证已经通过。
 
 默认 `npm run build` 是 development 模式：空地址允许离线使用本地扩展，或在构建时明确设置 `MIEMIE_DEFAULT_REGISTRY_URL=http://127.0.0.1:8787`。生产和开发产物都在 `build/`，发布前应按预期模式重新构建，避免上传错误产物。`HUB_BUILD_MODE` 和 `HUB_DEFAULT_REGISTRY_URL` 可用于检查实际产物。
 

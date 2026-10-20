@@ -433,3 +433,34 @@ Safari 使用 Apple 官方 safaridriver：经 Owner 允许临时启用远程自�
 | Phase 6 Documentation Correction 审核包 | `审计报告.md`、`Historical-Preservation.md`、`Other-Documents-Audit.md`；`evidence/npm-test.log`、`evidence/validation.json`、`evidence/SOURCE-SHA256SUMS.txt`；`prior-phase6/` 原样保留上表 Phase 6 审核包内容 |
 
 原始证据必须按各阶段源码清单及构建 SHA-256 关联；本轮文档修正的源码清单不能冒用旧清单。后续若公开证据，应链接实际发布的位置，并继续保留阶段与环境边界。
+
+## Pre-Main 验收记录（2026-10-20）
+
+新增阶段回执，不改写上方 2026-10-17 的数字与 Pending。实测源码 `12368af0715d92210cfa716b5bc81ce896b5514a`；产物 `MieMie-Hub-0.9.0.json`，完整附件 SHA-256 `0ae01eb1052fbcf05ad420e6800ee5ccc0ae19cccc7ff9efc0977fec99f19a42`。这是默认 Development／Bundled Timeline 产物，不代表 Production 配置或线上服务。 本分支内部版本暂留，不能替换已发布同版资产。
+
+| 检查 | 实际结果与范围 |
+| --- | --- |
+| Hub 主测试 | 515 PASS／0 FAIL／0 SKIP；原 Phase 1 的 49 项和 Phase 2 Core 等为子集，不累计 |
+| 五仓主测试 | Hub515、Registry314、Polisher55、Preset447、Director527，共1,858；Preset build 的21项机器测试单列 |
+| Linux CI | 五个 Run、九个 Job 成功；Hub [Core CI](https://github.com/SheepSheepLab/MieMie-Hub/actions/runs/39350796278) 的 source-policy、两个 Node、build-integrity、ci-required 均成功 |
+| 通用真实宿主 | ST1.19／1.18 各 Chromium25、Safari24；Race A/B、Timeline／世界书回读、Back、Focus、Foreground、reload及清理 |
+| 三款实际构建 | 每款×ST两版本×Chromium／Safari，每组9项；不是通用 Fixture 冒充正式产品 |
+| 同 Hub 共存 | Chromium／Safari各7项；实际指针拖动、Native／Surface，单 Runtime |
+| 动态 Native Fixture | 两浏览器各9项；100次交接、各25次Race A/B、20轮生命周期、5次Helper Hub reload；不替代所有产品业务矩阵 |
+| 隔离 Managed | 最终三款真实包13项、通用升级18项、取消3项、身份／hash负例24项；本机Catalog／Relay与真实Helper保存回读，不是生产 |
+| 独立浏览器 | 模拟宿主 Chromium Native6／Back8／SelfUpdate6；不能称为真实Tavern |
+| 系统输入／动画 | 真实拼音仅Polisher Native与Standalone；其他产品用捕获事件回归。Safari OS Reduced Motion 实际开关并验证，恢复原值 |
+
+真实环境：macOS 26.6（25G72）、Chromium 151.0.7922.34、Apple Safari 26.6，ST 1.18.0／1.19.0、Tavern Helper 4.11.3。ST 1.19 源码为 `7e8663cd9c184a550b37238218bdd32c6efc68e9`；1.18 测试副本无 Git 元数据，按完整文件 hash 锁定，不能编造 commit。公开 Default 派生测试数据、专用 dataRoot 与本机合成模型响应；未调用真实外部模型供应商。
+
+IME 修复针对 compositionend 后 Escape 可能出现 `isComposing=false, keyCode=229`：通用 Hub opt-in Back 和各扩展自有 Escape 保留输入法消费，普通 Escape 仍正常返回。没有按产品 ID 给 Core 加分支。Native 所有权期间不接管扩展自身的 Dialog、焦点、动画或业务输入；已测产品通过不代表未知第三方全部无缺陷。
+
+Hub 默认构建、API2 Runtime、Package v1、正常 Bundled Timeline、自更新、身份／版本、Source ready/release、whenDisposed、严格 Lease、迟到任务和资源清理均由主套件保护。生产配置构建与无Timeline架构产物分别校验，不能混用默认实测 hash。当前3款 API2 适配不再 Pending；正式发行和生产 Gate 仍独立。
+
+Runtime API2 与 Managed Package v1 为两道 Gate：开发候选 Runtime／Native 已测范围 PASS，隔离机器包流程 PASS；**生产 Registry API2、生产 Origin／OAuth、正式新版本及 Assets、正式在线安装更新、物理移动 Safari、真实外部模型服务及 Owner 手工验收仍分别 Pending**。Standalone、Package 身份／完整性与用户数据保护继续保留，不增加旧 Hub Runtime 兼容义务。
+
+### Pre-Main 原始证据
+
+原始证据为 **Owner 私有审核材料，尚未公开下载**：`MieMie-Hub-0.9.0-Final-Pre-Main-Review.zip`，SHA-256 `8c06fdad93ff68c5be5699b742d98e4849000b532eaa072bc3279165ee473d73`。包内 `evidence/FINAL-INTEGRATION-LOCK.json`、`FINAL-ACCEPTANCE-RESULTS.json`、`FINAL-BUILD-AUDIT.json`、`FINAL-CI-RESULTS.json` 关联真实源码、产物和日志；不以本机路径充当公共证据。以下是该阶段的既有执行记录，本轮文档维护不声称重新运行 Safari 或宿主；本轮新 HEAD 的本地／Linux CI 回执另随 Owner 审核包交付。
+
+包内 `evidence/host-results/`、`portable-*-MieMie-*.json`、`D-managed-host.json`、`host-upgrade.json`、`final-install-cancel.json` 与各阶段失败日志保留实际步骤；测试后专用脚本树经服务器回读为空、Helper测试设置恢复、服务停止。Safari 锁屏及驱动命中限制保留原失败，不作为产品修复通过凭证。

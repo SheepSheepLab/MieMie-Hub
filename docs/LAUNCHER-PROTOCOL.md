@@ -31,7 +31,7 @@ async function attach(hub) {
 // 该实例的 whenDisposed；重新核对当前 Hub 与用户状态后恢复 Standalone。
 ```
 
-`source` 是 Source Lease：`release()` 撤回工厂来源并清理当前 Runtime 实例，保留用户偏好，不是窗口关闭。`ready` 完成不保证扩展已启用；用户可能已停用或注销该产品，适配器不能自行反向覆盖选择。Hub 不存在与 API 不兼容是两个状态；存在但不兼容时提示用户，不作为自动恢复 Standalone 的依据。API2 的 `whenDisposed` 是必须等待的完成边界，但有界清理超时不能终止扩展任意 JavaScript；扩展自己的旧异步任务仍须检查取消信号。
+`source` 是 Source Lease：`release()` 撤回工厂来源并清理当前 Runtime 实例，保留用户偏好，不是窗口关闭。`ready` 完成不保证扩展已启用；用户可能已停用或注销该产品，适配器不能自行反向覆盖选择。不支持的 Hub 不得被注册或宣称兼容；扩展可独立运行 Standalone，不调用旧 Runtime。兼容 API2 Hub 内用户的停用／注销选择不得被 Standalone 绕过。API2 的 `whenDisposed` 是必须等待的完成边界，但有界清理超时不能终止扩展任意 JavaScript；扩展自己的旧异步任务仍须检查取消信号。
 
 独立入口最小例子使用作者自己的图标/名称：
 
