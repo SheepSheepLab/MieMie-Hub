@@ -1,6 +1,6 @@
 # Extension Ecosystem
 
-当前 Hub 源码版本为 **0.8.3**，正式发布状态与附件见 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases)；Production Registry **0.6.1**。各项目独立维护依赖、构建、测试与版本。开发适配从 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md) 开始。Registry是可选在线目录服务，不是Core启动依赖，不托管社区软件包。目录失效不会停用已安装代码。
+当前 Hub 源码为 **0.9.0 开发候选（未发行）**，正式发布状态与附件见 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases)；Registry 源码审计基线 **0.6.1**；API2 Compatibility 和 Origin Compatibility 两个生产 Gate 独立 Pending。各项目独立维护依赖、构建、测试与版本。开发适配从 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md) 开始。Registry是可选在线目录服务，不是Core启动依赖，不托管社区软件包。目录失效不会停用已安装代码。
 
 Back Navigation 与 Native Window 属于可选 Runtime 能力，不改变 Catalog 投稿资格、产品身份、Package v1 或作者正式发行状态；第三方需主动接入 Native Window 才获得完整原生窗口控制。
 
@@ -8,7 +8,7 @@ Back Navigation 与 Native Window 属于可选 Runtime 能力，不改变 Catalo
 
 1. **普通投稿／外部项目**：公开 GitHub 项目填写 Repository，无需改业务或 UI，缺少机器包时跳转作者 GitHub。Discord 作品填写作者、名称、简介和原帖链接，只跳转原帖，不自动读取或永久缓存附件。
 2. **GitHub Managed Package**：酒馆扩展在作者自己的公开 Release 提供标准 [Package v1](EXTENSION-PACKAGE.md)，通过校验后由 Hub 安装、更新和物理卸载。仓库布局不受要求。
-3. **Hub-native Runtime Integration**：通过 [Extension API v1](EXTENSION-API.md) 接入生命周期，并按需选择蜂窝 Launcher、Surface、Shortcut、Native Window 和 Back Navigation；这是运行期协作，不会自动产生机器安装包。
+3. **Hub-native Runtime Integration**：通过 [Extension API v2](EXTENSION-API.md) 接入生命周期，并按需选择蜂窝 Launcher、Surface、Unified Native Window 和 Back Navigation；这是运行期协作，不会自动产生机器安装包。
 
 三种路径可以组合。**能被 Catalog 收录 ≠ 支持 Managed Install；Runtime Compatibility ≠ Managed Package Compatibility。** Launcher 和双模式可选，后台 Extension 无需 `open()`。
 
@@ -48,11 +48,13 @@ OAuth 使用弹窗进行 Discord 授权；当前 `poll-v1` 交接通过 `/api/au
 
 Catalog下架只影响发现及Catalog新安装，不远程删除、禁用或重写已安装代码。已安装Extension仍可从原来记录的作者GitHub检查更新；管理员隐藏目前也不充当远程kill switch。新的来源URL不会改动本机既有来源绑定。直接输入作者GitHub获取是用户独立选择，不冒充目录仍上架。
 
-Catalog 保存 GitHub 检测快照，投稿／编辑及目录读取时的有界刷新会更新它；这不保证每次展示都实时对应作者最新 Release。安装／更新仍重新读取作者 Release 并独立校验。Registry不可用时发现/我的提示错误，本地Runtime、时间线、Polisher和已安装管理照常使用。
+Catalog 保存 GitHub 检测快照，投稿／编辑及目录读取时的有界刷新会更新它；这不保证每次展示都实时对应作者最新 Release。安装／更新仍重新读取作者 Release 并独立校验。Registry不可用时发现/我的提示错误，本地 API2 Runtime、时间线和符合安全条件的物理管理不依赖目录；三款官方 Extension 的 API2 开发候选已完成隔离验收，正式新版发行与生产 Managed Package 仍 Pending。
 
 ## 安装与信任
 
 Hub仅管理可识别的全局脚本及支持的文件夹。角色/预设位置、重复ID、多候选、未知宿主字段时安全拒绝。安装前全部网络、metadata/Manifest、双hash、版本和身份校验通过后才同步写树；不会执行未验证下载代码。更新同时写入 content 与名称末尾版本号，保留原实例 ID、自定义名称主体和 data，其他脚本不变；准确写入边界以 [Package v1](EXTENSION-PACKAGE.md) 为准。
+
+API2 目标必须在写入前验证；Package Schema 保持 1，Catalog 状态不代替客户端验证。旧安装的构建身份没有 API 版本，只有对应版本发行包与本地内容一致的证据才能确认，否则显示 API 未确认。
 
 Package已写入不代表作者代码运行成功或服务器已保存。列表同时显示物理版本和Runtime状态；更新前导出恢复文件，运行失败需用旧content手工恢复。物理卸载只需确认删除，不生成备份；它会移除该条目data，但不清空工具自己的外部存储。不要把Runtime注销和真正删除混用。
 

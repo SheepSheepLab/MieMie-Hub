@@ -6,9 +6,20 @@ SheepSheep 维护的 MieMie 官方项目，从本次发布起只使用无前导�
 
 Git Tag 使用 `v<version>`。GitHub 的 **Pre-release 是发布状态**，不是版本字符串的一部分，因此 `v0.2.1`、`v0.2.2`、`v1.0.1` 都可以标记为 Pre-release，不表示已完成所有真实宿主验证。
 
-产品版本在 `package.json`、Build Identity、Runtime、UI 和 Update Metadata 的 `version` 字段中保持相同的 `MAJOR.MINOR.PATCH`。只有 Git Tag 及明确指向它的 `tag` 字段、发布 URL 使用 `v` 前缀。例如 Hub 产品版本为 `0.8.3`，Git Tag 为 `v0.8.3`，GitHub Release Title 与 Release Notes Title 为 `MieMie Hub 0.8.3`，脚本附件为 `MieMie-Hub-0.8.3.json`。发布状态与附件以 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 为准。
+产品版本在 `package.json`、Build Identity、Runtime、UI 和 Update Metadata 的 `version` 字段中保持相同的 `MAJOR.MINOR.PATCH`。只有 Git Tag 及明确指向它的 `tag` 字段、发布 URL 使用 `v` 前缀。例如产品版本 `0.9.0` 对应 Tag `v0.9.0`、Release Title `MieMie Hub 0.9.0` 和附件名 `MieMie-Hub-0.9.0.json`；这些命名规则不代表该开发候选已经获准发行。发布状态与附件以 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 为准。
 
-`Extension API v1`、`Package v1` 是协议版本标识，不是产品 SemVer。其他 Extension 与 Registry 独立维护产品版本，无需随 Hub 联动升级。
+协议版本与产品 SemVer 分别维护：
+
+| 字段 | 当前值／规则 |
+| --- | --- |
+| Hub 产品版本 | 0.9.0，本地审核候选，未发行 |
+| Extension API | 2，Runtime 契约 |
+| Manifest schemaVersion | 1，apiVersion 单独声明 |
+| Managed Package / Machine Metadata Schema | 1，机器安装契约 |
+| Build Identity schemaVersion | 1；Extension 身份行不包含 apiVersion |
+| Extension 产品版本 | 独立的 MAJOR.MINOR.PATCH，不随 Hub 自动改变 |
+
+其他 Extension 与 Registry 独立维护产品版本，无需随 Hub 联动升级。
 
 ## 早期公开命名清理
 

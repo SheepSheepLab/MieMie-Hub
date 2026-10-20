@@ -1,3 +1,4 @@
+import {validateExtensionAPIDeclaration, assertExtensionRuntimeCompatibility} from './extension-runtime.js';
 import {applyScriptUpdate} from './script-update-fields.js';
 import {compareSemVer} from './hub-update-check.js';
 import {registryBaseURL} from './registry-client.js';
@@ -35,21 +36,20 @@ export function parseExtensionRepository(input) {
 }
 
 export function validateExtensionManifest(manifest, repository) {
-  if (!extensionObject(manifest) || manifest.schemaVersion !== 1 || manifest.apiVersion !== 1 || !extensionId(manifest.id)
+  validateExtensionAPIDeclaration(manifest);
+  if (!extensionObject(manifest) || !extensionId(manifest.id)
       || !extensionVersion(manifest.version) || !extensionText(manifest.name, 80) || !extensionText(manifest.author, 100)
       || !extensionText(manifest.description, 2000, false) || !extensionText(manifest.entry, 200)
-      || !extensionText(manifest.license, 100)) throw extensionPackageError('manifest', 'Extension Manifest 不完整或不兼容 Extension API v1。');
+      || !extensionText(manifest.license, 100)) throw extensionPackageError('manifest', 'Extension Manifest 字段不完整或格式无效。');
   const repo = parseExtensionRepository(manifest.repository);
   if (repository && repo.url.toLowerCase() !== parseExtensionRepository(repository).url.toLowerCase()) throw extensionPackageError('manifest', 'Manifest Repository 与下载仓库不一致。');
-  if (manifest.hubApi !== undefined && (!extensionObject(manifest.hubApi) || !Number.isInteger(manifest.hubApi.min) || !Number.isInteger(manifest.hubApi.max)
-      || manifest.hubApi.min > 1 || manifest.hubApi.max < 1 || manifest.hubApi.min < 1)) throw extensionPackageError('manifest', '扩展不支持当前 Hub API。');
   if (manifest.contributes !== undefined && !extensionObject(manifest.contributes)) throw extensionPackageError('manifest', 'contributes 格式无效。');
-  // Match existing Runtime v1 structural limits without requiring a Launcher or
+  // Match Runtime structural limits without requiring a Launcher or
   // open(). Runtime still owns launcher execution diagnostics independently.
   if (manifest.contributes?.launcher !== undefined) {
     const launcher = manifest.contributes.launcher;
     if (!extensionObject(launcher) || !extensionText(launcher.title, 60) || (launcher.icon !== undefined && (typeof launcher.icon !== 'string' || launcher.icon.length > 16))) {
-      throw extensionPackageError('manifest', 'Launcher 声明不符合 Extension API v1 的标题／短文本图标限制。');
+      throw extensionPackageError('manifest', 'Launcher 声明不符合 Extension API 的标题／短文本图标限制。');
     }
   }
   if (manifest.icon !== undefined) {
@@ -120,6 +120,7 @@ export function validateExtensionPackageMetadata(metadata, repository, release) 
 }
 
 export async function validateExtensionPackage(bytes, metadata, crypto = globalThis.crypto) {
+  validateExtensionPackageMetadata(metadata, metadata?.manifest?.repository);
   if (!bytes?.byteLength || bytes.byteLength > EXTENSION_PACKAGE_LIMIT || bytes.byteLength !== metadata.asset.size || await extensionHash(bytes, crypto) !== metadata.asset.sha256) throw extensionPackageError('hash', 'Extension 文件大小或 SHA-256 不匹配。');
   const script = extensionJSON(bytes); extensionValidateScript(script);
   const identity = parseExtensionBuildIdentity(script.content);
@@ -137,6 +138,7 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
   relayResponseTimeoutMs = 60000, assetIdleTimeoutMs = 30000, assetVerificationTimeoutMs = 15000} = {}) {
   let disposed = false, busy = false;
   const controllers = new Set(), legacyContents = new Set(), listeners = new Set();
+  const verifiedManifests = new Map(); // In-memory proof, keyed by exact installed content, never by name/latest version.
   const downloaded = new Map(); let cacheBytes = 0, relayCooldown = null;
   function pruneDownloads() {for (const [key, entry] of downloaded) if (entry.until <= now()) {cacheBytes -= entry.bytes.byteLength; downloaded.delete(key);}}
   const notify = () => {try {onChange();} catch {} for (const listener of listeners) {try {listener();} catch {}}};
@@ -329,7 +331,9 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
     const metadata = validateExtensionPackageMetadata(extensionJSON(await download(metadataAsset, extensionMetadataLimit, signal, progress)), repo.url, release);
     const packageAsset = asset(release, metadata.asset.name, repo, EXTENSION_PACKAGE_LIMIT);
     if (packageAsset.size !== metadata.asset.size || packageAsset.sha256 !== metadata.asset.sha256) throw extensionPackageError('metadata', '机器元数据与 GitHub Asset digest 不一致。');
-    return {repoUrl: repo.url, installable: true, compatibility: 'installable', id: metadata.productId, version: metadata.version, tag: metadata.tag, releaseId: release.id, manifest: metadata.manifest, metadata, asset: packageAsset, metadataAsset};
+    let reason = '';
+    try {assertExtensionRuntimeCompatibility(metadata.manifest);} catch (error) {if (error.code !== 'api-incompatible') throw error; reason = error.message;}
+    return {repoUrl: repo.url, installable: !reason, packageValid: true, compatibility: reason ? 'api-incompatible' : 'installable', reason, id: metadata.productId, version: metadata.version, tag: metadata.tag, releaseId: release.id, manifest: metadata.manifest, metadata, asset: packageAsset, metadataAsset};
   }
   async function inspect(repoUrl, {signal} = {}) {
     alive(); let repo = parseExtensionRepository(repoUrl);
@@ -350,7 +354,35 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
     if (!highest) return {repoUrl: repo.url, installable: false, compatibility: 'external', reason: '没有有效三段式 Release，请前往 GitHub。'};
     return describe(repo, await releaseById(repo, highest.id, signal), signal);
   }
-  function row(entry) {const value = identity(entry.script); return {id: value.productId, instanceId: entry.script.id, version: value.version, name: entry.script.name, enabled: entry.script.enabled, folderEnabled: entry.folderEnabled, repoUrl: value.repository, managed: true, legacy: !!value.legacy, scope: 'global'};}
+  function row(entry) {const value = identity(entry.script); return {...runtimeCompatibility(entry.script), id: value.productId, instanceId: entry.script.id, version: value.version, name: entry.script.name, enabled: entry.script.enabled, folderEnabled: entry.folderEnabled, repoUrl: value.repository, managed: true, legacy: !!value.legacy, scope: 'global'};}
+  function runtimeCompatibility(script) {
+    const manifest = verifiedManifests.get(script.content);
+    if (!manifest) return {runtimeCompatibility: 'unconfirmed', apiVersion: null};
+    return {runtimeCompatibility: manifest.apiVersion === 2 ? 'compatible' : 'incompatible', apiVersion: manifest.apiVersion};
+  }
+  function rememberManifest(script, manifest) {
+    if (verifiedManifests.size >= 64) verifiedManifests.delete(verifiedManifests.keys().next().value);
+    verifiedManifests.set(script.content, extensionClone(manifest));
+  }
+  // User-requested verification of this exact installed version, not the latest
+  // release. Full package + content hashes bind its Manifest to the local bytes.
+  async function checkInstalledCompatibility(id) {
+    const saved = await snapshot(id), repo = parseExtensionRepository(saved.repoUrl);
+    const tagged = await query(repo.api + '/releases/tags/v' + saved.version);
+    const release = await releaseById(repo, tagged.id);
+    if (release.tag_name !== 'v' + saved.version) throw extensionPackageError('identity', '对应版本 Release 不匹配，API 状态未确认。');
+    const candidate = await describe(repo, release);
+    if (!candidate.packageValid || candidate.id !== id || candidate.metadata.scriptId !== identity(saved.script).scriptId) throw extensionPackageError('identity', '没有对应安装身份的可信 Manifest，API 状态未确认。');
+    const bytes = await download(candidate.asset, EXTENSION_PACKAGE_LIMIT);
+    const script = await validateExtensionPackage(bytes, candidate.metadata, crypto);
+    if (script.content !== saved.content) throw extensionPackageError('identity', '已安装内容与对应发行包不一致，API 状态未确认。');
+    const finalRelease = await releaseById(repo, release.id);
+    if (finalRelease.tag_name !== candidate.tag || JSON.stringify(asset(finalRelease, candidate.asset.name, repo, EXTENSION_PACKAGE_LIMIT)) !== JSON.stringify(candidate.asset)
+        || JSON.stringify(asset(finalRelease, EXTENSION_PACKAGE_METADATA, repo, extensionMetadataLimit)) !== JSON.stringify(candidate.metadataAsset)) throw extensionPackageError('release-changed', '核验期间 Release 已变化。');
+    ensureSnapshot(readTree(), saved);
+    rememberManifest(script, candidate.manifest); notify();
+    return runtimeCompatibility(script);
+  }
   async function listInstalled() {
     const trees = readTree(); await learnLegacy(trees); alive();
     const entries = extensionValidateTree(trees).filter(entry => identity(entry.script));
@@ -362,8 +394,9 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
         const persisted = await deadline(signal => readSavedScript(item.instanceId, signal), persistenceTimeoutMs);
         const content = persisted?.content;
         const saved = identity({content: content || ''});
-        if (!saved || saved.productId !== item.id || persisted?.id !== item.instanceId || typeof persisted.name !== 'string') return {...item, version: null, persistenceState: persisted == null ? 'pending' : 'error', persistenceError: '尚未确认此脚本已持久保存。'};
-        return {...item, name: persisted.name, version: saved.version, memoryVersion: item.version,
+        const memoryIdentity = identity(scripts.get(item.instanceId));
+        if (!saved || saved.productId !== item.id || saved.scriptId !== memoryIdentity.scriptId || parseExtensionRepository(saved.repository).url.toLowerCase() !== parseExtensionRepository(memoryIdentity.repository).url.toLowerCase() || persisted?.id !== item.instanceId || typeof persisted.name !== 'string') return {...item, version: null, persistenceState: persisted == null ? 'pending' : 'error', persistenceError: '尚未确认此脚本已持久保存。'};
+        return {...item, ...runtimeCompatibility(persisted), name: persisted.name, version: saved.version, memoryVersion: item.version,
           persistenceError: content !== scripts.get(item.instanceId).content || persisted.name !== scripts.get(item.instanceId).name ? '内存与已保存脚本不一致，尚未确认更新成功。' : ''};
       } catch {return {...item, version: null, persistenceError: '无法核验宿主持久保存版本，请重试；不代表更新成功。'};}
     }));
@@ -380,7 +413,7 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
           // Recheck after the asynchronous server read: do not overwrite a concurrent edit.
           const latest = locate(readTree(), saved.id);
           if (latest.script.id !== saved.instanceId || latest.script.content !== content || latest.script.name !== name) throw extensionPackageError('changed', '确认期间脚本已变化，未确认更新成功。');
-          if (!saved.confirmRuntime || getRunningVersion(saved.id) === version) return latest;
+          if (!saved.confirmRuntime || getRunningVersion(saved.id, saved.targetManifest) === version) return latest;
         } else if (persisted !== null && (persisted?.id !== saved.instanceId || ![saved.content, content].includes(persisted?.content))) throw extensionPackageError('changed', '服务器保存内容与更新前后版本均不一致，请检查并发编辑。');
         await new Promise((resolve, reject) => {
           const stop = () => {clearTimeout(timer); reject(extensionPackageError('cancelled', '更新确认已取消。'));};
@@ -398,12 +431,14 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
   async function exclusive(action) {alive(); if (busy) throw extensionPackageError('busy', '已有扩展安装或管理操作正在进行。'); busy = true; notify(); try {return await action();} finally {busy = false; notify();}}
   async function lockedCandidate(candidate, signal, progress = () => {}) {
     signal?.throwIfAborted();
+    if (candidate?.manifest) assertExtensionRuntimeCompatibility(candidate.manifest);
     if (!candidate?.installable || !candidate.manifest || candidate.id !== candidate.manifest.id || candidate.version !== candidate.manifest.version || candidate.tag !== 'v' + candidate.version) throw extensionPackageError('candidate', '请先检查一个可安装的标准 GitHub Extension。');
     const repo = parseExtensionRepository(candidate.repoUrl), release = await releaseById(repo, candidate.releaseId, signal);
     const fresh = await describe(repo, release, signal, progress);
     if (!fresh.installable || fresh.id !== candidate.id || fresh.version !== candidate.version || fresh.tag !== candidate.tag
       || JSON.stringify(fresh.asset) !== JSON.stringify(candidate.asset) || JSON.stringify(fresh.metadataAsset) !== JSON.stringify(candidate.metadataAsset)
       || JSON.stringify(fresh.metadata) !== JSON.stringify(candidate.metadata)) throw extensionPackageError('release-changed', '目标 Release 或 Asset 已变化，请重新检查。');
+    assertExtensionRuntimeCompatibility(fresh.manifest);
     progress('downloading');
     const bytes = await download(fresh.asset, EXTENSION_PACKAGE_LIMIT, signal, progress);
     progress('verifying');
@@ -415,10 +450,10 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
     signal?.throwIfAborted(); alive(); return {fresh, script};
   }
   async function check(id) {const installed = await snapshot(id), candidate = await inspect(installed.repoUrl);
-    if (candidate.installable && candidate.id !== id) throw extensionPackageError('identity', '仓库当前包属于不同 Extension ID，不允许覆盖。');
+    if (candidate.packageValid && candidate.id !== id) throw extensionPackageError('identity', '仓库当前包属于不同 Extension ID，不允许覆盖。');
     return {...candidate, currentVersion: installed.version, available: !!candidate.installable && compareSemVer(candidate.version, installed.version) > 0};}
   return {
-    listInstalled, inspect, check,
+    listInstalled, inspect, check, checkInstalledCompatibility,
     isBusy: () => busy,
     subscribe(listener) {listeners.add(listener); return () => listeners.delete(listener);},
     install(candidate, {signal, onProgress} = {}) {return exclusive(async () => {
@@ -439,16 +474,19 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
         trees.push(newScript); extensionValidateTree(trees); return trees;
       });
       const installed = locate(result, fresh.id); if (installed.script.id !== newScript.id || installed.script.content !== script.content) throw extensionPackageError('host-write', '宿主返回安装状态异常，请检查脚本管理。');
+      rememberManifest(script, fresh.manifest);
       return {ok: true, ...row(installed), action: 'installed', persistence: 'unconfirmed'};
     });},
     update(id, candidate) {return exclusive(async () => {
-      const saved = await snapshot(id); saved.confirmRuntime = !!(saved.enabled && saved.folderEnabled && getRunningVersion?.(id)); candidate ||= await inspect(saved.repoUrl);
+      const saved = await snapshot(id); saved.confirmRuntime = !!(saved.enabled && saved.folderEnabled && typeof getRunningVersion === 'function'); candidate ||= await inspect(saved.repoUrl);
+      if (candidate?.manifest) assertExtensionRuntimeCompatibility(candidate.manifest);
       if (!candidate?.installable || candidate.id !== id || parseExtensionRepository(candidate.repoUrl).url.toLowerCase() !== parseExtensionRepository(saved.repoUrl).url.toLowerCase()
         || compareSemVer(candidate.version, saved.version) <= 0) throw extensionPackageError('version', '没有来自原作者仓库的更高版本同 ID Extension。');
       if (typeof readSavedScript !== 'function') throw extensionPackageError('persistence', '宿主保存核验接口不可用，未写入更新。');
       const persistedBefore = await deadline(signal => readSavedScript(saved.instanceId, signal), persistenceTimeoutMs);
       if (persistedBefore?.id !== saved.instanceId || persistedBefore?.content !== saved.content || persistedBefore?.name !== saved.script.name) throw extensionPackageError('persistence', '当前内存脚本与服务器保存版本不一致，请先核实保存状态；未写入更新。');
       const {script, fresh} = await lockedCandidate(candidate);
+      saved.targetManifest = fresh.manifest;
       const oldIdentity = identity({content: saved.content});
       if (fresh.metadata.scriptId !== oldIdentity.scriptId) throw extensionPackageError('identity', '发布包固定 scriptId 已变化，拒绝跨包覆盖。');
       if (typeof backup !== 'function') throw extensionPackageError('backup-required', '更新前需要导出旧版恢复文件；未覆盖当前扩展。');
@@ -457,11 +495,19 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
       let expectedName;
       const result = writeTree(trees => {const entry = ensureSnapshot(trees, saved); expectedName = applyScriptUpdate(entry.script, script.content, fresh.version); return trees;});
       const installed = locate(result, id); if (installed.script.content !== script.content || installed.script.name !== expectedName) throw extensionPackageError('host-write', '宿主未返回目标内容，保存状态待确认。');
+      rememberManifest(script, fresh.manifest);
       const confirmed = await confirmWritten(saved, script.content, fresh.version, expectedName);
       return {ok: true, ...row(confirmed), action: 'updated', persistence: 'confirmed', runtimeConfirmed: saved.confirmRuntime};
     });},
     setEnabled(id, enabled) {return exclusive(async () => {
       if (typeof enabled !== 'boolean') throw extensionPackageError('enabled', '启用状态必须是布尔值。'); const saved = await snapshot(id);
+      if (enabled) {
+        if (!saved.folderEnabled) throw extensionPackageError('folder-disabled', '请先在酒馆助手启用该文件夹。');
+        if (!verifiedManifests.has(saved.content)) await checkInstalledCompatibility(id);
+        const manifest = verifiedManifests.get(saved.content);
+        if (!manifest) throw extensionPackageError('api-unconfirmed', '此安装版本 API 未确认，未启用脚本。');
+        assertExtensionRuntimeCompatibility(manifest);
+      }
       const result = writeTree(trees => {const entry = ensureSnapshot(trees, saved); if (enabled && !entry.folderEnabled) throw extensionPackageError('folder-disabled', '请先在酒馆助手启用该文件夹。'); entry.script.enabled = enabled; return trees;});
       const installed = locate(result, id); if (installed.script.enabled !== enabled) throw extensionPackageError('host-write', '宿主启用状态未确认。');
       return {ok: true, ...row(installed), action: enabled ? 'enabled' : 'disabled', persistence: 'unconfirmed'};
@@ -475,6 +521,6 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
       if (extensionValidateTree(result).some(entry => entry.script.id === saved.instanceId)) throw extensionPackageError('host-write', '宿主未删除目标条目。');
       return {ok: true, id, instanceId: saved.instanceId, action: 'uninstalled', physical: true, persistence: 'unconfirmed'};
     });},
-    dispose() {disposed = true; for (const controller of controllers) controller.abort(); controllers.clear(); listeners.clear(); downloaded.clear(); cacheBytes = 0; relayCooldown = null;},
+    dispose() {disposed = true; for (const controller of controllers) controller.abort(); controllers.clear(); listeners.clear(); verifiedManifests.clear(); downloaded.clear(); cacheBytes = 0; relayCooldown = null;},
   };
 }

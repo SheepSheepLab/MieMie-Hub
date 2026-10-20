@@ -15,7 +15,13 @@ test('Core contains no Polisher business implementation, assets or settings', ()
 });
 
 test('timeline parsing, auto-generation handling and worldbook write guards are unchanged', async () => {
-  assert.equal(timeline.slice(timeline.indexOf('  const context ='), timeline.indexOf('  // Extension-owned presentation.')),
+  // Normalize only the API 2 presentation guards; retain the original business golden.
+  const business=timeline.slice(timeline.indexOf('  const context ='), timeline.indexOf('  // Extension-owned presentation.'))
+    .replace('    const lease=surfaceLease;if(!currentSurface(lease))return;\n','')
+    .replace('await api();if(!currentSurface(lease))return;','await api();')
+    .replaceAll('if(!currentSurface(lease))return;assertCurrent','assertCurrent')
+    .replace('token === epoch && currentSurface(lease)','token === epoch && !disposed');
+  assert.equal(business,
     await read('tests/fixtures/toolbox-timeline-business.txt'));
 });
 

@@ -2,9 +2,11 @@
 
 咩咩Hub 是咩咩（MieMie）开源软件与社区生态的官方项目。生态由 SheepSheep 发起和创建（Founder / 创始人）；SheepSheepLab 是官方 GitHub 开发、维护与发布命名空间，官方项目主要通过该命名空间维护和发布，并欢迎社区贡献者共同参与。
 
-当前源码版本为 **0.8.3**；正式发布状态与附件以 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 为准。Production Registry 为 **0.6.1**。Core 负责 Extension Runtime、包管理与 Hub 自更新；扩展中心和设置是固定 System Modules。时间线为通过标准 API v1 加载的 Bundled Official Extension，官方默认捆绑时间线、随 Hub 整体更新，时间线只在 Launcher 打开，不进入已安装列表或包管理；仅架构测试可从构建声明移除。基础构建和测试不依赖 Registry 或 Polisher 源码。
+当前源码为 **0.9.0 本地审核候选，未发行**，仅用于独立测试酒馆，禁止替换日常安装或分发给普通用户。正式发布状态见 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases)。
 
-0.8.3 包含可选 Back Navigation、按实际入口恢复焦点、Hub → Standalone 生命周期交接、双入口与可选 Native Window，以及 Hub 展开时的前景优先级。Extension API v1、Package v1 和稳定身份保持不变。
+当前契约为 Extension API v2：统一 Native Window、严格 Surface Lease。Core 负责 Runtime、Package 安全及 Self Update；扩展中心和设置为 System Modules。Bundled Timeline 使用 API2，随 Hub 打包并通过 Launcher 打开。
+
+当前客户端支持 API2 + Package v1，目标 API 在写入前检查；物理安装、API 声明与 Runtime 运行分别显示。三款官方 Extension 的 API2 开发候选与隔离 Runtime／Native／Package 已有验收；正式新版资产、Managed Package 生产验收、Registry API2 与 Registry Origin 仍分别 Pending；隔离测试不是发行批准。
 
 ## 扩展中心
 
@@ -20,9 +22,9 @@
 
 ## 安装、更新与数据
 
-只启用 Hub 即可使用时间线。MieMie Polisher 可单独运行；Hub 出现后主动收纳，Hub 消失后恢复独立球。Hub 不扫描或删除第三方悬浮球。Launcher 是可选能力，后台 Extension 不需要 open()。
+只启用 Hub 即可使用时间线。Polisher、Preset Manager、Story Director 的新版候选只接入 API2，并保留自身 Standalone；版本与实测范围见下方测试文档。Hub 不扫描或删除第三方悬浮球。Launcher 是可选能力，后台 Extension 不需要 open()。
 
-Extension 安装和更新先验证 Release/Asset、Manifest、产品身份、版本、大小和双 SHA-256，才写入酒馆助手全局脚本。更新同时写入目标 content 与名称末尾版本，保留实例 ID、自定义名称主体、data、文件夹与其他脚本；同源保存回读必须同时确认内容和名称。公开包 data 必须为空。脚本 API 返回不等于服务器持久保存或作者代码已成功启动；界面明确提示保存/运行待确认。更新前请求导出旧脚本，作者代码启动失败时可手工恢复，第一版没有自动回滚。
+Extension 安装和更新先验证目标 API2 兼容性、Release/Asset、Manifest、产品身份、版本、大小和双 SHA-256，才写入酒馆助手全局脚本。更新同时写入目标 content 与名称末尾版本，保留实例 ID、自定义名称主体、data、文件夹与其他脚本；同源保存回读必须同时确认内容和名称。公开包 data 必须为空。脚本 API 返回不等于服务器持久保存或作者代码已成功启动；界面明确提示保存/运行待确认。更新前请求导出旧脚本，作者代码启动失败时可手工恢复，第一版没有自动回滚。
 
 物理卸载会删除目标脚本条目及其 data，仅确认删除，不自动生成备份；不清空 localStorage、酒馆变量、Polisher 历史设置或其他脚本。请保存编辑并停止正在生成的任务后更新。Hash 校验不能保证作者代码安全，软件并未运行在完整沙盒里。
 
@@ -51,8 +53,8 @@ MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL="$OFFICIAL_REGISTRY_HTT
 输出：
 
 ```text
-build/MieMie-Hub-0.8.3.json
-build/咩咩Hub-0.8.3.json
+build/MieMie-Hub-0.9.0.json
+build/咩咩Hub-0.9.0.json
 build/MieMie-Hub-update.json
 build/miemie-hub.js
 ```
@@ -70,28 +72,23 @@ build/miemie-hub.js
 ## 开发者资料
 
 双入口遵循 Dual Entrance、Single Business Instance、Independent Presentation Ownership。
-蜂窝入口使用 Hub Surface；主动接入 [Native Window Ownership](docs/EXTENSION-API.md#optional-native-window-ownership-api-v1)
-的原生入口由扩展控制窗口操作。Shortcut 未接入 Native Window 时使用 Hub Surface 托管窗口；开启悬浮球不会自动适配第三方的拖动、缩放或其他原生功能。所有运行期能力按需采用，未注册 Back Handler 的扩展保留既有 Escape 行为。
+蜂窝入口使用 Hub Surface；主动接入 [Native Window Ownership](docs/EXTENSION-API.md#unified-native-window)
+的原生入口由扩展控制窗口操作；拖动、缩放和其他原生功能由扩展自己的实现负责。所有运行期能力按需采用，未注册 Back Handler 的扩展保留既有 Escape 行为。
 
-已知限制：Hub 收起动画尚未结束时快速点击原生球可能重新展开 Hub，计划在 0.8.4 处理；等待收起结束后可正常使用原生窗口。Registry 当前精确 Origin 策略可能拒绝不同地址或端口，相关调整由 Registry 独立维护，不能仅靠升级 Hub 解决。两项均未在 0.8.3 修复，当前验收范围见 [TESTING.md](docs/TESTING.md)。
+测试方法与验收边界见 [TESTING](docs/TESTING.md)。通用 Fixture 不替代正式官方扩展验收；Registry API2 与 Origin 独立验证。升级注意事项见 [0.9.0 发行说明草稿](docs/RELEASE-0.9.0-DRAFT.md)。
 
-- [四层架构、时间线迁移与无时间线测试包](docs/CORE-ARCHITECTURE.md)
+- [Core 架构、随包时间线与架构测试构建](docs/CORE-ARCHITECTURE.md)
 
 - **[Extension 开发统一入口：社区作者与 coding agent 从这里开始](docs/EXTENSION-DEVELOPER-GUIDE.md)**
 - [社区投稿、目录与信任边界](docs/ECOSYSTEM.md)
 - [Extension Package / Manifest v1](docs/EXTENSION-PACKAGE.md)
-- [Extension API v1](docs/EXTENSION-API.md)
+- [Extension API v2（开发契约）](docs/EXTENSION-API.md)
 - [Launcher 双模式协议 v1](docs/LAUNCHER-PROTOCOL.md)
 - [Launcher Icon Guideline v1](docs/ICON-GUIDELINE.md)
 - [版本规则](docs/VERSIONING.md)
 - [测试及黄金路径](docs/TESTING.md)
 
-Hub 的基础测试完全独立。额外组合测试只读显式提供、锁定版本与 SHA-256 的产物，不查找或导入另一仓库产品源码：
-
-```sh
-MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL=https://registry.sheepsheeplab.com \
-  npm run test:integration -- --polisher /path/to/MieMie-Polisher-Extension-1.2.1.json
-```
+Hub 的基础测试独立运行。正式官方扩展的组合验收须使用经过独立适配、锁定身份与哈希的 API2 产品。
 
 当前版本不包含 Pinned、社交功能、镜像、Discord 附件安装、Extension 代码沙盒或 Loader/A/B。
 
@@ -119,4 +116,4 @@ Copyright © 2026 SheepSheep。社区贡献者（Community Contributors）保留
 
 ## Catalog 类型与治理
 
-发现页区分 Community / MieMie 官方、酒馆扩展 / 独立应用 / Web 工具及平台。只有 Tavern + managed_install + 有效 Package 可以进入安装；独立程序跳转作者发布页，Web 工具跳转其 HTTPS 网站，Hub 不执行 EXE/APK/DMG。投稿的 Source、Type、Distribution 与 Platforms 分开；官方角色可在本人投稿选择 Official。管理操作全部移至 Registry `/admin`，普通 Hub 不提供 Ban、角色、保护或审计操作。
+发现页区分 Community / MieMie 官方、酒馆扩展 / 独立应用 / Web 工具及平台。只有 Tavern + managed_install + 有效 Package 可以进入安装；独立程序跳转作者发布页，Web 工具跳转其 HTTPS 网站，Hub 不执行 EXE/APK/DMG。投稿的 Source、Type、Distribution 与 Platforms 分开；Official 身份由 Registry 服务端治理，Hub 投稿表单不提供身份选择。管理操作全部移至 Registry `/admin`，普通 Hub 不提供 Ban、角色、保护或审计操作。

@@ -224,7 +224,7 @@ test('built Hub does not give ordinary or Timeline-impostor factories its truste
 test('bundling alone is not official identity and packaging authority is bound to the exact factory',async()=>{
  const {bundledClassificationResolver}=await import('../src/bundled-extensions.js');
  const {createExtensionRuntime}=await import('../src/extension-runtime.js');
- const manifest={schemaVersion:1,apiVersion:1,id:'test.bundle',name:'Community bundle',version:'1.0.0',classification:'official',official:true};
+ const manifest={schemaVersion:1,apiVersion:2,id:'test.bundle',name:'Community bundle',version:'1.0.0',classification:'official',official:true};
  const factory=()=>({});
  for(const classification of [undefined,'community','official']){
   const resolver=bundledClassificationResolver([{manifest,factory,classification}]);
@@ -266,7 +266,8 @@ test('Timeline picker keyboard, resize, scroll and Surface close release the flo
   for(const [node,event] of [[f.h,'resize'],[panel,'scroll'],[f.d.body,'pointerdown']]){
     trigger.click();assert.ok(f.d.querySelector('.ts-picker'));node.dispatchEvent(new f.h.Event(event,{bubbles:true}));assert.equal(f.d.querySelector('.ts-picker'),null);
   }
-  trigger.click();key('Escape');await until(()=>panel.hidden);
+  trigger.click();key('Escape');assert.equal(panel.hidden,false);assert.equal(f.d.querySelector('.ts-picker'),null);
+  f.d.dispatchEvent(new f.h.KeyboardEvent('keyup',{key:'Escape',bubbles:true}));key('Escape');await until(()=>panel.hidden);
   assert.equal(f.d.querySelector('.ts-picker'),null);
   await f.open();f.d.querySelector('[data-routing-trigger]').click();panel.querySelector('.mm-return').click();await until(()=>panel.hidden);
   assert.equal(f.d.querySelector('.ts-picker'),null);
@@ -302,4 +303,12 @@ test('downward Timeline picker stays attached to its trigger and respects narrow
   assert.equal(popup.style.top,'149px');
   assert.ok(parseFloat(popup.style.left)>=8);
   assert.ok(parseFloat(popup.style.left)+parseFloat(popup.style.width)<=382);
+});
+
+test('API 2 Timeline close cancels an old refresh; immediate reopen owns the only allowed result',async t=>{
+ const f=await fixture(t);await f.open();const panel=f.d.querySelector('.ts-panel'),pending=[];f.hold(()=>new Promise(r=>pending.push(r)));
+ panel.querySelector('[data-refresh]').click();await until(()=>pending.length===1);panel.querySelector('.mm-return').click();await until(()=>panel.hidden);
+ const closed=panel.outerHTML;pending.shift()({entries:{}});await tick();await tick();assert.equal(panel.outerHTML,closed);assert.equal(f.writes,0);
+ await f.h.__MieMieHub.extensions.open('miemie.timeline');await until(()=>pending.length===1);pending.shift()({entries:{}});await until(()=>panel.textContent.includes('没有识别到时间线'));assert.equal(panel.hidden,false);
+ assert.equal(f.h.__MieMieHub.extensions.get('miemie.timeline').manifest.apiVersion,2);assert.equal(f.h.__MieMieHub.extensions.get('miemie.timeline').manifest.version,'1.0.0');assert.equal(f.writes,0);
 });

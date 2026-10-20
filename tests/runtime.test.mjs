@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {runInNewContext} from 'node:vm';
-import {createExtensionRuntime} from '../src/extension-runtime.js';
+import {createExtensionRuntime} from './fixtures/runtime-host.js';
 import {createRuntimeFixture} from './fixtures/runtime-extension.js';
 
 const {manifest: sample, factory: sampleFactory} = createRuntimeFixture();
-const manifest = (id, launcher = true) => ({schemaVersion: 1, apiVersion: 1, id, name: id, version: '0.1.0', ...(launcher ? {contributes: {launcher: {title: id}}} : {})});
+const manifest = (id, launcher = true) => ({schemaVersion: 1, apiVersion:2, id, name: id, version: '0.1.0', ...(launcher ? {contributes: {launcher: {title: id}}} : {})});
 const nextTask = () => new Promise(resolve => setTimeout(resolve, 0));
 
 test('ordinary factories cannot reach trusted classification or mutable runtime state through this', async t => {
@@ -143,7 +143,7 @@ test('duplicate registration and invalid manifests do not replace a working inst
   runtime.register(sample, sampleFactory); await runtime.enable(sample.id);
   assert.equal(runtime.register(sample, () => {throw Error('should not execute');}).ok, false);
   assert.equal(runtime.register({...sample, id: '__proto__'}, sampleFactory).ok, false);
-  assert.equal(runtime.register({...sample, id: 'test.future', apiVersion: 2}, sampleFactory).ok, false);
+  assert.equal(runtime.register({...sample, id: 'test.future', apiVersion: 3}, sampleFactory).ok, false);
   const snapshot = runtime.get(sample.id); snapshot.manifest.name = 'mutated';
   assert.equal(runtime.get(sample.id).manifest.name, 'Runtime fixture');
   assert.equal(runtime.get(sample.id).enabled, true);
@@ -354,7 +354,7 @@ test('rapid concurrent enable calls produce one active instance; teardown persis
 test('custom panel is session-scoped and detached after activation failure or disable', async () => {
   let attached=0,detached=0,shown=0,api;
   const runtime=createExtensionRuntime({onPanel(){attached++;return()=>detached++;},onShowPanel(){shown++;return true;}});
-  runtime.register(manifest('test.panel'),context=>{api=context;return {activate(){context.attachPanel({});},open(){return context.showPanel();}};});
+  runtime.register(manifest('test.panel'),context=>{api=context;return {activate(){context.attachPanel({});},open(lease){return context.showPanel(lease);}};});
   await runtime.enable('test.panel');await runtime.open('test.panel');
   assert.equal(attached,1);assert.equal(shown,1);await runtime.disable('test.panel');
   assert.equal(detached,1);assert.equal(api.showPanel(),false);assert.equal(api.attachPanel({}),false);
@@ -364,11 +364,13 @@ test('custom panel is session-scoped and detached after activation failure or di
   await runtime.dispose();
 });
 
-test('closePanel is session-bound, optional and does not deactivate or expose runtime state',async t=>{
- const calls=[],apis=[];let cleaned=0;
- const r=createExtensionRuntime({onPanel:()=>()=>cleaned++,onShowPanel:id=>{calls.push('show:'+id);return true;},onClosePanel:id=>{calls.push('close:'+id);return Promise.resolve(true);}});t.after(()=>r.dispose());
- for(const id of ['test.surface.a','test.surface.b']){r.register(manifest(id),api=>{apis.push(api);return {activate(){api.attachPanel({});},open(){return api.showPanel();}};});await r.enable(id);}
- assert.ok(Object.isFrozen(apis[0]));await apis[0].closePanel('test.surface.b');assert.equal(calls.at(-1),'close:test.surface.a');assert.equal(cleaned,0);assert.equal(r.get('test.surface.a').enabled,true);
- await r.disable('test.surface.a');assert.equal(apis[0].closePanel(),false);assert.equal(cleaned,1);assert.equal(await apis[1].closePanel(),true);
- assert.deepEqual(Object.keys(apis[1]).sort(),['attachPanel','closePanel','guard','manifest','onCleanup','registerBackHandler','registerNativeWindow','registerShortcutLauncher','showMessage','showPanel','signal'].sort());
+test('API 2 show/close requires the exact current request and session, preserving instance',async t=>{
+ const calls=[],apis=[],leases=[];let cleaned=0;
+ const r=createExtensionRuntime({onPanel:()=>()=>cleaned++,onShowPanel:id=>{calls.push('show:'+id);return true;},onClosePanel:id=>{calls.push('close:'+id);return true;}});t.after(()=>r.dispose());
+ for(const id of ['test.surface.a','test.surface.b']){r.register(manifest(id),api=>{apis.push(api);return {activate(){api.attachPanel({});},open(lease){leases.push(lease);return api.showPanel(lease);}};});await r.enable(id);}
+ await r.open('test.surface.a');assert.equal(apis[0].closePanel(),false);assert.equal(apis[0].closePanel({isCurrent:()=>true}),false);
+ assert.equal(apis[0].closePanel(leases[0]),true);assert.equal(calls.at(-1),'close:test.surface.a');assert.equal(cleaned,0);
+ await r.open('test.surface.b');assert.equal(apis[0].showPanel(leases[0]),false);assert.equal(apis[1].closePanel(leases[0]),false);
+ await r.disable('test.surface.a');assert.equal(apis[0].closePanel(leases[0]),false);assert.equal(cleaned,1);assert.equal(apis[1].closePanel(leases[1]),true);
+ assert.ok(Object.isFrozen(apis[1]));assert.deepEqual(Object.keys(apis[1]).sort(),['attachPanel','closePanel','guard','manifest','onCleanup','registerBackHandler','registerNativeWindow','showMessage','showPanel','signal'].sort());
 });

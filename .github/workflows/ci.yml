@@ -1,0 +1,107 @@
+name: MieMie Hub Core Regression CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hub-core-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  MIEMIE_BUILD_MODE: development
+  MIEMIE_DEFAULT_REGISTRY_URL: ''
+
+jobs:
+  source-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.0'
+          package-manager-cache: false
+      - run: node tools/ci-source-check.mjs --self-test
+      - run: node tools/ci-source-check.mjs
+
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - node: '22.23.3'
+            npm: '10.9.9'
+          - node: '24.22.0'
+            npm: '11.19.1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+      - name: Verify exact toolchain
+        env:
+          EXPECTED_NODE: ${{ matrix.node }}
+          EXPECTED_NPM: ${{ matrix.npm }}
+        run: |
+          node --version
+          npm --version
+          test "$(node -p 'process.versions.node')" = "$EXPECTED_NODE"
+          test "$(npm --version)" = "$EXPECTED_NPM"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm test
+      - run: node --test tests/docs/back-examples.test.mjs
+
+  build-integrity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.0'
+          package-manager-cache: false
+      # Both scripts use only Node built-ins and the repository's own validators.
+      - run: node tools/ci-artifact-check.mjs --self-test
+      - run: node tools/ci-artifact-check.mjs --build
+
+  ci-required:
+    if: ${{ always() }}
+    needs: [source-policy, test, build-integrity]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Require every prerequisite to succeed
+        env:
+          SOURCE_RESULT: ${{ needs.source-policy.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          BUILD_RESULT: ${{ needs.build-integrity.result }}
+        run: |
+          for result in "$SOURCE_RESULT" "$TEST_RESULT" "$BUILD_RESULT"; do
+            if [[ "$result" != success ]]; then
+              printf '%s\n' "Required job did not succeed: $result"
+              exit 1
+            fi
+          done
+          printf '%s\n' 'All required Core CI jobs succeeded.'
