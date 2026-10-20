@@ -556,3 +556,11 @@ test('System description consumes repeats, native cancel and Back without window
  await f.click('.mm-description-open');panel.querySelector('.mm-return').click();await settle();assert.equal(f.query('dialog'),null);assert.equal(panel.hidden,false);
  panel.querySelector('.mm-return').click();await settle();assert.equal(panel.hidden,true);
 });
+
+// Recorded Safari: compositionend then Escape keydown false/229.
+test('Safari IME keyCode229 never dispatches coordinated Surface Back',async t=>{
+ const f=await fixture(t),{probe}=await backFixture(f);
+ const e=new f.host.KeyboardEvent('keydown',{key:'Escape',keyCode:229,isComposing:false,bubbles:true,cancelable:true});
+ probe.panel.dispatchEvent(e);await settle();assert.equal(probe.calls,0);assert.equal(probe.panel.hidden,false);assert.equal(e.defaultPrevented,false);
+ escape(f);assert.equal(probe.calls,1);
+});

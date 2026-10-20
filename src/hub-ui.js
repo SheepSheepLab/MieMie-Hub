@@ -235,7 +235,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     if(surface.state==='closed')return;
     const context=surface.backContext();
     const coordinated=!!backRecovery||context.key==='extension-center'||(context.key.startsWith('panel:')&&runtime.hasBackHandler(context.owner));
-    if(coordinated&&e.isComposing)return;
+    if(coordinated&&(e.isComposing||e.keyCode===229))return;
     const alreadyHandled=e.defaultPrevented;
     e.preventDefault();e.stopImmediatePropagation();
     if(coordinated){escapeOwned=true;if(e.repeat||alreadyHandled)return;void requestBack('escape');}
