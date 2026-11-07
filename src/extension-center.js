@@ -3,7 +3,7 @@ const productDistribution=(type,source,github)=>({tavern_extension:source==='git
 import {createSubmissionSelects} from './submission-select.js';
 import {HUB_COPY} from './ui-copy.js';
 // Catalog is optional online UI; this module is never a Core startup dependency.
-export function createExtensionCenter({host, body, accountContainer, progressContainer, runtime, sources, shortcuts, packages, registry, refreshLaunchers = () => {}}) {
+export function createExtensionCenter({host, body, accountContainer, progressContainer, runtime, sources, nativeEntries, packages, registry, refreshLaunchers = () => {}}) {
   const doc = host.document, configKey = 'miemie_registry_url_v1';
   let disposed = false, active = 'discover', serial = 0, page = 1, query = '', sourceFilter = '', busy = false;
   const candidates = new Map();
@@ -91,7 +91,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
   function hideProgress() {clearCompletion();installProgress.hidden=true;delete installProgress.dataset.state;progressMount.classList.remove('mm-download-active');}
   function showProgress() {installProgress.hidden=false;progressMount.classList.add('mm-download-active');}
   function finishProgress() {
-    installProgress.dataset.state='completed';progressStatus.textContent='✓ 已完成';
+    installProgress.dataset.state='completed';progressStatus.textContent='✓ 已写入';
     completionTimer=host.setTimeout(()=>{completionTimer=null;installProgress.dataset.state='leaving';hideTimer=host.setTimeout(hideProgress,380);},1200);
   }
   function stopSavedCheck() {host.clearTimeout(savedCheckTimer);savedCheckTimer=null;}
@@ -209,7 +209,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
       await activate('installed');
       if(disposed || !visible)return;
       report('');
-      progressBar.value = 100; progressBar.setAttribute('aria-label', '安装进度'); progressText.textContent = '安装完成 · 100%';finishProgress();
+      progressBar.value = 100; progressBar.setAttribute('aria-label', '安装进度'); progressText.textContent = '已写入 · 保存待确认';finishProgress();
     } catch (error) {
       if (!disposed) hideProgress();
       if (controller.signal.aborted) throw Error('已取消安装；本地扩展未被修改。');
@@ -218,7 +218,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
   }
   async function operate(fn) {
     if (busy) return; busy = true;
-    try {const result = await fn(); if (result?.ok === false) throw Error(result.error || '操作失败。'); report(result?.action === 'updated' && result.persistence === 'confirmed' ? ('更新完成：已重新读取宿主脚本并确认服务器保存。' + (result.runtimeConfirmed ? '新版运行已确认。' : '此扩展未运行，启用后加载新版。')) : '操作完成；脚本保存与运行状态请在酒馆助手中确认。');}
+    try {const result = await fn(); if (result?.ok === false) throw Error(result.error || '操作失败。'); report(result?.action === 'updated' && result.persistence === 'confirmed' ? ('更新完成：已重新读取宿主脚本并确认服务器保存。' + (result.runtimeConfirmed ? '新版运行已确认。' : 'Runtime 运行尚未确认。')) : '操作完成；脚本保存与运行状态请在酒馆助手中确认。');}
     finally {busy = false; if (!disposed) {refreshLaunchers(); await renderInstalled();}}
   }
   async function renderInstalled() {
@@ -242,12 +242,18 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
       const card = el('article', undefined, 'mm-extension-card'); card.dataset.extensionId = id;
       const title = el('div', undefined, 'mm-extension-title'); title.append(el('strong', manifest.name || installed?.name || id));
       const enabled = installed ? installed.enabled : !!local?.enabled;
-      title.append(el('small', (installed ? (installed.version || '保存版本待确认') : (manifest.version || '')) + ' · ' + (enabled ? '已启用' : '已停用'))); card.append(title);
+      title.append(el('small', (installed ? (installed.version || '保存版本待确认') : (manifest.version || '')) + ' · ' + (installed ? (enabled ? '物理已安装 · 脚本开关开启' : '物理已安装 · 脚本开关关闭') : (enabled ? '已启用' : '已停用')))); card.append(title);
       card.append(el('p', manifest.description || id, 'mm-hub-note'));
+      if (installed) {
+        card.append(el('p', installed.runtimeCompatibility === 'incompatible' ? '版本不兼容：此安装版本声明 API ' + installed.apiVersion + '，Hub Runtime 仅支持 API 2；原脚本和数据保留。'
+          : installed.runtimeCompatibility === 'compatible' ? '此安装版本的 API 2 声明已核验；实际运行状态单独确认。'
+          : 'API 未确认：物理身份不包含 API 版本，需核验对应版本发行包。', installed.runtimeCompatibility === 'incompatible' ? 'mm-extension-error' : 'mm-hub-note'));
+        card.append(el('p', local?.enabled ? 'Runtime 可用 · 实际运行版本：' + local.manifest.version : 'Runtime 尚未运行或已停用。', 'mm-hub-note'));
+      }
       if (installed) card.append(el('p', '酒馆脚本名称：' + installed.name + '（更新保留原名；版本以已保存内容为准）', 'mm-hub-note'));
       card.append(el('p', 'Launcher：' + (local?.launcherAvailable ? '可用' : '未提供或未启用'), 'mm-hub-note'));
       for (const error of [local?.error, local?.launcherError]) if (error) card.append(el('p', error, 'mm-extension-error'));
-      const candidate = candidates.get(id); if (candidate) card.append(el('p', '最新版本：' + candidate.version, 'mm-hub-note'));
+      const candidate = candidates.get(id), updateAvailable = candidate?.available && candidate.version !== installed?.version; if (candidate) card.append(el('p', '最新版本：' + candidate.version + (candidate.reason ? ' · ' + candidate.reason : updateAvailable ? ' · 存在可更新版本，等待确认更新。' : ''), 'mm-hub-note'));
       let savedPhase='';
       if (installed?.persistenceError) {
         if(!savedCheckUntil.has(id))savedCheckUntil.set(id,host.performance.now()+15000);
@@ -264,7 +270,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
       }
       if (installed?.version && local && installed.version !== local.manifest.version) {
         savedPhase='error';
-        card.append(el('p', '已保存版本：' + (installed.version || '待确认') + ' · 实际运行版本：' + local.manifest.version + '。尚未完成新版运行确认。', 'mm-extension-error'));
+        card.append(el('p', '已保存版本：' + (installed.version || '待确认') + ' · ' + (local.enabled ? '实际运行版本：' : '已注册但未运行版本：') + local.manifest.version + '。尚未完成新版运行确认。', 'mm-extension-error'));
         if (installed.version && !installed.persistenceError && installed.version === installed.memoryVersion) {
           card.append(el('p', '如需重新加载，请先停止生成并保存编辑；刷新会中断当前任务。', 'mm-hub-note'));
           action(card, '刷新页面加载已保存版本', () => host.location.reload(), id + ':reload-page');
@@ -272,16 +278,18 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
       }
       if(local?.error||local?.launcherError)savedPhase='error';
       showSavedState(card,id,savedPhase);
-      if(local?.shortcutLauncherAvailable&&shortcuts){
+      if(local?.nativeWindowAvailable&&nativeEntries){
         const label=el('label',undefined,'mm-shortcut-toggle'),toggle=el('input'),copy=el('span',undefined,'mm-shortcut-copy');
         toggle.type='checkbox';toggle.setAttribute('role','switch');toggle.setAttribute('aria-label','显示悬浮球');toggle.dataset.shortcut=id;
-        const update=()=>{toggle.checked=shortcuts.enabled(id)&&(!shortcuts.mounted||shortcuts.mounted(id));toggle.setAttribute('aria-checked',String(toggle.checked));};
+        const update=()=>{toggle.checked=nativeEntries.enabled(id);toggle.setAttribute('aria-checked',String(toggle.checked));};
         update();toggle.disabled=!!(busy||local.busy||!local.enabled);
-        toggle.onchange=()=>{try{shortcuts.set(id,toggle.checked);}catch(e){report(e.message);}finally{update();}};
+        toggle.onchange=()=>{try{nativeEntries.set(id,toggle.checked);}catch(e){report(e.message);}finally{update();}};
         toggle.onkeydown=event=>{if(event.key==='Enter'&&!toggle.disabled){event.preventDefault();toggle.click();}};
         const track=el('span',undefined,'mm-switch-track');track.setAttribute('aria-hidden','true');track.append(el('span',undefined,'mm-switch-thumb'));
-        copy.append(el('span','显示悬浮球'),el('small',local.nativeWindowAvailable?'原生窗口，保留扩展自己的操作':'快捷入口，窗口仍由 Hub 管理'));
+        copy.append(el('span','显示悬浮球'),el('small','原生窗口，保留扩展自己的操作'));
         label.append(copy,toggle,track);card.append(label);
+        if(nativeEntries.error?.(id))card.append(el('p',nativeEntries.error(id)+(nativeEntries.blocked?.(id)?'。入口已撤销时不代表窗口已完成关闭；请重试释放。':'。已保留开启选择；关闭再开启可重试。'),'mm-extension-error'));
+        if(nativeEntries.blocked?.(id)){const retry=el('button','重试释放窗口','mm-system-action');retry.type='button';retry.dataset.nativeReleaseRetry=id;retry.onclick=()=>nativeEntries.retry(id);card.append(retry);}
       }
       const actions = el('div', undefined, 'mm-extension-actions'); card.append(actions);
       if (local?.launcherAvailable) action(actions, '打开', () => runtime.open(id), id + ':open', local.busy);
@@ -290,8 +298,9 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
         return packages.setEnabled(id, !enabled);
       }), id + ':toggle', busy || local?.busy);
       if (installed) {
+        if (packages.checkInstalledCompatibility) action(actions, '核验 API', () => operate(() => packages.checkInstalledCompatibility(id)), id + ':verify-api', busy);
         action(actions, '检查更新', async () => {const next = await packages.check(id); candidates.set(id, next); await renderInstalled();}, id + ':check', busy);
-        if (candidate?.available) action(actions, '更新', () => operate(() => packages.update(id, candidate)), id + ':update', busy);
+        if (updateAvailable) action(actions, '更新', () => operate(async () => {const result = await packages.update(id, candidate); if (result?.ok) candidates.delete(id); return result;}), id + ':update', busy);
         action(actions, '卸载', () => operate(async () => {await packages.uninstall(id); if (runtime.get(id)) await runtime.uninstall(id); candidates.delete(id);}), id + ':uninstall', busy);
         link(actions, '作者 GitHub', installed.repoUrl);
       } else action(actions, 'Runtime 注销', () => operate(() => runtime.uninstall(id)), id + ':uninstall', busy || local?.busy);

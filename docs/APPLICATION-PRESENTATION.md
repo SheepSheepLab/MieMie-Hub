@@ -1,5 +1,7 @@
 # Application Presentation & Shortcut Launcher · 2026-09-27
 
+> **当前规范导航（0.9.0）。** 本文件完整保留历史 Application Presentation 与 Shortcut Launcher 的设计及审核记录；下文版本、“当前基线”、接口、测试成绩和 Pending 均是当时状态。MieMie Hub 0.9.0 开发候选已采用统一 Native Window / Hub Surface 架构；当前有效契约以 [Extension API v2](EXTENSION-API.md) 为准，第三方接入参考 [Developer Guide](EXTENSION-DEVELOPER-GUIDE.md)。历史 Shortcut 不是当前公开 API，本文不追溯改写历史结论。
+
 > **Historical development / review record.** 下文版本、测试数字、待验收／未发布状态均属于当时阶段。当前公开基线为 **MieMie Hub 0.8.2**；当前 Extension 开发从 [EXTENSION-DEVELOPER-GUIDE.md](EXTENSION-DEVELOPER-GUIDE.md) 开始。
 
 Status: READY FOR VISUAL / INTEGRATION REVIEW. This supersedes the previous

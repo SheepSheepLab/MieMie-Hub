@@ -1,4 +1,3 @@
-import {createShortcutLaunchers} from './shortcut-launchers.js';
 import {HUB_COPY} from './ui-copy.js';
 import {HUB_PRODUCT} from './product-identity.js';
 import {createHoneycombLauncher} from './honeycomb-launcher.js';
@@ -12,7 +11,8 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   const launcher = createHoneycombLauncher({host, root, shell, title: HUB_PRODUCT.name + ' 应用'});
   let disposed = false, lastError = '';
   let surface, backRecovery = null, escapeOwned = false;
-  const shortcuts=createShortcutLaunchers({host,runtime,launch:(id,open,origin)=>surface.launch(id,open,origin),openNative:(id,origin)=>surface.openNative(id,origin),releaseNative:id=>surface.acquireHub(id),onChange:()=>ecosystem.refresh(),onError:error=>ecosystem.report(error)});
+  // Private preference facade only; Surface owns the sole Native capability Map.
+  const nativeEntries={error:id=>surface.entryError(id),blocked:id=>surface.releaseBlocked(id),retry:id=>surface.retryRelease(id),enabled:id=>surface.entryEnabled(id),mounted:id=>surface.entryMounted(id),set:(id,value)=>surface.setEntry(id,value),forget:id=>surface.forgetEntry(id),sync:()=>surface.syncEntries()};
   let menuButtons = [];
   function makePanel(title, subtitle) {
     const panel = doc.createElement('section'); panel.className = 'mm-hub-panel'; panel.hidden = true; panel.inert = true; panel.tabIndex = -1;
@@ -35,7 +35,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   const panels = new Set([manager.panel, message.panel, center.panel, settings.panel]);
 
   const account = doc.createElement('div'); account.className = 'mm-header-account'; center.header.append(account);
-  const ecosystem = createExtensionCenter({host, body: center.body, accountContainer: account, progressContainer: center.panel, runtime, shortcuts, sources: localSources, ...ecosystemOptions, refreshLaunchers: renderMenu});
+  const ecosystem = createExtensionCenter({host, body: center.body, accountContainer: account, progressContainer: center.panel, runtime, nativeEntries, sources: localSources, ...ecosystemOptions, refreshLaunchers: renderMenu});
 
   const versionCard = doc.createElement('div'); versionCard.className = 'mm-system-card';
   const versionTitle = doc.createElement('h2'); versionTitle.textContent = 'Hub 版本';
@@ -107,11 +107,9 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     const theme = host.getComputedStyle(shell.root), safe = edge => parseFloat(theme.getPropertyValue('--mie-safe-' + edge)) || 0;
     const top = Math.max(16,safe('top')), bottom = Math.max(16,safe('bottom')), left = Math.max(12,safe('left')), right = Math.max(12,safe('right'));
     for (const p of panels) {
-      if(surface?.ownsNative(p)||surface?.placeNative(p))continue;
+      if(surface?.ownsNative(p))continue;
       const pw = Math.max(1, Math.min(p === center.panel ? 920 : 600, w - left - right)), ph = Math.max(1, Math.min(780, h - top - bottom));
-      const anchor=surface?.floatingAnchor(p),clamp=(value,min,max)=>Math.max(min,Math.min(max,value));
-      const x=anchor?clamp(anchor.left+anchor.width/2>ox+w/2?anchor.left-pw-12:anchor.left+anchor.width+12,ox+left,ox+w-right-pw):ox+left+(w-left-right-pw)/2;
-      const y=anchor?clamp(anchor.top+anchor.height/2-ph/2,oy+top,oy+h-bottom-ph):oy+top+(h-top-bottom-ph)/2;
+      const x=ox+left+(w-left-right-pw)/2,y=oy+top+(h-top-bottom-ph)/2;
       for (const [key,value] of Object.entries({position:'fixed',left:x+'px',top:y+'px',right:'auto',bottom:'auto',width:pw+'px',height:ph+'px',maxHeight:ph+'px'})) p.style.setProperty(key.replace(/[A-Z]/g,m=>'-'+m.toLowerCase()),value,'important');
     }
     launcher.resize();
@@ -129,7 +127,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     'extension-center':{owner:'extension-center',panel:center.panel},
     settings:{owner:'settings',panel:settings.panel},
   };
-  surface=createSurfaceController({host,shell,root,launcher,panels,place,
+  surface=createSurfaceController({host,shell,root,launcher,panels,place,runtime,onEntryChange:()=>ecosystem.refresh(),
     resolve:key=>systemSurfaces[key]||extensionPanels.get(key)||(key.startsWith('message:')?messages.get(key.slice(8)):undefined),
     onState:next=>{closeBackRecovery(false);if(next!=='extension-center')ecosystem.leave();else ecosystem.enter();updateOrbState();},onError:error=>{lastError=error.message;ecosystem.report(lastError);},
   });
@@ -223,6 +221,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     if (surface.state === 'menu' && focused) (menuButtons.find(b => b.dataset.hubApp === focused) || menuButtons[0])?.focus({preventScroll: true});
   }
   function key(e) {
+    if(!backRecovery&&surface.state==='closed'){escapeOwned=false;return;}
     if(!backRecovery&&surface.nativeEvent(e)){escapeOwned=false;return;}
     if (e.key === 'Tab' && surface.state === 'menu') {
       const items = [orb, ...menuButtons], index = items.indexOf(doc.activeElement);
@@ -236,7 +235,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     if(surface.state==='closed')return;
     const context=surface.backContext();
     const coordinated=!!backRecovery||context.key==='extension-center'||(context.key.startsWith('panel:')&&runtime.hasBackHandler(context.owner));
-    if(coordinated&&e.isComposing)return;
+    if(coordinated&&(e.isComposing||e.keyCode===229))return;
     const alreadyHandled=e.defaultPrevented;
     e.preventDefault();e.stopImmediatePropagation();
     if(coordinated){escapeOwned=true;if(e.repeat||alreadyHandled)return;void requestBack('escape');}
@@ -253,10 +252,11 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   return {
     open: () => go('menu'), toggle: () => go(surface.state === 'closed' ? 'menu' : 'closed'), back: () => closeCurrent(),
     registerNativeWindow:(id,provider)=>surface.registerNativeWindow(id,provider),
-    acquireHub:id=>surface.acquireHub(id),
-    registerShortcut:(id,mount)=>shortcuts.register(id,mount),
-    forgetShortcut:id=>shortcuts.forget(id),
-    runtimeChanged(event,preservePreference=false){if(backRecovery&&!backRecovery.valid())closeBackRecovery(false);if(event.kind==='uninstall'&&!preservePreference)shortcuts.forget(event.extension.manifest.id);shortcuts.sync();this.refresh();},
+    requestSurface:id=>surface.requestSurface(id),
+    cancelSurface:(id,lease)=>surface.cancelSurface(id,lease),
+    acquireHub:(id,lease)=>surface.validSurface(id,lease)&&surface.acquireHub(id),
+    forgetNativeEntry:id=>nativeEntries.forget(id),
+    runtimeChanged(event,preservePreference=false){if(backRecovery&&!backRecovery.valid())closeBackRecovery(false);if(event.kind==='uninstall'&&!preservePreference)nativeEntries.forget(event.extension.manifest.id);nativeEntries.sync();this.refresh();},
     refresh() { if (!disposed) { renderMenu(); ecosystem.refresh(); } },
     showMessage(id, title, text) {
       if (disposed) return;
@@ -291,8 +291,9 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
       place();
       const detach = ({handoff=false}={}) => {
         if (extensionPanels.get(key) !== entry) return;
-        surface.revoke(id);
+        const released=surface.revoke(id,handoff?'hub-dispose':'session-end');
         panels.delete(panel); extensionPanels.delete(key);
+        if(released===false)return; // Failed native cleanup never grants Hub root writes.
         const attribute=(name,value)=>{if(value===null)panel.removeAttribute(name);else panel.setAttribute(name,value);};
         panel.inert=saved.inertValue;attribute('inert',saved.inert);
         if(handoff){
@@ -302,14 +303,14 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
       };
       entry.detach=detach;return detach;
     },
-    showPanel(id) {return surface.ownsNative(extensionPanels.get('panel:'+id)?.panel)?false:surface.go('panel:'+id);},
-    closePanel(id) {return surface.close('panel:'+id);},
+    showPanel(id,lease) {return surface.validSurface(id,lease)&&!surface.ownsNative(extensionPanels.get('panel:'+id)?.panel)?surface.go('panel:'+id,undefined,null,lease):false;},
+    closePanel(id,lease) {return surface.validSurface(id,lease)?surface.close('panel:'+id):false;},
     report(error) { lastError = error; ecosystem.report(error); },
     dispose() {
       if (disposed) return;
       disposed = true;closeBackRecovery(false);escapeOwned=false; surface.dispose();
       for(const entry of [...extensionPanels.values()])entry.detach({handoff:true});
-      shortcuts.dispose();messages.clear(); doc.removeEventListener('keydown', key, true);
+      messages.clear(); doc.removeEventListener('keydown', key, true);
       doc.removeEventListener('keyup',releaseEscape,true);host.removeEventListener('blur',blurEscape);
       updateChecker.dispose();
       unsubscribeUpdate?.(); selfUpdater?.dispose(); ecosystem.dispose(); launcher.dispose();

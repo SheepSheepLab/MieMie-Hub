@@ -6,7 +6,7 @@ import {createExtensionRuntime} from '../src/extension-runtime.js';
 const pkg=JSON.parse(await readFile(new URL('../package.json',import.meta.url)));
 const artifact=JSON.parse(await readFile(new URL('../build/MieMie-Hub-'+pkg.version+'.json',import.meta.url)));
 const tick=()=>new Promise(r=>setImmediate(r));
-const manifest=id=>({id,name:'Independent lifecycle fixture',version:'1.0.0',apiVersion:1,schemaVersion:1,contributes:{launcher:{title:'Lifecycle fixture'}}});
+const manifest=id=>({id,name:'Independent lifecycle fixture',version:'1.0.0',apiVersion:2,schemaVersion:1,contributes:{launcher:{title:'Lifecycle fixture'}}});
 async function fixture(t,shortcuts={}){
  const errors=[],dom=new JSDOM('<body>',{url:'https://handoff.invalid',runScripts:'outside-only',virtualConsole:new VirtualConsole().on('jsdomError',e=>errors.push(e.message))}),host=dom.window,doc=host.document,frames=[];
  host.localStorage.setItem('miemie_hub_shortcuts_v1',JSON.stringify(shortcuts));host.matchMedia=()=>({matches:true});host._={delay:host.setTimeout.bind(host)};host.SillyTavern={getContext:()=>({characters:[],chat:[],eventTypes:{}})};
@@ -15,7 +15,7 @@ async function fixture(t,shortcuts={}){
  t.after(async()=>{for(const f of frames)stop(f);await host.__MieMieHubDisposal;dom.window.close();assert.deepEqual(errors,[]);});
  const frame=await mount();return {host,doc,frame,mount,stop};
 }
-async function provide(f,id,panel,cleanup=()=>{},before=false){let api;const hub=f.host.__MieMieHub,lease=hub.extensions.provide(manifest(id),a=>{api=a;return {activate(){if(before)a.onCleanup(cleanup);a.attachPanel(panel);if(!before)a.onCleanup(cleanup);},open(){return a.showPanel();}};});await lease.ready;return {api,hub,lease};}
+async function provide(f,id,panel,cleanup=()=>{},before=false){let api;const hub=f.host.__MieMieHub,lease=hub.extensions.provide(manifest(id),a=>{api=a;return {activate(){if(before)a.onCleanup(cleanup);a.attachPanel(panel);if(!before)a.onCleanup(cleanup);},open(lease){return a.showPanel(lease);}};});await lease.ready;return {api,hub,lease};}
 
 test('panel lease revokes synchronously before deferred deactivate and LIFO user cleanup',async t=>{
  const events=[];let finish;const gate=new Promise(r=>finish=r),r=createExtensionRuntime({onPanel:()=>reason=>events.push(['detach',reason.handoff])});t.after(()=>r.dispose());
@@ -48,8 +48,4 @@ test('existing cleanup timeout survives removal of the old Hub iframe and unbloc
  f.stop(f.frame);f.frame.remove();await f.mount(false);assert.equal(f.host.__MieMieHub,undefined);
  let deadline;try{await Promise.race([app.hub.whenDisposed,new Promise((_,reject)=>{deadline=setTimeout(()=>reject(Error('cleanup timeout was lost with old iframe')),4500);})]);}finally{clearTimeout(deadline);}
  await tick();assert.ok(f.host.__MieMieHub);assert.notEqual(f.host.__MieMieHub,app.hub);assert.equal(f.doc.querySelectorAll('.ts-orb').length,1);assert.equal(f.host.__MieMieHubDisposal,undefined);
-});
-test('dispose during native close cannot write hidden/inert after Surface ownership returned',async t=>{
- const f=await fixture(t,{'test.handoff.flight':true}),panel=f.doc.createElement('section'),orb=f.doc.createElement('button');panel.tabIndex=-1;f.doc.body.append(panel);let api,closing,finish;const running=new Promise(r=>closing=r),flight=new Promise(r=>finish=r);
- const app=f.host.__MieMieHub.extensions.provide(manifest('test.handoff.flight'),a=>{api=a;return {activate(){a.attachPanel(panel);a.registerShortcutLauncher({mount({open}){orb.onclick=open;f.doc.body.append(orb);return {getOrigin:()=>orb,dispose:()=>orb.remove(),presentation:{place(){},run(p,opening){if(!opening){closing();return flight;}},cancel(){},release(){}}};}});},open(){return a.showPanel();}};});await app.ready;orb.click();await tick();await tick();const close=api.closePanel();await running;const old=f.host.__MieMieHub;f.stop(f.frame);panel.hidden=false;panel.inert=false;await old.whenDisposed;finish();await close;await tick();assert.equal(panel.hidden,false);assert.equal(panel.inert,false);assert.equal(panel.dataset.surfaceState,undefined);
 });

@@ -43,11 +43,11 @@ try{
  await check('body portal native modal and picker return once with no native cancel double handling',async()=>{
   await page.evaluate(async()=>{
    const id='test.native.back';window.nativeApi=null;window.nativeMode='normal';window.nativeBusy=false;
-   window.nativeLease=__MieMieHub.extensions.provide({schemaVersion:1,apiVersion:1,id,name:'Native fixture',version:'1.0.0',contributes:{launcher:{title:'Native fixture'}}},api=>{
+   window.nativeLease=__MieMieHub.extensions.provide({schemaVersion:1,apiVersion:2,id,name:'Native fixture',version:'1.0.0',contributes:{launcher:{title:'Native fixture'}}},api=>{
     nativeApi=api;return {activate(){
      window.nativePanel=document.createElement('section');nativePanel.tabIndex=-1;nativePanel.dataset.backFixture=id;nativePanel.textContent='Native fixture';document.body.append(nativePanel);api.attachPanel(nativePanel);api.onCleanup(()=>{nativePanel.remove();window.child?.remove();});
      api.registerBackHandler(request=>{fixtureCalls.back++;window.nativeRequest=request;if(nativeMode==='throw')throw Error('Fixture draft');if(nativeBusy)return true;if(window.picker&&!picker.hidden){picker.hidden=true;return true;}if(window.child?.open){child.close();return true;}return false;});
-    },open(){return api.showPanel();}};
+    },open(lease){window.nativeSurface=lease;return api.showPanel(lease);}};
    });await nativeLease.ready;
   });await open('test.native.back');
   await page.evaluate(()=>{window.child=document.createElement('dialog');child.innerHTML='<button id="native-picker">Picker</button><button id="native-child-back">Dialog</button>';window.picker=child.firstChild;child.addEventListener('cancel',event=>{fixtureCalls.cancel++;event.preventDefault();child.close();});document.body.append(child);child.showModal();picker.focus();});
@@ -71,8 +71,8 @@ try{
   await page.evaluate(()=>nativeMode='throw');await page.keyboard.press('Escape');await page.getByRole('button',{name:'关闭当前界面',exact:true}).click();await page.waitForFunction(()=>nativePanel.hidden);
  });
  await check('stale asynchronous request cannot authorize work after same-session reopen',async()=>{
-  await page.evaluate(async()=>{nativeMode='normal';nativeBusy=true;await nativeApi.showPanel();});await page.keyboard.press('Escape');
-  await page.evaluate(async()=>{window.oldRequest=nativeRequest;await nativeApi.closePanel();await nativeApi.showPanel();});assert.equal(await page.evaluate(()=>oldRequest.isCurrent()),false);
+  await page.evaluate(async()=>{nativeMode='normal';nativeBusy=true;await __MieMieHub.extensions.open('test.native.back');});await page.keyboard.press('Escape');
+  await page.evaluate(async()=>{window.oldRequest=nativeRequest;await nativeApi.closePanel(nativeSurface);await __MieMieHub.extensions.open('test.native.back');});assert.equal(await page.evaluate(()=>oldRequest.isCurrent()),false);
  });
  await check('disable, re-enable, source release and Hub disposal revoke old request contexts',async()=>{
   await page.keyboard.press('Escape');await page.evaluate(async()=>{window.oldRequest=nativeRequest;await __MieMieHub.extensions.disable('test.native.back');});assert.equal(await page.evaluate(()=>oldRequest.isCurrent()),false);

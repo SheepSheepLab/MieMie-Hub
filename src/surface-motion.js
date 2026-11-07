@@ -18,7 +18,7 @@ export function createSurfaceMotion({host,shell,launcher}) {
   if(!o||!r.width||!r.height)return {transform:'translate(0,'+SURFACE_TUNING.fallbackOffset+'px) scale('+SURFACE_TUNING.fallbackScale+')',opacity:0};
   // Keep an opaque shared surface all the way to the icon; clipping also works
   // when an Extension has an !important panel border-radius of its own.
-  return {transform:'translate('+(o.left-r.left)+'px,'+(o.top-r.top)+'px) scale('+o.width/r.width+','+o.height/r.height+')',opacity:1,clipPath:'inset(0 round '+(origin?.radius||'50%')+')'};
+  return {transform:'translate('+(o.left-r.left)+'px,'+(o.top-r.top)+'px) scale('+o.width/r.width+','+o.height/r.height+')',opacity:1,clipPath:'inset(0 round '+'50%'+')'};
  }
  async function animate(element,frames,options){
   const a=element.animate(frames,{...options,fill:'both'});animations.add(a);
@@ -72,19 +72,13 @@ export function createSurfaceMotion({host,shell,launcher}) {
   const children=[...panel.children],small=collapsed(panel,origin),radius=host.getComputedStyle(panel).borderRadius||'16px';
   const large={transform:'none',opacity:1,clipPath:'inset(0 round '+radius+')'},options=motion(opening?'open':'close');
   const hero=header?prepareHeader(panel,header):null;
-  // A native shortcut is a persistent anchor, unlike a Honeycomb icon morph.
-  // Let the page emerge/retreat behind the existing orb, never replace it with
-  // a stretched copy of its artwork. Honeycomb motion is unchanged.
-  if(origin?.kind==='shortcut')small.opacity=0;
   const previous=['transform-origin','overflow'].map(key=>[key,panel.style.getPropertyValue(key),panel.style.getPropertyPriority(key)]);
   panel.style.setProperty('transform-origin','0 0');panel.style.setProperty('overflow','hidden');
-  const visual=hero||origin?.kind==='shortcut'?null:surfaceFace(panel,origin),visibility=visual?.button?.style.getPropertyValue('visibility'),priority=visual?.button?.style.getPropertyPriority('visibility');
+  const visual=hero?null:surfaceFace(panel,origin),visibility=visual?.button?.style.getPropertyValue('visibility'),priority=visual?.button?.style.getPropertyPriority('visibility');
   visual?.button?.style.setProperty('visibility','hidden');
-  origin?.active?.(true);
   let cleaned=false;
   function cleanup(){
    if(cleaned)return;cleaned=true;visual?.face.remove();
-   origin?.active?.(false);
    if(visual?.button){if(visibility)visual.button.style.setProperty('visibility',visibility,priority);else visual.button.style.removeProperty('visibility');}
    for(const [key,value,weight] of previous){if(value)panel.style.setProperty(key,value,weight);else panel.style.removeProperty(key);}
    surfaceCleanups.delete(cleanup);

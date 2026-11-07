@@ -3,13 +3,13 @@ import test from 'node:test';import assert from 'node:assert/strict';import {JSD
 const tick=()=>new Promise(r=>setImmediate(r));
 const github={id:'dev-github',name:'Development Fixture <script>',description:'Test Data',author:'Fixture Author',sourceType:'github',sourceUrl:'https://github.com/example/extension',submitter:{displayName:'Development Submitter',avatarUrl:null},github:{compatibility:'installable',manifest:{id:'fixture.package'}},status:'listed',moderation:'visible'};
 const discord={...github,id:'dev-discord',sourceType:'discord',sourceUrl:'https://discord.com/channels/111111111111111111/222222222222222222',github:null};
-function fixture(t,{identity=null,request,defaultBase='',storedBase='https://registry.example',shortcuts,exportDiagnostics}={}){
+function fixture(t,{identity=null,request,defaultBase='',storedBase='https://registry.example',nativeEntries,exportDiagnostics}={}){
  const dom=new JSDOM('<header id="account"></header><div id="body"></div>',{url:'https://tavern.example'}),host=dom.window,body=host.document.querySelector('#body');if(storedBase!==null)host.localStorage.setItem('miemie_registry_url_v1',storedBase);
  const calls=[],listeners=new Set();const notify=()=>{for(const listener of listeners)listener(who);};let base=defaultBase,who=identity,records=[{manifest:{id:'fixture.background',name:'Background Development Fixture',version:'1.0.0'},enabled:true,launcherAvailable:false,state:'enabled'}];
  const registry={setBase(v){if(base!==v){base=v;notify();}},getBase:()=>base,getDefaultBase:()=>defaultBase,getIdentity:()=>who,subscribe(listener){listeners.add(listener);return()=>listeners.delete(listener);},setIdentity(value){who=value;notify();},async login(){who={profile:{displayName:'Development Submitter'}};notify();},async logout(){who=null;notify();},dispose(){calls.push('registry.dispose');},async api(path,options){calls.push({path,options});if(request)return request(path,options);if(path.startsWith('/api/catalog'))return {items:[github,discord],hasMore:false};if(path.startsWith('/api/github/preview'))return {compatibility:'installable'};if(path==='/api/submissions'&&!options?.method)return {items:[github]};return {ok:true};}};
  const runtime={list:()=>records,get:id=>records.find(x=>x.manifest.id===id),open:async id=>{calls.push('open:'+id);return {ok:true};},disable:async id=>{records.find(x=>x.manifest.id===id).enabled=false;},enable:async id=>{records.find(x=>x.manifest.id===id).enabled=true;},uninstall:async id=>{records=records.filter(x=>x.manifest.id!==id);}};
  const packages={exportDiagnostics,async listInstalled(){return [];},async inspect(url){calls.push('inspect:'+url);return {installable:true,id:'fixture.package',manifest:{name:'Development Fixture'},version:'1.0.1'};},async install(candidate){calls.push('install:'+candidate.id);},dispose(){calls.push('packages.dispose');}};
- const account=host.document.querySelector('#account');const center=createExtensionCenter({host,body,accountContainer:account,runtime,shortcuts,sources:{list:()=>[],register:async()=>{}},packages,registry});
+ const account=host.document.querySelector('#account');const center=createExtensionCenter({host,body,accountContainer:account,runtime,nativeEntries,sources:{list:()=>[],register:async()=>{}},packages,registry});
  t.after(()=>{center.dispose();dom.window.close();});
  async function click(text){const b=[...host.document.querySelectorAll('button')].find(x=>x.textContent===text);assert.ok(b,text);b.click();await tick();await tick();}
  return {host,body,account,center,calls,click,runtime,registry,packages};
@@ -197,8 +197,8 @@ test('external Tavern declaration never gains Install; preview language cannot c
 });
 
 test('shortcut switch handles touch activation and disables while Runtime is busy',async t=>{
- let on=false,calls=0;const f=fixture(t,{shortcuts:{enabled:()=>on,mounted:()=>on,set(_id,value){on=value;calls++;}}});
- const record=f.runtime.get('fixture.background');record.shortcutLauncherAvailable=true;record.launcherAvailable=true;record.busy=true;
+ let on=false,calls=0;const f=fixture(t,{nativeEntries:{enabled:()=>on,mounted:()=>on,set(_id,value){on=value;calls++;}}});
+ const record=f.runtime.get('fixture.background');record.nativeWindowAvailable=true;record.launcherAvailable=true;record.busy=true;
  await f.center.activate('installed');let toggle=f.body.querySelector('[role="switch"]');assert.equal(toggle.disabled,true);toggle.click();assert.equal(calls,0);assert.equal(toggle.getAttribute('aria-checked'),'false');
  record.busy=false;await f.center.activate('installed');toggle=f.body.querySelector('[role="switch"]');assert.equal(toggle.disabled,false);
  const tap=new f.host.MouseEvent('click',{bubbles:true,cancelable:true,detail:1});Object.defineProperty(tap,'pointerType',{value:'touch'});toggle.dispatchEvent(tap);assert.equal(calls,1);assert.equal(toggle.getAttribute('aria-checked'),'true');
@@ -398,11 +398,11 @@ test('download percentage resets on fallback, stays distinct from install comple
  progress('downloading',{receivedBytes:25,totalBytes:100});assert.equal(bar.value,25);
  progress('relaying');assert.equal(bar.hasAttribute('value'),false);
  progress('downloading',{receivedBytes:0,totalBytes:100});assert.equal(bar.value,0);
- progress('downloading',{receivedBytes:100,totalBytes:100});assert.equal(bar.value,100);assert.doesNotMatch(panel.textContent,/安装完成/);
+ progress('downloading',{receivedBytes:100,totalBytes:100});assert.equal(bar.value,100);assert.doesNotMatch(panel.textContent,/已写入 · 保存待确认/);
  progress('verifying');assert.equal(bar.hasAttribute('value'),false);assert.match(panel.textContent,/下载完成.*校验/);
  progress('installing');assert.equal(bar.hasAttribute('value'),false);assert.match(panel.textContent,/写入/);
- finish({ok:true});await tick();await tick();assert.equal(bar.value,100);assert.match(panel.textContent,/安装完成 · 100%/);
- progress('downloading',{receivedBytes:0,totalBytes:100});assert.match(panel.textContent,/安装完成 · 100%/);
+ finish({ok:true});await tick();await tick();assert.equal(bar.value,100);assert.match(panel.textContent,/已写入 · 保存待确认/);
+ progress('downloading',{receivedBytes:0,totalBytes:100});assert.match(panel.textContent,/已写入 · 保存待确认/);
 });
 
 test('rate-limit failure hides pending progress and keeps retry time instead of reporting completed', async t => {
@@ -433,7 +433,7 @@ test('rolling download speed falls to zero on silence, resets for relay, and cle
  now+=1000;progress('downloading',{receivedBytes:102400,totalBytes:102400});assert.match(panel.textContent,/100.0 KB\/s/);
  progress('verifying');assert.equal(timers.size,0);
  progress('installing');assert.equal(panel.querySelector('[data-cancel-install]').hidden,true);
- finish({ok:true});await tick();await tick();assert.match(panel.textContent,/安装完成 · 100%/);assert.equal(timers.size,0);
+ finish({ok:true});await tick();await tick();assert.match(panel.textContent,/已写入 · 保存待确认/);assert.equal(timers.size,0);
 });
 
 test('cancel download aborts install signal, restores retry, and ignores late byte callbacks',async t=>{
@@ -474,7 +474,7 @@ test('named download toast completes, retracts and disappears without a permanen
  await f.center.activate('discover');await f.click('安装');
  const toast=f.body.querySelector('[data-install-progress]');assert.match(toast.querySelector('.mm-install-name').textContent,/Development Fixture/);
  assert.equal(toast.parentElement,f.body);assert.equal(toast.hidden,false);
- done();await tick();await tick();assert.equal(toast.dataset.state,'completed');assert.match(toast.textContent,/安装完成/);
+ done();await tick();await tick();assert.equal(toast.dataset.state,'completed');assert.match(toast.textContent,/已写入 · 保存待确认/);
  await clock.advance(1200);assert.equal(toast.dataset.state,'leaving');await clock.advance(380);assert.equal(toast.hidden,true);
  assert.equal(f.body.querySelector('.mm-center-notice').textContent,'');
 });
@@ -573,4 +573,26 @@ test('System Back delegates to current submission picker without changing the fo
  assert.ok(form.querySelector('[role=listbox]'));assert.equal(f.center.back(),true);assert.equal(form.querySelector('[role=listbox]'),null);
  assert.equal(f.body.querySelector('[data-submission-form]'),form);assert.equal(f.host.document.activeElement,trigger);assert.equal(f.center.back(),false);
  trigger.click();await f.center.activate('discover');assert.equal(f.center.back(),false);assert.equal(f.body.querySelector('[role=listbox]'),null);
+});
+
+test('Phase4 physical/API/Runtime/update states remain independent and latest API cannot label an old instance',async t=>{
+ const f=fixture(t);let compatibility='unconfirmed';
+ f.packages.listInstalled=async()=>[{id:'fixture.legacy',instanceId:'old',version:'1.0.0',name:'用户旧脚本',enabled:true,repoUrl:'https://github.com/DevelopmentFixture/Example',runtimeCompatibility:compatibility,apiVersion:compatibility==='incompatible'?1:null}];
+ f.packages.checkInstalledCompatibility=async()=>{compatibility='incompatible';};
+ f.packages.check=async()=>({version:'2.0.0',available:false,reason:'此扩展声明 API 3，当前 Hub 仅支持 Extension API 2。'});
+ await f.center.activate('installed');const card=()=>f.body.querySelector('[data-extension-id="fixture.legacy"]');
+ assert.match(card().textContent,/物理已安装/);assert.match(card().textContent,/API 未确认/);assert.match(card().textContent,/Runtime 尚未运行/);assert.doesNotMatch(card().textContent,/Runtime 可用/);
+ card().querySelector('[data-action="fixture.legacy:verify-api"]').click();await tick();await tick();assert.match(card().textContent,/版本不兼容.*API 1/);
+ card().querySelector('[data-action="fixture.legacy:check"]').click();await tick();await tick();assert.match(card().textContent,/最新版本：2.0.0.*API 3/);assert.equal(card().querySelector('[data-action="fixture.legacy:update"]'),null);assert.ok(card().querySelector('[data-action="fixture.legacy:uninstall"]'));
+});
+
+for (const runtimeConfirmed of [true,false]) test('Phase4 saved target removes stale Update action even when Runtime confirmation '+runtimeConfirmed,async t=>{
+ const f=fixture(t);let version='1.0.0';
+ f.packages.listInstalled=async()=>[{id:'fixture.background',instanceId:'same',version,memoryVersion:version,name:'Custom',enabled:true,repoUrl:'https://github.com/DevelopmentFixture/Example',runtimeCompatibility:'compatible',apiVersion:2}];
+ f.packages.check=async()=>({version:'2.0.0',available:true});
+ f.packages.update=async()=>{version='2.0.0';if(!runtimeConfirmed)throw Error('已保存，但新版运行尚未确认。');f.runtime.get('fixture.background').manifest.version=version;return {ok:true,action:'updated',persistence:'confirmed',runtimeConfirmed:true};};
+ await f.center.activate('installed');await f.click('检查更新');assert.match(f.body.textContent,/存在可更新版本，等待确认更新/);await f.click('更新');
+ assert.equal(f.body.querySelector('[data-action="fixture.background:update"]'),null);
+ if(runtimeConfirmed)assert.match(f.body.textContent,/新版运行已确认/);
+ else {assert.match(f.body.textContent,/尚未完成新版运行确认/);assert.doesNotMatch(f.body.textContent,/新版运行已确认/);}
 });

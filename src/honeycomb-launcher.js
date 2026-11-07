@@ -167,6 +167,15 @@ export function createHoneycombLauncher({host, root, shell, title}) {
     if(id!==generation)return;
     active=false;root.hidden=true;root.dataset.moving='false';shell.releaseOrb();x=0;draw();
   }
+  // Synchronous ownership boundary, using logical intent, never animated hidden.
+  function settle(opened) {
+    ++generation;stopFlights();drag=null;
+    if(frame){cancelRAF(frame);frame=0;}
+    active=opened;x=0;root.hidden=!opened;root.inert=!opened;
+    root.dataset.open=String(opened);root.dataset.moving='false';delete root.dataset.surface;
+    if(opened){shell.borrowOrb(cells[0]);layout();}else shell.releaseOrb();
+    draw();
+  }
   function capture(id) {
     const element=buttons.find(b=>b.dataset.hubApp===id);
     const rect=element?.getBoundingClientRect();
@@ -222,7 +231,7 @@ export function createHoneycombLauncher({host, root, shell, title}) {
   const listeners={scroll:schedule,pointerdown:down,pointermove:move,pointerup:end,pointercancel:end,lostpointercapture:end,focusin:focus};
   for(const [name,fn]of Object.entries(listeners))scroll.addEventListener(name,fn);
   scroll.addEventListener('click',click,true);
-  return {open,close,setItems,capture,resume,originRect,originElement:origin=>buttons.find(b=>b.dataset.hubApp===origin?.id&&b.isConnected),highlight,suspend(){root.dataset.surface='true';root.inert=true;},resize(){stopFlights();layout();},
+  return {open,close,settle,setItems,capture,resume,originRect,originElement:origin=>buttons.find(b=>b.dataset.hubApp===origin?.id&&b.isConnected),highlight,suspend(){root.dataset.surface='true';root.inert=true;},resize(){stopFlights();layout();},
     dispose(){disposed=true;++generation;stopFlights();if(frame)cancelRAF(frame);for(const[name,fn]of Object.entries(listeners))scroll.removeEventListener(name,fn);scroll.removeEventListener('click',click,true);shell.releaseOrb();scroll.remove();hint.remove();ripple.remove();},
   };
 }

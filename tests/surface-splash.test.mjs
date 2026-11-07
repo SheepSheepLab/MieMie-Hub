@@ -20,12 +20,8 @@ test('resize cancellation and reduced motion cannot leave a blurred splash or hi
  const f=fixture(t),opening=f.motion.run(f.panel,{},true);f.motion.cancel();await opening;assert.equal(f.doc.querySelector('[data-surface-splash]'),null);assert.equal(f.target.style.visibility,'');
  f.host.matchMedia=()=>({matches:true});await f.motion.run(f.panel,{},true);assert.equal(f.doc.querySelector('[data-surface-splash]'),null);
 });
-test('Shortcut page retreats into the persistent orb without replacing it; Honeycomb remains opaque',async t=>{
- const f=fixture(t),active=[],origin={kind:'shortcut',active:value=>active.push(value)};
- const closing=f.motion.run(f.panel,origin,false);
- assert.equal(f.doc.querySelector('[data-surface-face]'),null);
- const close=f.calls.find(c=>c.el===f.panel);assert.equal(close.frames.at(-1).opacity,0);assert.match(close.frames.at(-1).transform,/translate\(800px,280px\)/);
- for(const a of [...f.pending])a.cancel();await closing;assert.deepEqual(active,[true,false]);
- f.calls.length=0;const hubClosing=f.motion.run(f.panel,{},false);assert.equal(f.calls.find(c=>c.el===f.panel).frames.at(-1).opacity,1);
- for(const a of [...f.pending])a.cancel();await hubClosing;
+test('Honeycomb closing stays opaque and does not call external-origin callbacks',async t=>{
+ const f=fixture(t),origin={kind:'shortcut',active(){throw Error('retired external origin');}};
+ const closing=f.motion.run(f.panel,origin,false);assert.equal(f.calls.find(c=>c.el===f.panel).frames.at(-1).opacity,1);
+ for(const a of [...f.pending])a.cancel();await closing;
 });

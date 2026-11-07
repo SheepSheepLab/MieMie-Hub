@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "apiVersion": 1,
+  "apiVersion": 2,
   "id": "miemie.timeline",
   "name": "咩咩时间线切换器",
   "version": "1.0.0",

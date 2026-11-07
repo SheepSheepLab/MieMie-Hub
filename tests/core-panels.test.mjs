@@ -271,11 +271,11 @@ test('Extension Center has a semantic sidebar and persistent header login, outsi
 });
 
 async function surfaceProbe(f,id){
- let api,panel,opens=0,deactivations=0;
- const lease=f.host.__MieMieHub.extensions.provide({id,name:id,version:'1.0.0',schemaVersion:1,apiVersion:1,contributes:{launcher:{title:id}}},context=>{
-  api=context;return {activate(){panel=f.doc.createElement('section');panel.tabIndex=-1;panel.dataset.surfaceTest=id;panel.innerHTML='<div>Content</div><button>Close</button>';panel.lastChild.onclick=()=>api.closePanel();f.doc.body.append(panel);panel.getBoundingClientRect=()=>({left:100,top:50,width:600,height:650});api.attachPanel(panel);api.onCleanup(()=>panel.remove());},open(){opens++;return api.showPanel();},deactivate(){deactivations++;}};
+ let api,panel,surfaceLease,opens=0,deactivations=0;
+ const lease=f.host.__MieMieHub.extensions.provide({id,name:id,version:'1.0.0',schemaVersion:1,apiVersion:2,contributes:{launcher:{title:id}}},context=>{
+  api=context;return {activate(){panel=f.doc.createElement('section');panel.tabIndex=-1;panel.dataset.surfaceTest=id;panel.innerHTML='<div>Content</div><button>Close</button>';panel.lastChild.onclick=()=>api.closePanel(surfaceLease);f.doc.body.append(panel);panel.getBoundingClientRect=()=>({left:100,top:50,width:600,height:650});api.attachPanel(panel);api.onCleanup(()=>panel.remove());},open(lease){surfaceLease=lease;opens++;return api.showPanel(lease);},deactivate(){deactivations++;}};
  });await lease.ready;
- return {get api(){return api;},get panel(){return panel;},get opens(){return opens;},get deactivations(){return deactivations;},lease};
+ return {open:()=>f.host.__MieMieHub.extensions.open(id),show:()=>api.showPanel(surfaceLease),close:()=>api.closePanel(surfaceLease),get api(){return api;},get panel(){return panel;},get opens(){return opens;},get deactivations(){return deactivations;},lease};
 }
 function animationProbe(f,hold=false){
  const calls=[],pending=new Set();
@@ -292,27 +292,27 @@ test('Surface A and B use their own icon rect, return scroll, and keep business 
  await f.click('[data-hub-app="test.surface.a"]');assert.equal(a.panel.dataset.surfaceState,'open');assert.equal(f.query('#meeme-combined-menu').dataset.surface,'true');
  assert.match(motion.calls.find(c=>c.el===a.panel).frames[0].transform,/translate\(60px,170px\) scale\(0.1,/);
  scroll.scrollTop=800;icon('test.surface.a').getBoundingClientRect=()=>({left:190,top:240,width:60,height:60});
- await a.api.closePanel();assert.equal(scroll.scrollTop,215);assert.equal(a.panel.hidden,true);assert.equal(a.deactivations,0);
+ await a.close();assert.equal(scroll.scrollTop,215);assert.equal(a.panel.hidden,true);assert.equal(a.deactivations,0);
  assert.match(motion.calls.filter(c=>c.el===a.panel).at(-1).frames.at(-1).transform,/translate\(90px,190px\)/);
  await f.click('[data-hub-app="test.surface.b"]');assert.match(motion.calls.find(c=>c.el===b.panel).frames[0].transform,/translate\(260px,270px\)/);
- assert.equal(await a.api.closePanel(),false,'A cannot close B');assert.equal(b.panel.hidden,false);
- await b.api.closePanel();assert.equal(scroll.scrollTop,215);assert.equal(b.deactivations,0);assert.equal(f.host.__MieMieHub.extensions.get('test.surface.a').enabled,true);
+ assert.equal(await a.close(),false,'A cannot close B');assert.equal(b.panel.hidden,false);
+ await b.close();assert.equal(scroll.scrollTop,215);assert.equal(b.deactivations,0);assert.equal(f.host.__MieMieHub.extensions.get('test.surface.a').enabled,true);
 });
 test('Surface opening/closing deduplicates, queues switches and is safe on disable during animation',async t=>{
  const f=await fixture(t),a=await surfaceProbe(f,'test.surface.a'),b=await surfaceProbe(f,'test.surface.b');await f.host.__MieMieHub.open();
  const motion=animationProbe(f,true),button=f.query('[data-hub-app="test.surface.a"]');button.click();button.click();await settle();assert.equal(a.opens,1);assert.equal(a.panel.dataset.surfaceState,'opening');
- const again=a.api.showPanel();await motion.finish();await again;assert.equal(motion.calls.filter(c=>c.el===a.panel).length,1);
- const close=a.api.closePanel(),closeAgain=a.api.closePanel();assert.equal(close,closeAgain);await settle();assert.equal(a.panel.dataset.surfaceState,'closing');
- const showB=b.api.showPanel();await motion.finish();await Promise.all([close,showB]);assert.equal(a.panel.hidden,true);assert.equal(b.panel.hidden,false);assert.equal(b.panel.dataset.surfaceState,'open');
- const closingB=b.api.closePanel();await settle();await f.host.__MieMieHub.extensions.disable('test.surface.b');await motion.finish();await closingB;
+ const again=a.show();await motion.finish();await again;assert.equal(motion.calls.filter(c=>c.el===a.panel).length,1);
+ const close=a.close(),closeAgain=a.close();assert.equal(closeAgain,false);await settle();assert.equal(a.panel.dataset.surfaceState,'closing');
+ const showB=b.open();await motion.finish();await Promise.all([close,showB]);assert.equal(a.panel.hidden,true);assert.equal(b.panel.hidden,false);assert.equal(b.panel.dataset.surfaceState,'open');
+ const closingB=b.close();await settle();await f.host.__MieMieHub.extensions.disable('test.surface.b');await motion.finish();await closingB;
  assert.equal(b.panel.isConnected,false);assert.equal(f.query('#meeme-combined-menu').inert,false);assert.notEqual(f.query('#meeme-combined-menu').dataset.surface,'true');
 });
 test('Surface close tolerates removed launchers, resize, and restores after explicit detach',async t=>{
  const f=await fixture(t),a=await surfaceProbe(f,'test.surface.a');await f.launch('test.surface.a');
  f.query('[data-hub-app="test.surface.a"]').remove();Object.assign(f.host.visualViewport,{width:390,height:700});f.host.visualViewport.dispatchEvent(new f.host.Event('resize'));
- const motion=animationProbe(f);await a.api.closePanel();assert.equal(a.panel.hidden,true);assert.equal(f.query('#meeme-combined-menu').inert,false);
+ const motion=animationProbe(f);await a.close();assert.equal(a.panel.hidden,true);assert.equal(f.query('#meeme-combined-menu').inert,false);
  assert.equal(motion.calls.find(c=>c.el===a.panel).frames.at(-1).transform,'translate(0,12px) scale(0.96)');
- await a.api.showPanel();await a.lease.release();assert.equal(a.panel.isConnected,false);assert.equal(f.query('#meeme-combined-menu').inert,false);
+ await a.open();await a.lease.release();assert.equal(a.panel.isConnected,false);assert.equal(f.query('#meeme-combined-menu').inert,false);
 });
 test('System and bundled surfaces share Back/Escape, reduced motion retains scroll, unadapted UI stays independent',async t=>{
  const f=await fixture(t);f.host.matchMedia=()=>({matches:true});f.host.Element.prototype.animate=()=>{throw Error('Reduced motion must skip animation');};
@@ -328,7 +328,7 @@ test('System and bundled surfaces share Back/Escape, reduced motion retains scro
 
 test('unadapted launcher stays independent and Hub disposal cancels an opening Surface',async t=>{
  const f=await fixture(t);let opened=0;const own=f.doc.createElement('section');own.hidden=true;f.doc.body.append(own);
- await f.host.__MieMieHub.extensions.provide({id:'test.independent',name:'Independent',version:'1.0.0',schemaVersion:1,apiVersion:1,contributes:{launcher:{title:'Independent'}}},()=>({open(){opened++;own.hidden=false;}})).ready;
+ await f.host.__MieMieHub.extensions.provide({id:'test.independent',name:'Independent',version:'1.0.0',schemaVersion:1,apiVersion:2,contributes:{launcher:{title:'Independent'}}},()=>({open(){opened++;own.hidden=false;}})).ready;
  await f.launch('test.independent');assert.equal(opened,1);assert.equal(own.hidden,false);assert.equal(own.dataset.surfaceState,undefined);assert.equal(own.parentElement,f.doc.body);
  const a=await surfaceProbe(f,'test.surface.a');await f.host.__MieMieHub.open();const motion=animationProbe(f,true);
  f.query('[data-hub-app="test.surface.a"]').click();await settle();assert.equal(a.panel.dataset.surfaceState,'opening');
@@ -339,7 +339,7 @@ test('unadapted launcher stays independent and Hub disposal cancels an opening S
 test('legacy message surfaces switch with distinct extension origins',async t=>{
  const f=await fixture(t);let apiA,apiB;
  for(const [id,assign] of [['test.message.a',api=>apiA=api],['test.message.b',api=>apiB=api]]){
-  await f.host.__MieMieHub.extensions.provide({id,name:id,version:'1.0.0',schemaVersion:1,apiVersion:1,contributes:{launcher:{title:id}}},api=>{assign(api);return {open(){return api.showMessage(id);}};}).ready;
+  await f.host.__MieMieHub.extensions.provide({id,name:id,version:'1.0.0',schemaVersion:1,apiVersion:2,contributes:{launcher:{title:id}}},api=>{assign(api);return {open(){return api.showMessage(id);}};}).ready;
  }
  await f.host.__MieMieHub.open();
  const panel=f.query('[data-hub-panel="message"]');panel.getBoundingClientRect=()=>({left:100,top:50,width:600,height:650});
@@ -356,27 +356,27 @@ test('legacy message surfaces switch with distinct extension origins',async t=>{
 
 test('queued Surface requests from a detached session cannot open a replacement instance',async t=>{
  const f=await fixture(t),a=await surfaceProbe(f,'test.surface.a'),b=await surfaceProbe(f,'test.surface.b');await f.host.__MieMieHub.open();
- const motion=animationProbe(f,true),opening=a.api.showPanel();await settle();
- const staleAPI=b.api,queued=staleAPI.showPanel();
+ const motion=animationProbe(f,true),opening=a.open();await settle();
+ const staleAPI=b.api,queued=b.open();
  await f.host.__MieMieHub.extensions.disable('test.surface.b');
  await f.host.__MieMieHub.extensions.enable('test.surface.b');
  const replacement=b.panel;assert.notEqual(b.api,staleAPI);
- await motion.finish();await opening;assert.equal(await queued,false);assert.equal(replacement.hidden,true);assert.equal(a.panel.hidden,false);
- assert.equal(staleAPI.closePanel(),false);assert.equal(a.panel.hidden,false);
- const fresh=b.api.showPanel();await motion.finish();await fresh;assert.equal(replacement.hidden,false);assert.equal(a.panel.hidden,true);
+ await motion.finish();await opening;assert.equal((await queued).cancelled,true);assert.equal(replacement.hidden,true);assert.equal(a.panel.hidden,true);
+ assert.equal(staleAPI.closePanel(),false);assert.equal(a.panel.hidden,true);
+ const fresh=b.open();await motion.finish();await fresh;assert.equal(replacement.hidden,false);assert.equal(a.panel.hidden,true);
 });
 
 test('Surface morph hands icon art to an opaque clipped window and back, cleaning up on interruption',async t=>{
  const f=await fixture(t),a=await surfaceProbe(f,'test.surface.morph');await f.host.__MieMieHub.open();
  const button=f.query('[data-hub-app="test.surface.morph"]');button.getBoundingClientRect=()=>({left:160,top:220,width:60,height:60});
  const image=f.doc.createElement('img');image.src='https://example.com/icon.png';button.querySelector('span').replaceChildren(image);
- const motion=animationProbe(f,true),opening=a.api.showPanel();await settle();
+ const motion=animationProbe(f,true),opening=a.open();await settle();
  const face=a.panel.querySelector('[data-surface-face]');assert.ok(face);assert.equal(face.getAttribute('aria-hidden'),'true');assert.equal(face.inert,true);
  assert.equal(face.querySelector('img').src,image.src);assert.equal(button.style.visibility,'hidden');assert.equal(a.panel.style.overflow,'hidden');
  const flight=motion.calls.find(c=>c.el===a.panel);assert.equal(flight.frames[0].opacity,1);assert.equal(flight.frames[0].clipPath,'inset(0 round 50%)');
  const artFlight=motion.calls.find(c=>c.el===face);assert.equal(artFlight.frames[0].opacity,1);assert.equal(artFlight.frames.at(-1).opacity,0);
  await motion.finish();await opening;assert.equal(a.panel.querySelector('[data-surface-face]'),null);assert.equal(button.style.visibility,'');assert.equal(a.panel.style.overflow,'');
- const closing=a.api.closePanel();await settle();const closeFace=a.panel.querySelector('[data-surface-face]');assert.ok(closeFace);
+ const closing=a.close();await settle();const closeFace=a.panel.querySelector('[data-surface-face]');assert.ok(closeFace);
  const reverse=motion.calls.find(c=>c.el===closeFace);assert.equal(reverse.frames[0].opacity,0);assert.equal(reverse.frames.at(-1).opacity,1);
  const closeFlight=motion.calls.filter(c=>c.el===a.panel).at(-1);assert.equal(closeFlight.frames.at(-1).opacity,1);assert.equal(closeFlight.frames.at(-1).clipPath,'inset(0 round 50%)');
  await f.host.__MieMieHub.extensions.disable('test.surface.morph');await motion.finish();await closing;
@@ -387,12 +387,12 @@ test('viewport change finishes in-flight Surface at current geometry without a s
  const f=await fixture(t),a=await surfaceProbe(f,'test.surface.resize');await f.host.__MieMieHub.open();
  const scroll=f.query('.mm-honeycomb-scroll');scroll.scrollTop=180;
  const button=f.query('[data-hub-app="test.surface.resize"]');button.getBoundingClientRect=()=>({left:160,top:220,width:60,height:60});
- const motion=animationProbe(f,true),opening=a.api.showPanel();await settle();
+ const motion=animationProbe(f,true),opening=a.open();await settle();
  assert.equal(a.panel.dataset.surfaceState,'opening');assert.ok(a.panel.querySelector('[data-surface-face]'));
  Object.assign(f.host.visualViewport,{width:390,height:700});f.host.visualViewport.dispatchEvent(new f.host.Event('resize'));
  await opening;assert.equal(a.panel.dataset.surfaceState,'open');assert.equal(a.panel.inert,false);assert.equal(a.panel.style.width,'366px');
  assert.equal(a.panel.querySelector('[data-surface-face]'),null);assert.equal(button.style.visibility,'');
- const closing=a.api.closePanel();await settle();assert.equal(a.panel.dataset.surfaceState,'closing');
+ const closing=a.close();await settle();assert.equal(a.panel.dataset.surfaceState,'closing');
  Object.assign(f.host.visualViewport,{width:700,height:390});f.host.dispatchEvent(new f.host.Event('orientationchange'));
  await closing;assert.equal(a.panel.hidden,true);assert.equal(a.panel.dataset.surfaceState,'closed');assert.equal(a.panel.style.width,'600px');
  assert.equal(scroll.scrollTop,180);assert.equal(f.query('#meeme-combined-menu').inert,false);
@@ -402,46 +402,21 @@ test('viewport change finishes in-flight Surface at current geometry without a s
 test('revocation during opening and Hub disposal during closing release Surface state and icon faces',async t=>{
  const f=await fixture(t),a=await surfaceProbe(f,'test.surface.abort');await f.host.__MieMieHub.open();
  let button=f.query('[data-hub-app="test.surface.abort"]');button.getBoundingClientRect=()=>({left:160,top:220,width:60,height:60});
- const motion=animationProbe(f,true),opening=a.api.showPanel();await settle();
- await f.host.__MieMieHub.extensions.disable('test.surface.abort');assert.equal(await opening,false);
+ const motion=animationProbe(f,true),opening=a.open();await settle();
+ await f.host.__MieMieHub.extensions.disable('test.surface.abort');assert.equal((await opening).cancelled,true);
  assert.equal(a.panel.isConnected,false);assert.equal(f.doc.querySelector('[data-surface-face]'),null);assert.equal(button.style.visibility,'');
  assert.equal(f.query('#meeme-combined-menu').inert,false);
  await f.host.__MieMieHub.extensions.enable('test.surface.abort');button=f.query('[data-hub-app="test.surface.abort"]');button.getBoundingClientRect=()=>({left:160,top:220,width:60,height:60});
- const again=a.api.showPanel();await motion.finish();await again;
- const closing=a.api.closePanel();await settle();assert.equal(a.panel.dataset.surfaceState,'closing');
+ const again=a.open();await motion.finish();await again;
+ const closing=a.close();await settle();assert.equal(a.panel.dataset.surfaceState,'closing');
  f.unmount();await closing;assert.equal(a.panel.isConnected,false);assert.equal(f.doc.querySelector('[data-surface-face]'),null);
  assert.equal(f.query('#meeme-combined-menu'),null);assert.equal(button.style.visibility,'');await motion.finish();
-});
-
-test('native Shortcut and Honeycomb share one panel, retain first origin, and clean preference on uninstall',async t=>{
- const f=await fixture(t);let api,panel,orb,activated=0,mounts=0;
- const id='test.native';const lease=f.host.__MieMieHub.extensions.provide({id,name:id,version:'1.0.0',apiVersion:1,schemaVersion:1,contributes:{launcher:{title:id}}},context=>{api=context;return {activate(){
-  activated++;panel=f.doc.createElement('section');panel.append(f.doc.createElement('div'));f.doc.body.append(panel);panel.getBoundingClientRect=()=>({left:100,top:50,width:600,height:650});api.attachPanel(panel);api.onCleanup(()=>panel.remove());
-  api.registerShortcutLauncher({mount({open}){mounts++;orb=f.doc.createElement('button');orb.dataset.nativeProbe='';orb.onclick=open;orb.getBoundingClientRect=()=>({left:800,top:400,width:64,height:64});f.doc.body.append(orb);return {getOrigin:()=>orb,dispose:()=>orb.remove()};}});
- },open:()=>api.showPanel()};});await lease.ready;
- assert.equal(orb,undefined);assert.equal(f.host.__MieMieHub.extensions.get(id).shortcutLauncherAvailable,true);
- await f.launch('extension-center');await f.click('[data-center-tab="installed"]');
- let toggle=f.query('[data-shortcut="'+id+'"]');assert.ok(toggle);assert.equal(toggle.checked,false);toggle.click();await settle();assert.equal(mounts,1);assert.ok(f.query('[data-hub-app="'+id+'"]'));assert.equal(f.query('[data-shortcut="miemie.timeline"]'),null);
- await f.click('[data-hub-panel="extension-center"] .mm-return');await f.click('.ts-orb');
- const motion=animationProbe(f);orb.click();orb.click();await settle();await settle();assert.equal(panel.hidden,false);assert.equal(activated,1);
- let flights=motion.calls.filter(c=>c.el===panel);assert.match(flights[0].frames[0].transform,/translate\(700px,350px\)/);
- // A second entrance focuses the same surface without changing its opening origin.
- f.query('[data-hub-app="'+id+'"]').click();await settle();assert.equal(activated,1);await api.closePanel();flights=motion.calls.filter(c=>c.el===panel);assert.match(flights.at(-1).frames.at(-1).transform,/translate\(700px,350px\)/);assert.equal(f.query('#meeme-combined-menu').hidden,true);
- await f.host.__MieMieHub.open();const scroll=f.query('.mm-honeycomb-scroll');scroll.scrollTop=140;f.query('[data-hub-app="'+id+'"]').getBoundingClientRect=()=>({left:180,top:240,width:60,height:60});
- await f.click('[data-hub-app="'+id+'"]');orb.click();await settle();await api.closePanel();flights=motion.calls.filter(c=>c.el===panel);assert.match(flights.at(-1).frames.at(-1).transform,/translate\(80px,190px\)/);assert.equal(scroll.scrollTop,140);
- orb.click();await settle();await f.host.__MieMieHub.open();assert.equal(panel.hidden,true);assert.equal(f.query('#meeme-combined-menu').hidden,false);await f.click('.ts-orb');orb.click();await settle();f.doc.dispatchEvent(new f.host.KeyboardEvent('keydown',{key:'Escape'}));await settle();assert.equal(panel.hidden,true);assert.equal(f.query('#meeme-combined-menu').hidden,true);
- orb.click();await settle();orb.remove();await api.closePanel();assert.equal(panel.hidden,true);assert.equal(f.doc.querySelector('[data-surface-face]'),null);
- await f.host.__MieMieHub.extensions.disable(id);await f.host.__MieMieHub.extensions.enable(id);assert.equal(mounts,2);assert.equal(f.doc.querySelectorAll('[data-native-probe]').length,1);
- await f.host.__MieMieHub.open();await f.click('.ts-orb');const held=animationProbe(f,true);orb.click();await settle();assert.equal(panel.dataset.surfaceState,'opening');
- await f.host.__MieMieHub.extensions.disable(id);await held.finish();assert.equal(f.doc.querySelector('[data-surface-face]'),null);assert.equal(f.doc.querySelector('[data-native-probe]'),null);assert.equal(f.query('#meeme-combined-menu').hidden,true);
- await f.host.__MieMieHub.extensions.enable(id);
- await f.host.__MieMieHub.extensions.uninstall(id);assert.equal(f.doc.querySelector('[data-native-probe]'),null);assert.equal(JSON.parse(f.host.localStorage.getItem('miemie_hub_shortcuts_v1'))[id],undefined);
 });
 
 test('full Hub reopen recenters while an Extension round trip preserves the scrolled position',async t=>{
  const f=await fixture(t),a=await surfaceProbe(f,'test.recenter');await f.host.__MieMieHub.open();
  const scroll=f.query('.mm-honeycomb-scroll'),center=scroll.scrollTop;scroll.scrollTop=center+125;
- await f.click('[data-hub-app="test.recenter"]');await a.api.closePanel();assert.equal(scroll.scrollTop,center+125);
+ await f.click('[data-hub-app="test.recenter"]');await a.close();assert.equal(scroll.scrollTop,center+125);
  await f.click('.ts-orb');assert.equal(f.query('#meeme-combined-menu').hidden,true);
  await f.host.__MieMieHub.open();assert.equal(scroll.scrollTop,center);
 });
@@ -451,8 +426,8 @@ test('registered external stacking roots sit above the blur layer and restore on
  const previous=app.getAttribute('style'),shell=f.query('#miemie-hub-shell');
  await f.launch('test.layers');assert.ok(Number(f.host.getComputedStyle(app).zIndex)>Number(f.host.getComputedStyle(shell).zIndex));
  for(let node=a.panel;node;node=node.parentElement)assert.ok(!f.host.getComputedStyle(node).filter?.includes('blur('));
- await a.api.closePanel();assert.equal(app.getAttribute('style'),previous);
- await a.api.showPanel();await a.lease.release();assert.equal(app.getAttribute('style'),previous);
+ await a.close();assert.equal(app.getAttribute('style'),previous);
+ await a.open();await a.lease.release();assert.equal(app.getAttribute('style'),previous);
  for(const id of ['settings','extension-center','miemie.timeline']){
   await f.launch(id);const panel=id==='miemie.timeline'?f.query('.ts-panel'):f.query('[data-hub-panel="'+id+'"]');
   for(let node=panel;node;node=node.parentElement)assert.ok(!f.host.getComputedStyle(node).filter?.includes('blur('));
@@ -471,55 +446,6 @@ test('Timeline historical center icon lands in header after morph; resize cancel
  const held=animationProbe(f,true);f.query('[data-hub-app="miemie.timeline"]').click();await settle();f.host.visualViewport.dispatchEvent(new f.host.Event('resize'));await held.finish();
  assert.equal(f.query('[data-surface-hero]'),null);assert.equal(panel.dataset.surfaceState,'open');assert.equal(icon.style.visibility,'');
 });
-test('shortcut setting row exposes actual switch state, Enter and mount failure rollback',async t=>{
- const f=await fixture(t);let fail=false,mounts=0;const id='test.switch';
- const lease=f.host.__MieMieHub.extensions.provide({id,name:id,version:'1.0.0',apiVersion:1,schemaVersion:1,contributes:{launcher:{title:id}}},api=>({activate(){
-  const panel=f.doc.createElement('section');f.doc.body.append(panel);api.attachPanel(panel);api.onCleanup(()=>panel.remove());
-  api.registerShortcutLauncher({mount(){if(fail)throw Error('fixture mount failed');mounts++;const orb=f.doc.createElement('button');f.doc.body.append(orb);return {getOrigin:()=>orb,dispose:()=>orb.remove()};}});
- },open:()=>api.showPanel()}));await lease.ready;
- await f.launch('extension-center');await f.click('[data-center-tab="installed"]');const selector='[data-shortcut="'+id+'"]';
- let toggle=f.query(selector);assert.equal(toggle.getAttribute('role'),'switch');assert.equal(toggle.getAttribute('aria-checked'),'false');assert.equal(toggle.disabled,false);assert.ok(toggle.nextElementSibling.matches('.mm-switch-track'));
- toggle.dispatchEvent(new f.host.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));await settle();toggle=f.query(selector);assert.equal(toggle.getAttribute('aria-checked'),'true');assert.equal(mounts,1);
- toggle.click();await settle();assert.equal(f.query(selector).getAttribute('aria-checked'),'false');
- fail=true;f.query(selector).click();await settle();assert.equal(f.query(selector).getAttribute('aria-checked'),'false');assert.equal(JSON.parse(f.host.localStorage.getItem('miemie_hub_shortcuts_v1'))[id],false);assert.match(f.query('[data-hub-panel="extension-center"]').textContent,/fixture mount failed/);
- await f.host.__MieMieHub.extensions.disable(id);await settle();assert.equal(f.query(selector),null);
-});
-
-test('Shortcut panel follows its explicit orb while open and stops observing on close',async t=>{
- const f=await fixture(t),app=await surfaceProbe(f,'test.follow');let orb;
- app.api.registerShortcutLauncher({mount({open}){orb=f.doc.createElement('button');orb.style.left='850px';orb.style.top='330px';orb.onclick=open;orb.getBoundingClientRect=()=>({left:parseFloat(orb.style.left),top:parseFloat(orb.style.top),width:64,height:64});f.doc.body.append(orb);return {getOrigin:()=>orb,dispose:()=>orb.remove()};}});
- await f.launch('extension-center');await f.click('[data-center-tab="installed"]');f.query('[data-shortcut="test.follow"]').click();await settle();
- await f.click('[data-hub-panel="extension-center"] .mm-return');await f.click('.ts-orb');orb.click();await settle();await settle();
- assert.equal(app.panel.dataset.surfaceState,'open');const x=parseFloat(app.panel.style.left);assert.ok(x+600<850);assert.ok(Number(orb.style.zIndex)>Number(app.panel.style.zIndex));
- orb.style.left='20px';await new Promise(r=>setTimeout(r,40));assert.equal(parseFloat(app.panel.style.left),96);
- await app.api.closePanel();const closed=app.panel.style.left;orb.style.left='700px';await new Promise(r=>setTimeout(r,40));assert.equal(app.panel.style.left,closed);assert.equal(orb.style.zIndex,'');
-});
-
-test('native presentation owns Shortcut geometry and motion only; Honeycomb retains Hub motion',async t=>{
- const f=await fixture(t),app=await surfaceProbe(f,'test.presentation');let orb,handle,runs=[],places=0,releases=0,cancels=0,hold=false;
- app.api.registerShortcutLauncher({mount({open}){
-  orb=f.doc.createElement('button');orb.onclick=open;orb.getBoundingClientRect=()=>({left:810,top:220,width:64,height:64});f.doc.body.append(orb);
-  const presentation={
-   place(panel){assert.equal(this,undefined);assert.equal(panel,app.panel);places++;panel.style.setProperty('left','33px','important');},
-   run(panel,opening){assert.equal(this,undefined);assert.equal(arguments.length,2);assert.equal(panel,app.panel);assert.equal(typeof opening,'boolean');runs.push(opening);return hold?new Promise(()=>{}):Promise.resolve();},
-   cancel(){assert.equal(this,undefined);cancels++;},release(){assert.equal(this,undefined);releases++;},
-  };
-  return handle={presentation,getOrigin:()=>orb,dispose:()=>orb.remove()};
- }});
- await f.launch('extension-center');await f.click('[data-center-tab="installed"]');f.query('[data-shortcut="test.presentation"]').click();await settle();
- await f.click('[data-hub-panel="extension-center"] .mm-return');await f.click('.ts-orb');
- const motion=animationProbe(f);orb.click();orb.click();await settle();await settle();assert.deepEqual(runs,[true]);assert.ok(places);assert.equal(app.panel.style.left,'33px');assert.equal(app.panel.dataset.surfaceState,'open');assert.equal(motion.calls.filter(c=>c.el===app.panel).length,0);
- await f.click('[data-hub-app="test.presentation"]');assert.deepEqual(runs,[true]);await app.api.closePanel();assert.deepEqual(runs,[true,false]);assert.ok(releases);assert.equal(app.panel.hidden,true);
- await f.host.__MieMieHub.open();await f.click('[data-hub-app="test.presentation"]');assert.deepEqual(runs,[true,false]);assert.ok(motion.calls.some(c=>c.el===app.panel));await app.api.closePanel();
- // A removed native entry uses Hub's safe origin fallback, never the stale provider.
- orb.click();await settle();await settle();orb.remove();await app.api.closePanel();assert.deepEqual(runs,[true,false,true]);assert.equal(app.panel.hidden,true);
- f.doc.body.append(orb);
- // Cancellation completes even when an optional provider fails to settle its promise.
- hold=true;orb.click();await settle();await settle();assert.equal(app.panel.dataset.surfaceState,'opening');
- f.host.visualViewport.width=390;f.host.dispatchEvent(new f.host.Event('orientationchange'));await settle();await settle();assert.equal(app.panel.dataset.surfaceState,'open');assert.ok(cancels);
- const closing=app.api.closePanel();await settle();assert.equal(app.panel.dataset.surfaceState,'closing');const disposal=f.host.__MieMieHub.whenDisposed;f.unmount();await closing;await disposal;assert.equal(app.panel.isConnected,false);
-});
-
 for(const exit of ['button','escape'])test('built Hub '+exit+' cancels pending install inspection immediately',async t=>{
  const f=await fixture(t,undefined,true);await f.launch('extension-center');
  for(let i=0;i<50&&!f.query('[data-action="pending-fixture:install"]');i++)await settle();
@@ -556,7 +482,7 @@ test('optional Back consumes exactly one internal layer, then preserves the orig
  for(let remaining=2;remaining>=0;remaining--){assert.equal(escape(f).defaultPrevented,true);await settle();assert.equal(probe.remaining,remaining);assert.equal(probe.panel.hidden,false);}
  escape(f);await settle();assert.equal(probe.panel.hidden,true);assert.equal(probe.calls,4);assert.equal(probe.factories,1);
  assert.equal(f.query('#meeme-combined-menu').hidden,false);assert.equal(f.doc.activeElement?.dataset.hubApp,probe.manifest.id);
- await probe.api.showPanel();await probe.api.closePanel();assert.equal(probe.calls,4,'Explicit Close never delegates');
+ await probe.open();await probe.close();assert.equal(probe.calls,4,'Explicit Close never delegates');
  assert.equal(f.host.__MieMieHub.extensions.requestBack,undefined);assert.equal(f.host.__MieMieHub.back,undefined);
 });
 test('one held Escape cannot drain layers or subsequently close the returned Launcher; blur and independent presses recover',async t=>{
@@ -572,11 +498,11 @@ test('Back skips IME and already consumed input and blocks repeat even when firs
  const before=e=>{if(e.key==='Escape')e.preventDefault();};f.host.addEventListener('keydown',before,true);escape(f);f.host.removeEventListener('keydown',before,true);
  assert.equal(probe.calls,0);escape(f);assert.equal(probe.calls,1);
 });
-test('legacy v1 fixture retains capture, repeat, close, reopening and lifecycle without manifest or code migration',async t=>{
+test('API 2 fixture without optional Back retains capture, repeat, close, reopening and lifecycle',async t=>{
  const f=await fixture(t),a=await surfaceProbe(f,'test.legacy.back');let targetCalls=0;
  a.panel.addEventListener('keydown',()=>targetCalls++);await f.launch('test.legacy.back');
  escape(f,{repeat:true,target:a.panel});await settle();assert.equal(a.panel.hidden,true);assert.equal(targetCalls,0);
- await f.launch('test.legacy.back');await a.api.closePanel();assert.equal(a.deactivations,0);
+ await f.launch('test.legacy.back');await a.close();assert.equal(a.deactivations,0);
  await f.host.__MieMieHub.extensions.disable('test.legacy.back');await f.host.__MieMieHub.extensions.enable('test.legacy.back');
  await f.launch('test.legacy.back');escape(f);await settle();assert.equal(a.panel.hidden,true);
  await f.host.__MieMieHub.extensions.uninstall('test.legacy.back');assert.equal(f.host.__MieMieHub.extensions.get('test.legacy.back'),null);
@@ -594,14 +520,14 @@ for(const [name,handler]of [['throw',()=>{throw Error('fixture draft');}],['prom
 test('fault recovery retry can succeed and stale recovery cannot close the next Surface',async t=>{
  const f=await fixture(t);nativeDialogStub(f);const a=await surfaceProbe(f,'test.back.retry'),b=await surfaceProbe(f,'test.back.next');let fail=true;
  a.api.registerBackHandler(()=>{if(fail)throw Error('retry');return false;});await f.launch('test.back.retry');escape(f);await settle();
- const stale=f.query('[data-back-recovery] button:last-child');await b.api.showPanel();stale.click();await settle();assert.equal(b.panel.hidden,false);
- await a.api.showPanel();escape(f);await settle();fail=false;f.query('[data-back-recovery] button:nth-child(2)').click();await settle();assert.equal(a.panel.hidden,true);
+ const stale=f.query('[data-back-recovery] button:last-child');await b.open();stale.click();await settle();assert.equal(b.panel.hidden,false);
+ await a.open();escape(f);await settle();fail=false;f.query('[data-back-recovery] button:nth-child(2)').click();await settle();assert.equal(a.panel.hidden,true);
 });
 test('Surface transition guard and request validity reuse existing queue across close/reopen and revoke',async t=>{
  const f=await fixture(t),{probe,lease}=await backFixture(f,{layers:8});escape(f);const oldRequest=probe.request;
- await probe.api.closePanel();await probe.api.showPanel();assert.equal(oldRequest.isCurrent(),false);
- const motion=animationProbe(f,true);const closing=probe.api.closePanel();escape(f);assert.equal(probe.calls,1);await motion.finish();await closing;
- const opening=probe.api.showPanel();await settle();escape(f);assert.equal(probe.calls,1);await motion.finish();await opening;
+ await probe.close();await probe.open();assert.equal(oldRequest.isCurrent(),false);
+ const motion=animationProbe(f,true);const closing=probe.close();escape(f);assert.equal(probe.calls,1);await motion.finish();await closing;
+ const opening=probe.open();await settle();escape(f);assert.equal(probe.calls,1);await motion.finish();await opening;
  escape(f);assert.equal(probe.calls,2);const current=probe.request;const release=lease.release();assert.equal(current.isCurrent(),false);assert.equal(probe.api.registerBackHandler(()=>false),false);await release;
  const {probe:replacement}=await backFixture(f,{id:probe.manifest.id,layers:1});assert.equal(current.isCurrent(),false);await motion.finish();escape(f);assert.equal(replacement.calls,1);
 });
@@ -613,23 +539,14 @@ test('handlers dispatch by current owner, including body portals and closed Shad
 });
 test('handler switching Surface and returning false cannot close the destination; direct bridge and Orb bypass Back',async t=>{
  const f=await fixture(t),a=await surfaceProbe(f,'test.back.switch'),b=await surfaceProbe(f,'test.back.destination');let calls=0;
- a.api.registerBackHandler(()=>{calls++;void b.api.showPanel();return false;});await f.launch('test.back.switch');escape(f);await settle();assert.equal(b.panel.hidden,false);
- await a.api.showPanel();await f.host.__meemeCombinedUI.back();assert.equal(a.panel.hidden,true);assert.equal(calls,1);
- await a.api.showPanel();await f.click('.ts-orb');assert.equal(a.panel.hidden,true);assert.equal(f.query('#meeme-combined-menu').hidden,true);assert.equal(calls,1);
-});
-test('optional Back via Shortcut shares one instance and retains closed origin through handler and fallback',async t=>{
- const f=await fixture(t),probe=createBackFixture(f.doc,{layers:1});const lease=f.host.__MieMieHub.extensions.provide(probe.manifest,probe.factory);await lease.ready;
- let nativeOpen;probe.api.registerShortcutLauncher({mount({open}){nativeOpen=open;const orb=f.doc.createElement('button');f.doc.body.append(orb);return {getOrigin:()=>orb,dispose:()=>orb.remove()};}});
- // Preference is set through the actual Installed-page switch.
- await f.launch('extension-center');await f.click('[data-center-tab="installed"]');
- const toggle=f.query('[data-shortcut="'+probe.manifest.id+'"]');assert.ok(toggle);toggle.click();await settle();
- await f.click('.ts-orb');await nativeOpen();escape(f);await settle();assert.equal(probe.panel.hidden,false);escape(f);await settle();
- assert.equal(probe.panel.hidden,true);assert.equal(f.query('#meeme-combined-menu').hidden,true);assert.equal(probe.factories,1);
+ a.api.registerBackHandler(()=>{calls++;void b.open();return false;});await f.launch('test.back.switch');escape(f);await settle();assert.equal(b.panel.hidden,false);
+ await a.open();await f.host.__meemeCombinedUI.back();assert.equal(a.panel.hidden,true);assert.equal(calls,1);
+ await a.open();await f.click('.ts-orb');assert.equal(a.panel.hidden,true);assert.equal(f.query('#meeme-combined-menu').hidden,true);assert.equal(calls,1);
 });
 test('source release and Hub disposal invalidate requests and remove the sole input listeners',async t=>{
  const f=await fixture(t),{probe}=await backFixture(f);escape(f);const request=probe.request;
  const counts=()=>['keydown','keyup','blur'].map(type=>f.listeners.filter(x=>x.type===type).length);const before=counts();
- for(let i=0;i<3;i++){await probe.api.closePanel();await probe.api.showPanel();}assert.deepEqual(counts(),before);
+ for(let i=0;i<3;i++){await probe.close();await probe.open();}assert.deepEqual(counts(),before);
  f.unmount();await settle();assert.equal(request.isCurrent(),false);assert.equal(probe.api.registerBackHandler(()=>true),false);assert.deepEqual(counts(),[0,0,0]);
 });
 test('System description consumes repeats, native cancel and Back without window Escape capture',async t=>{
@@ -638,4 +555,12 @@ test('System description consumes repeats, native cancel and Back without window
  await f.click('.mm-description-open');const dialog=f.query('dialog');dialog.dispatchEvent(new f.host.Event('cancel',{cancelable:true}));assert.equal(f.query('dialog'),null);assert.equal(panel.hidden,false);
  await f.click('.mm-description-open');panel.querySelector('.mm-return').click();await settle();assert.equal(f.query('dialog'),null);assert.equal(panel.hidden,false);
  panel.querySelector('.mm-return').click();await settle();assert.equal(panel.hidden,true);
+});
+
+// Recorded Safari: compositionend then Escape keydown false/229.
+test('Safari IME keyCode229 never dispatches coordinated Surface Back',async t=>{
+ const f=await fixture(t),{probe}=await backFixture(f);
+ const e=new f.host.KeyboardEvent('keydown',{key:'Escape',keyCode:229,isComposing:false,bubbles:true,cancelable:true});
+ probe.panel.dispatchEvent(e);await settle();assert.equal(probe.calls,0);assert.equal(probe.panel.hidden,false);assert.equal(e.defaultPrevented,false);
+ escape(f);assert.equal(probe.calls,1);
 });

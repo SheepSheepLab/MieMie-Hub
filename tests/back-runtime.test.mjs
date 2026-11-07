@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createExtensionRuntime} from '../src/extension-runtime.js';
-const manifest=id=>({schemaVersion:1,apiVersion:1,id,name:id,version:'1.0.0'});
+import {createExtensionRuntime} from './fixtures/runtime-host.js';
+const manifest=id=>({schemaVersion:1,apiVersion:2,id,name:id,version:'1.0.0'});
 const request=()=>({source:'escape',isCurrent:()=>true});
 async function fixture(t,handler=()=>true){
- const apis=[],r=createExtensionRuntime({onPanel:()=>()=>{},onClosePanel:()=>true});t.after(()=>r.dispose());
- r.register(manifest('test.back'),api=>{apis.push(api);return {activate(){api.attachPanel({});api.registerBackHandler(handler);}};});
- await r.enable('test.back');return {r,apis};
+ const apis=[],leases=[],r=createExtensionRuntime({onPanel:()=>()=>{},onClosePanel:()=>true});t.after(()=>r.dispose());
+ r.register(manifest('test.back'),api=>{apis.push(api);return {activate(){api.attachPanel({});api.registerBackHandler(handler);},open(lease){leases.push(lease);}};});
+ await r.enable('test.back');await r.open('test.back');return {r,apis,leases};
 }
-test('optional Back is single-session registration after attachPanel, without changing Manifest v1',async t=>{
+test('optional Back is single-session registration after attachPanel, with Manifest Schema 1 and API 2',async t=>{
  let api;const r=createExtensionRuntime({onPanel:()=>()=>{}});t.after(()=>r.dispose());
  r.register(manifest('test.back'),value=>{api=value;return {};});await r.enable('test.back');
  assert.equal(r.hasBackHandler('test.back'),false);assert.throws(()=>api.registerBackHandler(()=>true),/主面板/);
@@ -29,9 +29,9 @@ for(const [name,handler]of [
  ['resolved Promise',()=>Promise.resolve(false)],['rejected Promise',()=>Promise.reject(Error('late'))],
  ['never settling Promise',()=>new Promise(()=>{})],['throwing then',()=>({get then(){throw Error('then');}})],
 ])test('Back fault preserves instance and explicit close: '+name,async t=>{
- const {r,apis}=await fixture(t,handler);const result=r.requestBack('test.back',request());
+ const {r,apis,leases}=await fixture(t,handler);const result=r.requestBack('test.back',request());
  assert.equal(result.handled,true);assert.match(result.error,/返回处理失败/);assert.equal(r.get('test.back').state,'enabled');
- assert.equal(apis[0].closePanel(),true);assert.equal(r.hasBackHandler('test.back'),true);
+ assert.equal(apis[0].closePanel(leases[0]),true);assert.equal(r.hasBackHandler('test.back'),true);
  await new Promise(resolve=>setImmediate(resolve));
 });
 for(const action of ['disable','uninstall','dispose'])test(action+' revokes before asynchronous teardown and invalidates retained contexts',async t=>{
