@@ -102,6 +102,7 @@ const hubSelfUpdater = createHubSelfUpdater({currentVersion: HUB_VERSION, host: 
 });
 const packageManager = createExtensionPackageManager({
   readSavedScript: readSavedExtensionScript,
+  readSavedScripts: readSavedExtensionScript.readMany,
   getRunningVersion: (id, target) => {
     const record = extensionRuntime.get(id), manifest = record?.manifest;
     if (!record?.enabled || manifest?.apiVersion !== 2) return null;

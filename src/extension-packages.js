@@ -133,7 +133,7 @@ export async function validateExtensionPackage(bytes, metadata, crypto = globalT
 }
 
 export function createExtensionPackageManager({getScriptTrees, updateScriptTreesWith, fetch: request = (...args) => globalThis.fetch(...args),
-  readSavedScript, getRunningVersion, persistenceTimeoutMs = 15000, confirmationIntervalMs = 250,
+  readSavedScript, readSavedScripts, getRunningVersion, persistenceTimeoutMs = 15000, confirmationIntervalMs = 250,
   crypto = globalThis.crypto, randomUUID = () => crypto.randomUUID(), onChange = () => {}, backup, confirmUninstall, getRegistryBaseURL = () => '', now = Date.now, downloadCacheTtlMs = 120000, metadataTimeoutMs = 15000, assetTimeoutMs = 600000, directAttemptTimeoutMs = 5000,
   relayResponseTimeoutMs = 60000, assetIdleTimeoutMs = 30000, assetVerificationTimeoutMs = 15000} = {}) {
   let disposed = false, busy = false;
@@ -354,7 +354,11 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
     if (!highest) return {repoUrl: repo.url, installable: false, compatibility: 'external', reason: '没有有效三段式 Release，请前往 GitHub。'};
     return describe(repo, await releaseById(repo, highest.id, signal), signal);
   }
-  function row(entry) {const value = identity(entry.script); return {...runtimeCompatibility(entry.script), id: value.productId, instanceId: entry.script.id, version: value.version, name: entry.script.name, enabled: entry.script.enabled, folderEnabled: entry.folderEnabled, repoUrl: value.repository, managed: true, legacy: !!value.legacy, scope: 'global'};}
+  function row(entry) {const value = identity(entry.script); return {...runtimeCompatibility(entry.script), manifest: installedManifest(entry.script), id: value.productId, instanceId: entry.script.id, version: value.version, name: entry.script.name, enabled: entry.script.enabled, folderEnabled: entry.folderEnabled, repoUrl: value.repository, managed: true, legacy: !!value.legacy, scope: 'global'};}
+  function installedManifest(script) {
+    const manifest = verifiedManifests.get(script.content);
+    return manifest && extensionClone(manifest);
+  }
   function runtimeCompatibility(script) {
     const manifest = verifiedManifests.get(script.content);
     if (!manifest) return {runtimeCompatibility: 'unconfirmed', apiVersion: null};
@@ -383,22 +387,31 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
     rememberManifest(script, candidate.manifest); notify();
     return runtimeCompatibility(script);
   }
-  async function listInstalled() {
+  async function listInstalled({signal} = {}) {
+    signal?.throwIfAborted();
     const trees = readTree(); await learnLegacy(trees); alive();
+    signal?.throwIfAborted();
     const entries = extensionValidateTree(trees).filter(entry => identity(entry.script));
     const rows = entries.map(row);
     const scripts = new Map(entries.map(entry => [entry.script.id, entry.script]));
-    if (typeof readSavedScript !== 'function') return rows;
+    if (!rows.length || (typeof readSavedScripts !== 'function' && typeof readSavedScript !== 'function')) return rows;
+    const failed = item => ({...item, version: null, persistenceError: '无法核验宿主持久保存版本，请重试；不代表更新成功。'});
+    let savedScripts;
+    if (typeof readSavedScripts === 'function') {
+      try {savedScripts = await deadline(signal => readSavedScripts(rows.map(item => item.instanceId), signal), persistenceTimeoutMs, signal);}
+      catch {return rows.map(failed);}
+    }
     return Promise.all(rows.map(async item => {
       try {
-        const persisted = await deadline(signal => readSavedScript(item.instanceId, signal), persistenceTimeoutMs);
+        const persisted = savedScripts ? savedScripts.get(item.instanceId) : await deadline(signal => readSavedScript(item.instanceId, signal), persistenceTimeoutMs, signal);
+        if (persisted instanceof Error) return failed(item);
         const content = persisted?.content;
         const saved = identity({content: content || ''});
         const memoryIdentity = identity(scripts.get(item.instanceId));
         if (!saved || saved.productId !== item.id || saved.scriptId !== memoryIdentity.scriptId || parseExtensionRepository(saved.repository).url.toLowerCase() !== parseExtensionRepository(memoryIdentity.repository).url.toLowerCase() || persisted?.id !== item.instanceId || typeof persisted.name !== 'string') return {...item, version: null, persistenceState: persisted == null ? 'pending' : 'error', persistenceError: '尚未确认此脚本已持久保存。'};
-        return {...item, ...runtimeCompatibility(persisted), name: persisted.name, version: saved.version, memoryVersion: item.version,
+        return {...item, ...runtimeCompatibility(persisted), manifest: installedManifest(persisted), name: persisted.name, version: saved.version, memoryVersion: item.version,
           persistenceError: content !== scripts.get(item.instanceId).content || persisted.name !== scripts.get(item.instanceId).name ? '内存与已保存脚本不一致，尚未确认更新成功。' : ''};
-      } catch {return {...item, version: null, persistenceError: '无法核验宿主持久保存版本，请重试；不代表更新成功。'};}
+      } catch {return failed(item);}
     }));
   }
   async function confirmWritten(saved, content, version, name) {
@@ -452,12 +465,15 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
   async function check(id) {const installed = await snapshot(id), candidate = await inspect(installed.repoUrl);
     if (candidate.packageValid && candidate.id !== id) throw extensionPackageError('identity', '仓库当前包属于不同 Extension ID，不允许覆盖。');
     return {...candidate, currentVersion: installed.version, available: !!candidate.installable && compareSemVer(candidate.version, installed.version) > 0};}
+  function progressReporter(onProgress) {
+    return (phase, detail) => {try {onProgress?.(phase, detail);} catch {}};
+  }
   return {
     listInstalled, inspect, check, checkInstalledCompatibility,
     isBusy: () => busy,
     subscribe(listener) {listeners.add(listener); return () => listeners.delete(listener);},
     install(candidate, {signal, onProgress} = {}) {return exclusive(async () => {
-      const progress = (phase, detail) => {try {onProgress?.(phase, detail);} catch {}};
+      const progress = progressReporter(onProgress);
       progress('verifying');
       signal?.throwIfAborted();
       const before = readTree(); await learnLegacy(before);
@@ -477,7 +493,9 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
       rememberManifest(script, fresh.manifest);
       return {ok: true, ...row(installed), action: 'installed', persistence: 'unconfirmed'};
     });},
-    update(id, candidate) {return exclusive(async () => {
+    update(id, candidate, {onProgress} = {}) {return exclusive(async () => {
+      const progress = progressReporter(onProgress);
+      progress('verifying');
       const saved = await snapshot(id); saved.confirmRuntime = !!(saved.enabled && saved.folderEnabled && typeof getRunningVersion === 'function'); candidate ||= await inspect(saved.repoUrl);
       if (candidate?.manifest) assertExtensionRuntimeCompatibility(candidate.manifest);
       if (!candidate?.installable || candidate.id !== id || parseExtensionRepository(candidate.repoUrl).url.toLowerCase() !== parseExtensionRepository(saved.repoUrl).url.toLowerCase()
@@ -485,17 +503,19 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
       if (typeof readSavedScript !== 'function') throw extensionPackageError('persistence', '宿主保存核验接口不可用，未写入更新。');
       const persistedBefore = await deadline(signal => readSavedScript(saved.instanceId, signal), persistenceTimeoutMs);
       if (persistedBefore?.id !== saved.instanceId || persistedBefore?.content !== saved.content || persistedBefore?.name !== saved.script.name) throw extensionPackageError('persistence', '当前内存脚本与服务器保存版本不一致，请先核实保存状态；未写入更新。');
-      const {script, fresh} = await lockedCandidate(candidate);
+      const {script, fresh} = await lockedCandidate(candidate, undefined, progress);
       saved.targetManifest = fresh.manifest;
       const oldIdentity = identity({content: saved.content});
       if (fresh.metadata.scriptId !== oldIdentity.scriptId) throw extensionPackageError('identity', '发布包固定 scriptId 已变化，拒绝跨包覆盖。');
       if (typeof backup !== 'function') throw extensionPackageError('backup-required', '更新前需要导出旧版恢复文件；未覆盖当前扩展。');
       await backup(extensionClone(saved.script), {id, version: saved.version, reason: 'update'});
       alive();
+      progress('installing');
       let expectedName;
       const result = writeTree(trees => {const entry = ensureSnapshot(trees, saved); expectedName = applyScriptUpdate(entry.script, script.content, fresh.version); return trees;});
       const installed = locate(result, id); if (installed.script.content !== script.content || installed.script.name !== expectedName) throw extensionPackageError('host-write', '宿主未返回目标内容，保存状态待确认。');
       rememberManifest(script, fresh.manifest);
+      progress('confirming');
       const confirmed = await confirmWritten(saved, script.content, fresh.version, expectedName);
       return {ok: true, ...row(confirmed), action: 'updated', persistence: 'confirmed', runtimeConfirmed: saved.confirmRuntime};
     });},

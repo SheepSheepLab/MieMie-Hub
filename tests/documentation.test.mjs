@@ -1,3 +1,4 @@
+import {openInstalledDetails} from './fixtures/installed-details.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile, access} from 'node:fs/promises';
@@ -54,11 +55,11 @@ test('documented Native example mounts only when opted in and shares its Surface
  const f=await fixture(t),hub=f.host.__MieMieHub,code=surfaceCode.replace('api.attachPanel(panel);','api.attachPanel(panel);\n'+nativeCode);
  const source=hub.extensions.provide(launched,f.host.eval('('+code.trim()+')'));assert.equal((await source.ready).ok,true);
  const orb=()=>[...f.doc.querySelectorAll('button')].find(b=>b.textContent==='打开我的工具');assert.equal(orb(),undefined);
- await f.launch('extension-center');await f.click('[data-center-tab="installed"]');
+ await f.launch('extension-center');await f.click('[data-center-tab="installed"]');openInstalledDetails(f.host,launched.id);
  const set=async v=>{const input=f.doc.querySelector('[data-shortcut="'+launched.id+'"]');assert.ok(input);input.checked=v;input.dispatchEvent(new f.host.Event('change'));await tick();};
- await set(true);assert.ok(orb());const panel=f.doc.querySelector('[data-close]').parentElement;orb().click();await tick();assert.equal(panel.hidden,false);
+ await set(true);await f.click('.mm-description-dialog footer button');assert.ok(orb());const panel=f.doc.querySelector('[data-close]').parentElement;orb().click();await tick();assert.equal(panel.hidden,false);
  orb().click();await tick();assert.equal(panel.hidden,true);assert.equal((await hub.extensions.open(launched.id)).ok,true);assert.equal(panel.hidden,false);
- await f.launch('extension-center');await f.click('[data-center-tab="installed"]');await set(false);assert.equal(orb(),undefined);assert.equal(hub.extensions.get(launched.id).enabled,true);
+ await f.launch('extension-center');await f.click('[data-center-tab="installed"]');openInstalledDetails(f.host,launched.id);await set(false);assert.equal(orb(),undefined);assert.equal(hub.extensions.get(launched.id).enabled,true);
  await source.release();assert.equal(panel.isConnected,false);
 });
 test('documented source handoff rejects API1 before preparation and respects saved disabled state',async t=>{

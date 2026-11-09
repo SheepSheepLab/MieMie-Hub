@@ -1,5 +1,6 @@
 import {HUB_COPY} from './ui-copy.js';
 import {HUB_PRODUCT} from './product-identity.js';
+import {DOCK_HOLD_MS} from './hub-root.js';
 import {createHoneycombLauncher} from './honeycomb-launcher.js';
 import {createSurfaceController} from './surface-controller.js';
 export function createHubUI(host, shell, assets, runtime, localSources, hubVersion, selfUpdater, ecosystemOptions) {
@@ -29,26 +30,78 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   // Core panels have no Extension registration, Manifest or lifecycle.
   const center = makePanel(HUB_PRODUCT.name + ' · '+HUB_COPY.extensionCenter, '发现更多工具');
   const manager = {panel: center.panel, body: center.body};
-  const settings = makePanel(HUB_PRODUCT.name + ' · '+HUB_COPY.settings, 'Hub 版本与更新');
+  const settings = makePanel(HUB_PRODUCT.name + ' · '+HUB_COPY.settings, '外观与更新');
   message.panel.dataset.hubPanel = 'message';
   center.panel.dataset.hubPanel = 'extension-center'; settings.panel.dataset.hubPanel = 'settings';
   const panels = new Set([manager.panel, message.panel, center.panel, settings.panel]);
 
   const account = doc.createElement('div'); account.className = 'mm-header-account'; center.header.append(account);
-  const ecosystem = createExtensionCenter({host, body: center.body, accountContainer: account, progressContainer: center.panel, runtime, nativeEntries, sources: localSources, ...ecosystemOptions, refreshLaunchers: renderMenu});
+  const panelIcon = id => extensionPanels.get('panel:' + id)?.icon;
+  const ecosystem = createExtensionCenter({host, body: center.body, accountContainer: account, progressContainer: center.panel, runtime, nativeEntries, sources: localSources, ...ecosystemOptions, panelIcon, refreshLaunchers: renderMenu});
 
-  const versionCard = doc.createElement('div'); versionCard.className = 'mm-system-card';
-  const versionTitle = doc.createElement('h2'); versionTitle.textContent = 'Hub 版本';
-  const updateTestNote = doc.createElement('p'); updateTestNote.className = 'mm-hub-note';
-  updateTestNote.dataset.hubUpdateTest = ''; updateTestNote.textContent = '自动更新功能测试版本';
-  const versionDetails = doc.createElement('dl'); versionDetails.className = 'mm-setting-list';
-  function settingRow(label) {
-    const row = doc.createElement('div'), term = doc.createElement('dt'), value = doc.createElement('dd');
-    term.textContent = label; row.append(term, value); versionDetails.appendChild(row); return value;
+  const settingElement = (tag,className,text) => {
+    const node = doc.createElement(tag);
+    if(className)node.className=className;
+    if(text)node.textContent=text;
+    return node;
+  };
+  function settingCard(title,detail) {
+    const card=settingElement('section','mm-settings-card'), heading=settingElement('header','mm-settings-card-heading');
+    heading.append(settingElement('h2','',title),settingElement('small','',detail));
+    card.append(heading);settings.body.append(card);
+    return card;
   }
-  const currentVersion = settingRow('当前版本'); currentVersion.dataset.hubVersion = ''; currentVersion.textContent = hubVersion;
-  const latestVersion = settingRow('最新版本'); latestVersion.dataset.hubLatestVersion = '';
-  const updateStatus = settingRow('更新状态'); updateStatus.setAttribute('role', 'status'); updateStatus.setAttribute('aria-live', 'polite');
+  settings.body.classList.add('mm-settings-body');
+  const dockCard=settingCard('悬浮球','外观与手势');
+  const sizeRow=settingElement('div','mm-dock-size'), sizeFields=settingElement('div','mm-dock-size-fields');
+  const sizeHeading=settingElement('div','mm-dock-size-heading'), sizeLabel=settingElement('label','','悬浮球大小');
+  const sizeValue=settingElement('span','mm-dock-size-value'), sizeInput=settingElement('input','mm-dock-size-input');
+  sizeInput.id='mm-dock-size-input';sizeInput.type='range';sizeInput.min='50';sizeInput.max='150';sizeInput.step='1';
+  sizeInput.dataset.hubOrbSize='';sizeLabel.htmlFor=sizeInput.id;sizeValue.setAttribute('aria-hidden','true');
+  const stops=settingElement('div','mm-dock-size-stops');stops.setAttribute('aria-hidden','true');
+  stops.append(...['50%','100%','150%'].map(value=>settingElement('span','',value)));
+  sizeHeading.append(sizeLabel,sizeValue);sizeFields.append(sizeHeading,sizeInput,stops);
+  const preview=settingElement('div','mm-dock-preview'), previewIcon=settingElement('img');
+  preview.setAttribute('aria-hidden','true');previewIcon.src=icons.home;previewIcon.alt='';
+  preview.append(previewIcon);sizeRow.append(sizeFields,preview);
+  const mode=settingElement('label','mm-dock-mode'), modeCopy=settingElement('span','mm-dock-mode-copy');
+  const modeName=settingElement('strong','',HUB_COPY.dockMode), modeHint=settingElement('small','',`贴边半藏，鼠标悬停时探出。鼠标和触屏都可以向屏幕中央拉，边缘亮起后松手打开。原地长按 ${DOCK_HOLD_MS / 1000} 秒后再拖动换位。`);
+  const modeInput=settingElement('input');modeInput.type='checkbox';modeInput.dataset.hubOrbTucked='';modeInput.setAttribute('role','switch');
+  modeHint.id='mm-dock-mode-hint';modeName.id='mm-dock-mode-name';
+  modeInput.setAttribute('aria-labelledby',modeName.id);modeInput.setAttribute('aria-describedby',modeHint.id);
+  const modeTrack=settingElement('span','mm-dock-mode-track');modeTrack.setAttribute('aria-hidden','true');
+  modeCopy.append(modeName,modeHint);mode.append(modeCopy,modeInput,modeTrack);
+  const appearanceStatus=settingElement('p','mm-hub-note mm-settings-appearance-status');appearanceStatus.setAttribute('role','status');appearanceStatus.hidden=true;
+  dockCard.append(sizeRow,mode,appearanceStatus);
+  function renderAppearance() {
+    const {size,tucked}=shell.getOrbAppearance();
+    sizeInput.value=String(size);sizeInput.setAttribute('aria-valuetext',size+'%');sizeValue.textContent=size+'%';
+    sizeInput.style.setProperty('--mm-dock-range',(size-50)+'%');
+    modeInput.checked=tucked;preview.toggleAttribute('data-tucked',tucked);
+    preview.style.setProperty('--mm-dock-preview-size',(size*.34)+'px');
+  }
+  function changeAppearance(next,save=true) {
+    const saved=shell.setOrbAppearance(next,{save});
+    appearanceStatus.hidden=saved;appearanceStatus.textContent=saved?'':'当前设置已生效，浏览器暂时无法保存。';
+    renderAppearance();
+  }
+  sizeInput.oninput=()=>changeAppearance({size:sizeInput.valueAsNumber},false);
+  sizeInput.onchange=()=>changeAppearance({size:sizeInput.valueAsNumber});
+  modeInput.onchange=()=>changeAppearance({tucked:modeInput.checked});
+  renderAppearance();
+
+  const versionCard=settingCard('Hub 更新','版本与安装');
+  const versionRow=settingElement('div','mm-hub-release'),versionIcon=settingElement('img','mm-hub-release-icon');
+  versionIcon.src=icons.home;versionIcon.alt='';
+  const versionCopy=settingElement('div','mm-hub-release-copy');
+  const versionDetails=settingElement('small','', '当前版本 ');
+  const currentVersion=settingElement('span','',hubVersion);currentVersion.dataset.hubVersion='';versionDetails.append(currentVersion);
+  versionCopy.append(settingElement('strong','',HUB_PRODUCT.name),versionDetails);
+  const releaseStatus=settingElement('div','mm-hub-release-status');
+  const latestLine=settingElement('small','', '最新发行 ');
+  const latestVersion=settingElement('span');latestVersion.dataset.hubLatestVersion='';latestLine.append(latestVersion);
+  const updateStatus=settingElement('span','mm-hub-release-badge');updateStatus.setAttribute('role','status');
+  releaseStatus.append(updateStatus,latestLine);
   const updateError = doc.createElement('p'); updateError.className = 'mm-hub-note'; updateError.dataset.hubUpdateError = '';
   const updateLabels = {unchecked: '尚未检查', checking: '正在检查…', current: '✓ 已是最新版',
     available: '● 发现新版本', ahead: '当前版本高于已发布版本', failed: '检查更新失败'};
@@ -69,6 +122,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     updateError.textContent = displayed.error || ''; updateError.hidden = !displayed.error;
     const busy = !!selfUpdater?.isBusy();
     checkUpdateButton.disabled = updateState.status === 'checking' || busy;
+    checkUpdateButton.textContent=updateState.status==='checking'?'检查中…':updateState.status==='failed'?'重新检查':'检查更新';
     installButton.hidden = updateState.status !== 'available';
     installButton.disabled = busy || updateState.status === 'checking' || installation.status === 'unconfirmed';
     confirmButton.hidden = installation.status !== 'unconfirmed';
@@ -91,12 +145,15 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   const confirmButton = doc.createElement('button'); confirmButton.type = 'button'; confirmButton.className = 'mm-system-action';
   confirmButton.dataset.hubAction = 'confirm-update'; confirmButton.textContent = '重新确认保存';
   confirmButton.onclick = () => {if (!disposed) void selfUpdater?.resume();};
-  const actions = doc.createElement('div'); actions.className = 'mm-system-actions'; actions.append(checkUpdateButton, installButton, confirmButton);
+  const actions=settingElement('div','mm-hub-release-actions');actions.append(checkUpdateButton,installButton,confirmButton);
   const updateNote = doc.createElement('p'); updateNote.className = 'mm-hub-note';
   updateNote.textContent = '自动更新仅支持全局脚本。更新会重新加载 Hub 并中断扩展任务，请先停止生成并保存编辑。下载或校验失败时不会安装。';
   const backupNote = doc.createElement('p'); backupNote.className = 'mm-hub-note'; backupNote.dataset.hubBackupNote = '';
   backupNote.textContent = '已请求浏览器下载旧 Hub 恢复文件，请确认文件已保存。若新版无法启动，可在酒馆助手中恢复原条目的 content。';
-  versionCard.append(versionTitle, updateTestNote, versionDetails, updateError, actions, updateNote, backupNote); settings.body.appendChild(versionCard);
+  const installGuide=settingElement('details','mm-hub-release-guide');
+  installGuide.append(settingElement('summary','','安装与恢复说明'),updateNote);
+  versionRow.append(versionIcon,versionCopy,actions);
+  versionCard.append(versionRow,releaseStatus,updateError,backupNote,installGuide);
   const unsubscribeUpdate = selfUpdater?.subscribe(next => {installation = next; showInstallation = next.status !== 'idle'; renderUpdatePanel();});
   renderUpdateState(updateChecker.getState());
 
@@ -111,6 +168,12 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
       const pw = Math.max(1, Math.min(p === center.panel ? 920 : 600, w - left - right)), ph = Math.max(1, Math.min(780, h - top - bottom));
       const x=ox+left+(w-left-right-pw)/2,y=oy+top+(h-top-bottom-ph)/2;
       for (const [key,value] of Object.entries({position:'fixed',left:x+'px',top:y+'px',right:'auto',bottom:'auto',width:pw+'px',height:ph+'px',maxHeight:ph+'px'})) p.style.setProperty(key.replace(/[A-Z]/g,m=>'-'+m.toLowerCase()),value,'important');
+      if (p === center.panel) {
+        p.style.setProperty('--mie-center-mid-x', (x + pw / 2)+'px');
+        p.style.setProperty('--mie-center-mid-y', (y + ph / 2)+'px');
+        p.style.setProperty('--mie-center-width', pw+'px');
+        p.style.setProperty('--mie-center-height', ph+'px');
+      }
     }
     launcher.resize();
   }
@@ -209,7 +272,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
     menuButtons = apps.map(app => {
       const b = doc.createElement('button'); b.type = 'button'; b.className = 'mm-app ' + app.className; b.dataset.hubApp = app.id; b.setAttribute('aria-label', app.title); b.title = app.title;
       const icon = doc.createElement('span'), label = doc.createElement('small'); icon.textContent = app.icon;
-      const art = extensionPanels.get('panel:' + app.id)?.icon;
+      const art = panelIcon(app.id);
       if (typeof art === 'string' && /^(?:data:image\/(?:png|webp|jpeg);base64,|https:\/\/)/.test(art)) {const img = doc.createElement('img'); img.src = art; img.alt = ''; img.referrerPolicy = 'no-referrer'; img.onerror = () => {img.remove(); icon.textContent = app.icon;}; icon.replaceChildren(img); icon.className = 'mm-launcher-image';}
       label.textContent = app.title; b.append(icon, label);
       b.onclick = () => {
@@ -245,7 +308,6 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   function blurEscape(){releaseEscape();}
   doc.addEventListener('keydown', key, true);
   doc.addEventListener('keyup',releaseEscape,true);host.addEventListener('blur',blurEscape);
-  host.visualViewport?.addEventListener('resize', resized); host.visualViewport?.addEventListener('scroll', resized);
   host.addEventListener('orientationchange',resized);
   shell.connect({onToggle: () => go(surface.state === 'closed' ? 'menu' : 'closed'), beforeMove: () => {}, onPosition: resized});
   renderMenu(); updateOrbState();
@@ -314,8 +376,8 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
       doc.removeEventListener('keyup',releaseEscape,true);host.removeEventListener('blur',blurEscape);
       updateChecker.dispose();
       unsubscribeUpdate?.(); selfUpdater?.dispose(); ecosystem.dispose(); launcher.dispose();
-      host.visualViewport?.removeEventListener('resize', resized); host.visualViewport?.removeEventListener('scroll', resized);
       host.removeEventListener('orientationchange',resized);
+      sizeInput.oninput = sizeInput.onchange = modeInput.onchange = null;
       checkUpdateButton.onclick = null;
       installButton.onclick = null; confirmButton.onclick = null;
       root.remove(); manager.panel.remove(); message.panel.remove(); center.panel.remove(); settings.panel.remove();

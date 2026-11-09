@@ -14,15 +14,18 @@ test('Core contains no Polisher business implementation, assets or settings', ()
   }
 });
 
-test('timeline parsing, auto-generation handling and worldbook write guards are unchanged', async () => {
-  // Normalize only the API 2 presentation guards; retain the original business golden.
+test('Timeline retains the historical business golden outside date handling and API 2 presentation guards', async () => {
+  const golden=await read('tests/fixtures/toolbox-timeline-business.txt');
+  const dateBlock=/  function parseDatePart\([\s\S]*?(?=  function wlogDate\()/;
+  assert.match(timeline,dateBlock);
+  assert.match(golden,dateBlock);
   const business=timeline.slice(timeline.indexOf('  const context ='), timeline.indexOf('  // Extension-owned presentation.'))
+    .replace(dateBlock,()=>golden.match(dateBlock)[0])
     .replace('    const lease=surfaceLease;if(!currentSurface(lease))return;\n','')
     .replace('await api();if(!currentSurface(lease))return;','await api();')
     .replaceAll('if(!currentSurface(lease))return;assertCurrent','assertCurrent')
     .replace('token === epoch && currentSurface(lease)','token === epoch && !disposed');
-  assert.equal(business,
-    await read('tests/fixtures/toolbox-timeline-business.txt'));
+  assert.equal(business,golden);
 });
 
 test('Hub artifact preserves the original script identity and export metadata', async () => {

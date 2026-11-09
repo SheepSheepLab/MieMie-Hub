@@ -186,7 +186,7 @@ async function hubUpdatePublicBytes(request, url, {signal, limit, size, binary =
 // This is a version-bounded SillyTavern 1.18 persistence readback, not a
 // TavernHelper flush API. No settings are POSTed back or sent to GitHub.
 export function createHubSavedScriptReader({fetch: request, origin, getRequestHeaders}) {
-  return async function readSavedScript(id, signal) {
+  async function readMany(ids, signal) {
     if (typeof request !== 'function' || typeof getRequestHeaders !== 'function' || !/^https?:\/\//.test(origin || '')) {
       throw hubUpdateFail('persistence', '宿主未提供保存确认接口；请保留恢复文件并手动确认。');
     }
@@ -199,18 +199,25 @@ export function createHubSavedScriptReader({fetch: request, origin, getRequestHe
     try { settings = JSON.parse(payload.settings); } catch (_) {throw hubUpdateFail('persistence', '无法读取宿主保存结果。');}
     const trees = settings?.extension_settings?.tavern_helper?.script?.scripts;
     if (!Array.isArray(trees)) throw hubUpdateFail('persistence', '宿主保存结构不受支持，尚未确认更新已保存。');
-    const found = [];
+    const requested = new Set(ids), found = new Map();
     const visit = list => {for (const item of list) {
-      if (item?.type === 'script' && item.id === id) found.push(item);
-      else if (item?.type === 'folder' && Array.isArray(item.scripts)) visit(item.scripts);
+      if (item?.type === 'script' && requested.has(item.id)) {
+        const {id, name, content} = item;
+        if (found.has(id)) found.set(id, hubUpdateFail('persistence', '保存记录中出现重复脚本 ID，无法确认。'));
+        else if (typeof content !== 'string' || typeof name !== 'string') {
+          found.set(id, hubUpdateFail('persistence', '宿主保存记录缺少代码或显示名称，未确认更新成功。'));
+        } else found.set(id, {id, name, content});
+      } else if (item?.type === 'folder' && Array.isArray(item.scripts)) visit(item.scripts);
     }};
     visit(trees);
-    if (found.length > 1) throw hubUpdateFail('persistence', '保存记录中出现重复脚本 ID，无法确认。');
-    if (!found.length) return null;
-    const script = found[0];
-    if (typeof script.content !== 'string' || typeof script.name !== 'string') throw hubUpdateFail('persistence', '宿主保存记录缺少代码或显示名称，未确认更新成功。');
-    return {id: script.id, name: script.name, content: script.content};
-  };
+    return found;
+  }
+  async function readSavedScript(id, signal) {
+    const result = (await readMany([id], signal)).get(id);
+    if (result instanceof Error) throw result;
+    return result ?? null;
+  }
+  return Object.assign(readSavedScript, {readMany});
 }
 
 function hubUpdatePendingValid(record) {

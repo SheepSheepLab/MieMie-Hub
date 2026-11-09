@@ -4,7 +4,9 @@
 
 ## 产品代码与资源
 
-当前产品源码未识别出复制、内嵌或修改自第三方项目的产品代码。旧版咩咩工具箱迁移代码的来源确认见 [README](README.md)，指定 AI 生成 PNG 的来源与独立使用规则见 [ASSETS-LICENSE.md](ASSETS-LICENSE.md)。
+旧版咩咩工具箱迁移代码的来源确认见 [README](README.md)，指定 AI 生成 PNG 的来源与独立使用规则见 [ASSETS-LICENSE.md](ASSETS-LICENSE.md)。
+
+Discord 扫码登录使用 [qrcode-generator 2.0.4](https://www.npmjs.com/package/qrcode-generator/v/2.0.4) 在浏览器本地生成二维码。仓库保留该版本 `dist/qrcode.mjs` 原文件及 [MIT 许可证](src/vendor/qrcode-generator-LICENSE)（Copyright © 2009 Kazuhiko Arase）。构建将该模块和许可证一同写入产品脚本。
 
 本项目未捆绑第三方字体、图标库或其他媒体库。系统字体与 Unicode emoji 不以字体／图片包形式分发。
 
@@ -14,7 +16,7 @@
 | --- | --- | --- | --- | --- |
 | [jsdom](https://www.npmjs.com/package/jsdom/v/26.1.0) | 26.1.0 | MIT | Core Panel DOM 测试、Hub + Polisher 组合测试的宿主模拟 | 否 |
 
-`tools/build.mjs` 只使用 Node.js 内置模块，读取本项目源码、样式与图片生成产物；不导入或打包 npm 依赖。Node.js 运行时、`node_modules/` 及测试报告本身也不随产品 JSON 分发。
+`tools/build.mjs` 只使用 Node.js 内置模块，读取仓库中的源码、样式与图片生成产物。Node.js 运行时、`node_modules/` 及测试报告本身也不随产品 JSON 分发。
 
 ## 锁定的完整 npm 开发依赖清单
 
@@ -66,7 +68,7 @@
 
 `saxes` 6.0.0 的 ISC 标识来自包元数据；当前本地安装包中未发现单独的 LICENSE 文件。这里不虚构一份以该作者名义发布的许可证；若未来需要随产品或源码包一起分发该依赖，应先核实其完整上游声明。
 
-仓库目前只记录依赖清单与锁文件，不收录第三方包源码。本文件不是用于重新分发整个 `node_modules/` 的完整许可证集合。未来如实际复制或打包依赖，应按对应版本补齐其版权、许可证和适用 NOTICE；也不能把 jsdom 的 MIT 文本视为所有传递依赖的统一授权。
+上述 npm 开发依赖仅记录在依赖清单与锁文件中。本文件不是用于重新分发整个 `node_modules/` 的完整许可证集合。未来如实际复制或打包开发依赖，应按对应版本补齐其版权、许可证和适用 NOTICE；也不能把 jsdom 的 MIT 文本视为所有传递依赖的统一授权。
 
 ## jsdom 的原始 MIT 声明
 

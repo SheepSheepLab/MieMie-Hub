@@ -530,3 +530,25 @@ test('durable reader rejects content-only records and never leaks script data', 
   delete scripts[0].name;
   await assert.rejects(reader(scripts[0].id,new AbortController().signal),hasCode('persistence'));
 });
+
+test('saved-script batch reads settings once and isolates invalid matches by exact instance',async()=>{
+ const trees=[
+  {type:'folder',scripts:[{type:'script',id:'kept',name:'Kept Name',content:'saved code',data:{private:true}}]},
+  {type:'script',id:'duplicate',name:'Duplicate A',content:'first'},
+  {type:'script',id:'duplicate',name:'Duplicate B',content:'second'},
+  {type:'script',id:'invalid',content:'missing name'},
+  {type:'script',id:'unrelated',name:'Other Name',content:'other code'},
+ ];
+ let reads=0;
+ const reader=createHubSavedScriptReader({origin:'http://127.0.0.1:8000',getRequestHeaders:()=>({}),fetch:async()=>{
+  reads++;
+  return Response.json({settings:JSON.stringify({extension_settings:{tavern_helper:{script:{scripts:trees}}}})});
+ }});
+ const results=await reader.readMany(['kept','duplicate','invalid','missing'],new AbortController().signal);
+ assert.equal(reads,1);
+ assert.deepEqual(results.get('kept'),{id:'kept',name:'Kept Name',content:'saved code'});
+ assert.equal(results.get('duplicate').code,'persistence');
+ assert.equal(results.get('invalid').code,'persistence');
+ assert.equal(results.has('missing'),false);
+ assert.equal(results.has('unrelated'),false);
+});

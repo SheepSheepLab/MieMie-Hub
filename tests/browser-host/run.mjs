@@ -20,7 +20,7 @@ async function check(name,fn){try{await fn();results.push({name,status:'PASS'});
 const snapshot=()=>d.eval(()=>__MieMieNativeAcceptance.snapshot());
 async function closeHub(){await d.eval(async()=>{if(document.querySelector('#miemie-hub-shell')?.dataset.hubForeground)await __meemeCombinedUI.toggle();});await settle(d);}
 async function launch(who=id){await d.eval(()=>__MieMieHub.open());await settle(d);await click(d,'[data-hub-app="'+who+'"]');}
-async function preference(value){await launch('extension-center');await wait(d,()=>document.querySelector('[data-center-tab="installed"]'));await settle(d);await click(d,'[data-center-tab="installed"]');await settle(d);const sel='[data-shortcut="'+id+'"]';if(await d.eval(s=>document.querySelector(s).checked,sel)!==value)await click(d,sel);await closeHub();}
+async function preference(value){await launch('extension-center');await wait(d,()=>document.querySelector('[data-center-tab="installed"]'));await settle(d);await click(d,'[data-center-tab="installed"]');await settle(d);await click(d,'[data-extension-id="'+id+'"] > .mm-catalog-row-open');const sel='[data-shortcut="'+id+'"]';if(await d.eval(s=>document.querySelector(s).checked,sel)!==value)await click(d,sel);await click(d,'.mm-description-dialog footer button');await closeHub();}
 async function nativeVisible(){if(!(await snapshot()).business.visible)await click(d,N);await settle(d);}
 async function parity(label){
  await nativeVisible();await d.fill(P+' textarea','Phase3 draft 中文');
@@ -46,7 +46,7 @@ try{
  versions=await d.eval(async()=>({tavern:await TavernHelper.getTavernVersion(),helper:await TavernHelper.getTavernHelperVersion(),userAgent:navigator.userAgent}));assert.equal(versions.tavern,expectedTavern);
  await d.eval(f=>TavernHelper.replaceScriptTrees([f],{type:'global'}),fixture);await wait(d,()=>window.__MieMieNativeAcceptance?.stats.active===1,null,60000);
  await check('same-fixture Standalone: toggle, draft, drag, resize, pointer capture, dialog, layered Back and position memory',()=>parity('standalone'));
- await d.eval(args=>TavernHelper.replaceScriptTrees(args,{type:'global'}),[fixture,hub]);await wait(d,()=>window.__MieMieHub?.version==='0.9.0');await d.eval(()=>__MieMieHub.ready);await wait(d,()=>__MieMieNativeAcceptance.snapshot().business?.mode==='hub');
+ await d.eval(args=>TavernHelper.replaceScriptTrees(args,{type:'global'}),[fixture,hub]);await wait(d,value=>window.__MieMieHub?.version===value,version);await d.eval(()=>__MieMieHub.ready);await wait(d,()=>__MieMieNativeAcceptance.snapshot().business?.mode==='hub');
  await check('real Helper import: default bundled Timeline, API2 and native entry default OFF',async()=>{assert.equal(await d.eval(()=>__MieMieHub.apiVersion),2);assert.equal(await d.eval(()=>__MieMieHub.extensions.get('miemie.timeline').enabled),true);assert.equal((await snapshot()).orbs,0);});
  await preference(true);
  await check('same-fixture Hub Native parity against Standalone',async()=>{await parity('hub-native');assert.deepEqual(observations.standalone.delta,observations['hub-native'].delta);assert.equal(observations.standalone.draft,observations['hub-native'].draft);assert.equal((await snapshot()).stats.peak,1);});

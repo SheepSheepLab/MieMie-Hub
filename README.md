@@ -2,7 +2,7 @@
 
 咩咩Hub 是咩咩（MieMie）开源软件与社区生态的官方项目。生态由 SheepSheep 发起和创建（Founder / 创始人）；SheepSheepLab 是官方 GitHub 开发、维护与发布命名空间，官方项目主要通过该命名空间维护和发布，并欢迎社区贡献者共同参与。
 
-本仓库源码对应 **0.9.0**。安装或升级请使用 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 中正式发布的完整包。
+本仓库源码对应 **1.0.0**。安装或升级请使用 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 中正式发布的完整包。
 
 当前契约为 Extension API v2：统一 Native Window、严格 Surface Lease。Core 负责 Runtime、Package 安全及 Self Update；扩展中心和设置为 System Modules。Bundled Timeline 使用 API2，随 Hub 打包并通过 Launcher 打开。
 
@@ -53,8 +53,8 @@ MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL="$OFFICIAL_REGISTRY_HTT
 输出：
 
 ```text
-build/MieMie-Hub-0.9.0.json
-build/咩咩Hub-0.9.0.json
+build/MieMie-Hub-1.0.0.json
+build/咩咩Hub-1.0.0.json
 build/MieMie-Hub-update.json
 build/miemie-hub.js
 ```
@@ -63,7 +63,7 @@ build/miemie-hub.js
 
 ## 当前安装体验与验证
 
-安装下载显示进度、速度与取消入口，返回可取消尚未写入的安装，完成后收起浮动进度条，并自动复核保存状态。简介预览最多两行，完整简介在独立窗口查看。Runtime Compatibility 与 Managed Package Compatibility 分别验证。
+安装下载显示进度、速度与取消入口，返回可取消尚未写入的安装，完成后收起浮动进度条，并自动复核保存状态。扩展列表显示关键信息，完整简介和管理操作在条目详情中查看。Runtime Compatibility 与 Managed Package Compatibility 分别验证。
 
 直连失败可由受限 Registry Relay 接管；脚本正文以无进展超时为主，并保留有界总时限与全部完整性校验。准确时限与失败边界集中在 [Package v1](docs/EXTENSION-PACKAGE.md#网络与安全边界)。阶段性调查保留在 [慢速下载验收记录](docs/PROGRESS-TIMEOUT-VALIDATION.md)，历史版本说明见 [Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases)。
 
@@ -112,7 +112,7 @@ Copyright © 2026 SheepSheep。社区贡献者（Community Contributors）保留
 
 ### Discord 登录
 
-登录结果使用绑定原 Origin 和 PKCE 的一次性交接，不依赖弹窗消息或第三方 Cookie；收到 Registry 会话后验证当前用户并刷新「我的」。原消息交接保持旧服务兼容。生产发布构建使用 `MIEMIE_BUILD_MODE=production` 和真实 `MIEMIE_DEFAULT_REGISTRY_URL`。关闭 Hub/重载后需重新登录；不要复制任何 Token。
+从「Discord 登录」菜单选择授权窗口或扫码。扫码时用手机相机打开 Registry 授权链接，再在 Discord 官方页面完成授权。登录结果使用绑定原 Origin 和 PKCE 的一次性交接，不依赖弹窗消息或第三方 Cookie；收到 Registry 会话后验证当前用户并刷新「我的」。原消息交接保持旧服务兼容。生产发布构建使用 `MIEMIE_BUILD_MODE=production` 和真实 `MIEMIE_DEFAULT_REGISTRY_URL`。关闭 Hub/重载后需重新登录；不要复制任何 Token。
 
 ## Catalog 类型与治理
 

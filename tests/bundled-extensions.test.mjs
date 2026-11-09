@@ -25,7 +25,7 @@ async function fixture(t, artifact=full, hostAPI=true, preferences=null) {
   const book={entries:{1:{uid:1,comment:'One',disable:false,content:'<world_timeline>事件一：结束（60年3月15日）：结束</world_timeline>'},2:{uid:2,comment:'Two',disable:true,content:'<world_timeline>事件一：结束（60年3月20日）：结束</world_timeline>'}}};
   let writes=0, holdRead=null, frame;
   const ctx={characterId:0,characters:[{name:'Fixture',avatar:'fixture.png'}],chatId:'fixture-chat',chat:[],eventTypes:Object.fromEntries(['GENERATION_STARTED','MESSAGE_RECEIVED','GENERATION_ENDED','GENERATION_STOPPED','CHAT_CHANGED'].map(x=>[x,x])),
-    getRequestHeaders:()=>({'Content-Type':'application/json'}),loadWorldInfo:async()=>holdRead?holdRead():structuredClone(book),saveWorldInfo:async()=>{writes++;},reloadWorldInfoEditor(){}};
+    getRequestHeaders:()=>({'Content-Type':'application/json'}),loadWorldInfo:async()=>holdRead?holdRead():structuredClone(book),saveWorldInfo:async(_name,data)=>{writes++;Object.assign(book,structuredClone(data));},reloadWorldInfoEditor(){}};
   if(hostAPI)h.SillyTavern={getContext:()=>ctx};
   h.localStorage.setItem('meeme_timeline_dock_v1',JSON.stringify({side:'right',ratio:.4}));
   h.localStorage.setItem('fixture-other-data','unchanged');
@@ -45,12 +45,62 @@ async function fixture(t, artifact=full, hostAPI=true, preferences=null) {
   }
   t.after(async()=>{await unmount();dom.window.close();assert.deepEqual(errors,[]);});
   await mount();
-  return{h,d,vars,before,subscriptions,timers,mount,unmount,get writes(){return writes;},hold(fn){holdRead=fn;},async open(){await h.__MieMieHub.extensions.open('miemie.timeline');await until(()=>d.querySelectorAll('.ts-choice').length===2);}};
+  return{h,d,vars,book,ctx,before,subscriptions,timers,mount,unmount,get writes(){return writes;},hold(fn){holdRead=fn;},async open(){await h.__MieMieHub.extensions.open('miemie.timeline');await until(()=>d.querySelectorAll('.ts-choice').length===2);}};
 }
 
+test('bundled Timeline uses civil eras and date precision in its real auto-handoff path',async t=>{
+  const cases=[
+    ['公元前年份顺序与月末','终战','公元前60年12月·冬·尼罗河','西元前61年12月31日 23:59','西元前59年1月1日',/公元前60年12月过完后/],
+    ['纪年交界没有第零年','终战','西元前1年12月31日','公元前1年12月31日 23:59','公元1年1月1日',/西元前1年12月31日过完后/],
+    ['约数和世纪注释保留年份精度','埃利亚','约公元前450年·公元前5世纪·埃利亚','公元前450年12月31日 23:59','西元前449年',/公元前450年过完后/],
+    ['完整日期保留闰日与时分验证','终战','約西元2000年2月29日·地点','公元2000年2月29日 23:59','西元2000年3月1日',/西元2000年2月29日过完后/],
+    ['无界沙盒在最后一个明确锚点起算','沙盒模式·远古欧洲','公元前60年 - 公元800年 - ∞','西元799年12月31日 23:59','约西元800年',/800年1月1日 00:00 起/],
+    ['旧虚构纪年和时刻保持可用','结尾','60年3月15日 10:15','60年3月15日 10:14','60年3月15日／10:15／星期一',/60年3月15日 10:15 起/],
+  ];
+  for(const [name,title,range,before,after,hint] of cases) await t.test(name,async t=>{
+    const f=await fixture(t);
+    const content=`<world_timeline>
+章节标题: 远古欧洲与圣痕之影
+-事件A: 尼罗河的毒蛇与黄昏之战 (公元前60年12月·冬·尼罗河): 正文。
+-事件B: 埃利亚 (约公元前450年·公元前5世纪·埃利亚): 正文。
+-事件C: 须弥芥子 (约公元490年·公元5世纪末·不列颠荒原): 正文。
+-事件D: 阿瓦隆 (约公元510年·公元6世纪·卡姆兰之战): 正文。
+-事件E: 加洛林 (约公元778年8月15日·加洛林时期): 正文。
+-事件F: 渡鸦 (约公元800年·维京时代): 正文。
+-事件G: ${title} (${range}): 正文里的公元900年1月1日不参与解析。
+</world_timeline>`;
+    f.book.entries[1].content=content;
+    f.vars.books[0].auto=true;
+    await f.open();
+    assert.match(f.d.querySelector('.ts-handoff').textContent,hint);
+    const emit=(type,...args)=>{for(const sub of f.subscriptions)if(sub.type===type)sub.fn(...args);};
+    const reply=time=>{
+      emit('GENERATION_STARTED','normal',{},false);
+      const index=f.ctx.chat.push({mes:`<wlog time="时间：${time}">日志</wlog>`})-1;
+      emit('MESSAGE_RECEIVED',index,'normal');
+      emit('GENERATION_ENDED');
+    };
+    const status=()=>f.d.querySelector('[data-auto-status]').textContent;
+    reply('公元前0年1月1日');
+    await until(()=>status().includes('无效'));
+    assert.equal(f.writes,0);
+    reply(before);
+    await until(()=>status().includes('等待 '+f.d.querySelector('.ts-handoff').textContent.replace('交接时间：','')));
+    assert.equal(f.writes,0);
+    reply(after);
+    await until(()=>status().includes('已自动接续到 Two'));
+    assert.equal(f.writes,1);
+    assert.equal(f.book.entries[1].content,content);
+    assert.equal(f.book.entries[1].disable,true);
+    assert.equal(f.book.entries[2].disable,false);
+  });
+});
+
 test('Core and System Modules have no Timeline business or asset dependency',async()=>{
-  for(const directory of ['src','assets'])for(const file of await readdir(new URL(directory+'/',project))){
-    const text=await readFile(new URL(directory+'/'+file,project),'utf8');
+  for(const directory of ['src','assets'])for(const entry of await readdir(new URL(directory+'/',project),{recursive:true,withFileTypes:true})){
+    if(!entry.isFile())continue;
+    const file=path.join(entry.parentPath,entry.name);
+    const text=await readFile(file,'utf8');
     // A legacy Hub dock-position storage key remains intentionally compatible.
     assert.doesNotMatch(text.replaceAll('meeme_timeline_dock_v1','legacy_position'),/timeline|world_timeline|timeline_switcher_v2|__timelineSwitcherV1/i,file);
   }

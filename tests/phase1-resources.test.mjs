@@ -1,3 +1,4 @@
+import {openInstalledDetails} from './fixtures/installed-details.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
@@ -129,7 +130,7 @@ function generic(f,{id='fixture.native',mountFailure=false}={}){
  return {manifest,factory,counts,api:()=>api,panel:()=>panel,lease:()=>lease,surfaceLease:()=>surfaceLease,portal:()=>portal,shadow:()=>shadow,dialog:()=>dialog,broken:v=>broken=v,
   native:()=>doc.querySelector('[data-native="'+id+'"]').onclick(),
   async provide(){const s=host.__MieMieHub.extensions.provide(manifest,factory);assert.equal(s.ok,true);assert.equal((await s.ready).ok,true);await settle();return s;},
-  async preference(value){await f.launch('extension-center');await f.click('[data-center-tab="installed"]');const input=doc.querySelector('[data-shortcut="'+id+'"]');assert.ok(input);input.checked=value;input.dispatchEvent(new host.Event('change'));await settle();return doc.querySelector('[data-shortcut="'+id+'"]');},
+  async preference(value){await f.launch('extension-center');await f.click('[data-center-tab="installed"]');openInstalledDetails(host,id);const input=doc.querySelector('[data-shortcut="'+id+'"]');assert.ok(input);input.checked=value;input.dispatchEvent(new host.Event('change'));await settle();return doc.querySelector('[data-shortcut="'+id+'"]');},
  };
 }
 

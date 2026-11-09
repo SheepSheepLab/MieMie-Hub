@@ -34,7 +34,8 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
     if (next !== base) { ++loginEpoch; cancelLogin?.(); for (const c of controllers) c.abort(); const hadSession = Boolean(identity); base = next; clearSession(); if (!hadSession) notify(); }
     return base;
   }
-  async function api(path, {method = 'GET', body, authenticated = false} = {}) {
+  async function api(path, {method = 'GET', body, authenticated = false, signal} = {}) {
+    if (signal?.aborted) throw Error('在线服务请求已取消。');
     if (disposed) throw Error('在线服务连接已关闭。');
     if (!base) throw Error('在线扩展服务暂未开放；本地扩展仍可正常使用。');
     if (!/^\/api\/[A-Za-z0-9/?=&%._+~-]+$/.test(path)) throw Error('在线服务请求路径无效。');
@@ -45,6 +46,8 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
     let timer;
     const expired = new Promise((_, reject) => { timer = setTimeout(() => {reject(Object.assign(Error('在线服务请求超时，请稍后重试。'),{code:'request_timeout'}));controller.abort();}, timeoutMs); });
     const cancelled = new Promise((_, reject) => controller.signal.addEventListener('abort', () => reject(Error('在线服务请求已取消。')), {once: true}));
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, {once: true});
     try {
       return await Promise.race([expired, cancelled, (async () => {
         const headers = {Accept: 'application/json'};
@@ -77,19 +80,25 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
       if(error instanceof TypeError) throw Object.assign(Error('在线服务暂时无法连接，请稍后重试。'),{code:'network_unavailable'});
       throw error instanceof Error ? error : Error('在线服务暂时无法连接，请稍后重试。');
     }
-    finally {clearTimeout(timer); controllers.delete(controller);}
+    finally {signal?.removeEventListener('abort', abort); clearTimeout(timer); controllers.delete(controller);}
   }
-  function login() {
+  function login({showQR, signal} = {}) {
     if (loginOperation) return loginOperation;
     if (!base || disposed) return Promise.reject(Error('在线投稿服务暂未开放，请稍后重试。'));
+    if (signal?.aborted) return Promise.reject(Error('登录已取消。'));
     // Open synchronously inside the click gesture; navigate only after state/PKCE preparation.
-    const popup = host.open('about:blank', 'miemie-registry-login', 'popup,width=520,height=720');
-    if (!popup) return Promise.reject(Error('登录窗口被浏览器阻止，请允许此页面弹出窗口。'));
+    const popup = showQR ? null : host.open('about:blank', 'miemie-registry-login', 'popup,width=520,height=720');
+    if (!showQR && !popup) return Promise.reject(Error('登录窗口被浏览器阻止。请允许弹出窗口，或选择扫码登录。'));
     const expectedOrigin = base, expectedLogin = ++loginEpoch;
     const retryable = error => ['network_unavailable','request_timeout'].includes(error?.code);
     const stageError = (stage,error) => Error('Discord 登录：'+stage+'失败。'+error.message+
       (retryable(error)?' 请检查网络或浏览器的跨站请求限制后重新登录。':''));
-    const assertLogin = () => {if (disposed || base !== expectedOrigin || loginEpoch !== expectedLogin) throw Error('登录上下文已改变。');};
+    const assertLogin = () => {
+      if (signal?.aborted) throw Error('登录已取消。');
+      if (disposed || base !== expectedOrigin || loginEpoch !== expectedLogin) throw Error('登录上下文已改变。');
+    };
+    const abort = () => cancelLogin?.();
+    signal?.addEventListener('abort', abort, {once: true});
     loginOperation = (async () => {
       let listener, timer, closePoll, pollTimer, retryTimer, focusListener, stopped = false;
       const retryPause = () => new Promise((resolve,reject)=>{
@@ -102,11 +111,17 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
         const verifier = encode(bytes);
         const challenge = encode(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
         assertLogin();
-        const started = await api('/api/auth/start', {method: 'POST', body: {codeChallenge: challenge, returnOrigin: host.location.origin}}).catch(error=>{throw stageError('连接授权服务',error);});
+        const started = await api('/api/auth/start', {method: 'POST', signal, body: {codeChallenge: challenge, returnOrigin: host.location.origin}}).catch(error=>{throw stageError('连接授权服务',error);});
         assertLogin();
         const auth = new URL(started.authorizationUrl);
         if (auth.origin !== expectedOrigin || auth.pathname !== '/api/auth/authorize' || auth.username || auth.password || auth.searchParams.get('requestId') !== started.requestId || typeof started.requestId !== 'string') throw Error('Discord 登录地址校验失败。');
         const polling = started.handoff === 'poll-v1';
+        if (showQR) {
+          if (!polling) throw Error('当前在线服务不支持扫码登录，请使用授权窗口登录。');
+          if (!/^[A-Za-z0-9_-]{43}$/.test(started.requestId)) throw Error('Discord 登录地址校验失败。');
+          showQR(auth.origin + auth.pathname + '?requestId=' + started.requestId);
+          assertLogin();
+        }
         const result = await new Promise((resolve, reject) => {
           let exchanging = false, networkFailures = 0;
           const finish = (error, value) => {if (stopped) return; stopped = true; clearTimeout(pollTimer); error ? reject(error) : resolve(value);};
@@ -120,7 +135,7 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
             clearTimeout(pollTimer); exchanging = true;
             try {
               assertLogin();
-              const value = await api('/api/auth/complete', {method: 'POST', body: {requestId: started.requestId, codeVerifier: verifier}});
+              const value = await api('/api/auth/complete', {method: 'POST', signal, body: {requestId: started.requestId, codeVerifier: verifier}});
               if (stopped) return;
               assertLogin();networkFailures=0;
               if (value.status !== 'pending') finish(null, value);
@@ -139,9 +154,9 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
             try {finish(null, await api('/api/auth/exchange', {method: 'POST', body: {code: event.data.code, codeVerifier: verifier, requestId: started.requestId}}));}
             catch (error) {finish(error);}
           };
-          host.addEventListener('message', listener);
+          if (popup) host.addEventListener('message', listener);
           if (polling) {focusListener = () => {void poll();}; host.addEventListener('focus', focusListener);}
-          popup.location.href = auth.href;
+          if (popup) popup.location.href = auth.href;
           if (polling) void poll();
         });
         assertLogin();
@@ -154,7 +169,7 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
           let current;
           for(let attempt=0;attempt<3;attempt++){
             assertLogin();
-            try {current=await api('/api/me',{authenticated:true});break;}
+            try {current=await api('/api/me',{authenticated:true,signal});break;}
             catch(error){assertLogin();if(!retryable(error)||attempt===2)throw stageError('确认账号状态',error);await retryPause();}
           }
           assertLogin();
@@ -163,7 +178,8 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
         } catch (error) {if (loginEpoch === expectedLogin) clearSession(); throw error;}
       } finally {
         stopped = true; clearTimeout(retryTimer); clearTimeout(timer); clearTimeout(pollTimer); clearInterval(closePoll); if (focusListener) host.removeEventListener('focus', focusListener); if (listener) host.removeEventListener('message', listener);
-        cancelLogin = null; try {popup.close();} catch (_) {}
+        signal?.removeEventListener('abort', abort);
+        cancelLogin = null; try {popup?.close();} catch (_) {}
       }
     })().finally(() => {loginOperation = null;});
     return loginOperation;

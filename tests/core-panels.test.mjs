@@ -121,13 +121,27 @@ test('settings uses the actual package and built Core version, with an honest in
   await f.launch('settings');
   assert.equal(f.query('[data-hub-panel="settings"]').hidden, false);
   assert.equal(f.query('[data-hub-version]').textContent, pkg.version);
-  assert.equal(f.query('[data-hub-update-test]').textContent, '自动更新功能测试版本');
+  assert.equal(f.query('.mm-hub-release-copy strong').textContent, '咩咩Hub');
   assert.equal(f.query('[data-hub-version]').textContent, f.host.__MieMieHub.version);
   assert.equal(artifact.name, '咩咩Hub ' + pkg.version);
   assert.equal(f.query('[data-hub-update-status]').dataset.hubUpdateStatus, 'unchecked');
   assert.equal(f.query('[data-hub-update-status]').textContent, '尚未检查');
   assert.equal(f.query('[data-hub-latest-version]').parentElement.hidden, true);
   assert.equal(f.releaseRequests.length, 0);
+});
+
+test('settings previews and saves dock size and Dive mode with independent controls',async t=>{
+  const f=await fixture(t);await f.launch('settings');
+  const size=f.query('[data-hub-orb-size]'),mode=f.query('[data-hub-orb-tucked]'),preview=f.query('.mm-dock-preview');
+  assert.equal(size.value,'100');assert.equal(size.min,'50');assert.equal(size.max,'150');
+  assert.equal(mode.getAttribute('role'),'switch');assert.equal(mode.checked,false);
+  size.value='50';size.dispatchEvent(new f.host.Event('input',{bubbles:true}));
+  assert.equal(size.getAttribute('aria-valuetext'),'50%');assert.equal(f.host.localStorage.getItem('miemie_hub_orb_v1'),null);
+  size.dispatchEvent(new f.host.Event('change',{bubbles:true}));mode.click();
+  assert.deepEqual(JSON.parse(f.host.localStorage.getItem('miemie_hub_orb_v1')),{size:50,tucked:true});
+  assert.equal(preview.hasAttribute('data-tucked'),true);
+  const hub=f.host.__MieMieHub;f.unmount();await hub.whenDisposed;await f.mount();await f.launch('settings');
+  assert.equal(f.query('[data-hub-orb-size]').value,'50');assert.equal(f.query('[data-hub-orb-tucked]').checked,true);
 });
 
 for (const [version, state, label] of [[pkg.version, 'current', '✓ 已是最新版'], ['9.0.0', 'available', '● 发现新版本'], ['0.2.0', 'ahead', '当前版本高于已发布版本']]) {
@@ -462,11 +476,11 @@ test('description Escape closes only its dialog in the complete built Hub and di
  const f=await fixture(t,undefined,true);
  f.host.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
  f.host.HTMLDialogElement.prototype.close=function(){this.open=false;};
- await f.launch('extension-center');await f.click('.mm-description-open');
+ await f.launch('extension-center');await f.click('.mm-catalog-row-open');
  const panel=f.query('[data-hub-panel="extension-center"]');assert.equal(panel.hidden,false);assert.ok(f.query('dialog[open]'));
  f.query('.mm-description-full').dispatchEvent(new f.host.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await settle();
- assert.equal(f.query('dialog'),null);assert.equal(panel.hidden,false);assert.equal(f.doc.activeElement,f.query('.mm-description-open'));
- await f.click('.mm-description-open');f.unmount();assert.equal(f.query('dialog'),null);
+ assert.equal(f.query('dialog'),null);assert.equal(panel.hidden,false);assert.equal(f.doc.activeElement,f.query('.mm-catalog-row-open'));
+ await f.click('.mm-catalog-row-open');f.unmount();assert.equal(f.query('dialog'),null);
  assert.equal(f.listeners.filter(x=>x.type==='keydown').length,0);
 });
 
@@ -550,10 +564,10 @@ test('source release and Hub disposal invalidate requests and remove the sole in
  f.unmount();await settle();assert.equal(request.isCurrent(),false);assert.equal(probe.api.registerBackHandler(()=>true),false);assert.deepEqual(counts(),[0,0,0]);
 });
 test('System description consumes repeats, native cancel and Back without window Escape capture',async t=>{
- const f=await fixture(t,undefined,true);nativeDialogStub(f);await f.launch('extension-center');await f.click('.mm-description-open');
+ const f=await fixture(t,undefined,true);nativeDialogStub(f);await f.launch('extension-center');await f.click('.mm-catalog-row-open');
  const panel=f.query('[data-hub-panel="extension-center"]');escape(f,{release:false});escape(f,{repeat:true,release:false});await settle();assert.equal(panel.hidden,false);assert.equal(f.query('dialog'),null);
- await f.click('.mm-description-open');const dialog=f.query('dialog');dialog.dispatchEvent(new f.host.Event('cancel',{cancelable:true}));assert.equal(f.query('dialog'),null);assert.equal(panel.hidden,false);
- await f.click('.mm-description-open');panel.querySelector('.mm-return').click();await settle();assert.equal(f.query('dialog'),null);assert.equal(panel.hidden,false);
+ await f.click('.mm-catalog-row-open');const dialog=f.query('dialog');dialog.dispatchEvent(new f.host.Event('cancel',{cancelable:true}));assert.equal(f.query('dialog'),null);assert.equal(panel.hidden,false);
+ await f.click('.mm-catalog-row-open');panel.querySelector('.mm-return').click();await settle();assert.equal(f.query('dialog'),null);assert.equal(panel.hidden,false);
  panel.querySelector('.mm-return').click();await settle();assert.equal(panel.hidden,true);
 });
 

@@ -68,6 +68,9 @@ for (const entry of JSON.parse(await read('packaging/bundled-extensions.json')))
 }
 if (selected && [...selected].some(id => !seen.has(id))) throw Error('Unknown bundled Extension ID.');
 const functions = [];
+const qrSource = (await read('src/vendor/qrcode-generator.mjs')).replace(/^export default qrcode;\s*$/m, '').replace(/^export /gm, '');
+const qrLicense = await read('src/vendor/qrcode-generator-LICENSE');
+functions.push('const hubQRCode = (() => {\n/*\n' + qrLicense + '*/\n' + qrSource + '\nreturn qrcode;\n})();');
 for (const file of ['src/product-identity.js', 'src/ui-copy.js', 'src/motion-tuning.js', 'src/honeycomb-launcher.js', 'src/surface-motion.js', 'src/surface-controller.js', 'src/extension-runtime.js', 'src/hub-root.js', 'src/hub-update-check.js', 'src/script-update-fields.js', 'src/hub-script-host.js', 'src/hub-self-update.js', 'src/registry-client.js', 'src/extension-packages.js', 'src/submission-select.js', 'src/extension-center.js', 'src/hub-ui.js', 'src/bundled-extensions.js']) {
   let source = (await read(file)).replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
   functions.push(source);
