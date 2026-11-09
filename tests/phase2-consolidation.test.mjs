@@ -1,3 +1,4 @@
+import {openInstalledDetails} from './fixtures/installed-details.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
@@ -17,7 +18,7 @@ test('normal Bundled build: OFF release fault is visible, retry is explicit and 
 });
 
 test('normal Bundled build: Native preference Enter preserves ON intent after mount fault and retries only explicitly',async t=>{
- const f=await fixture(t),g=generic(f,{mountFailure:true});await g.provide();await f.launch('extension-center');await f.click('[data-center-tab="installed"]');
+ const f=await fixture(t),g=generic(f,{mountFailure:true});await g.provide();await f.launch('extension-center');await f.click('[data-center-tab="installed"]');openInstalledDetails(f.host,g.manifest.id);
  let toggle=f.query('[data-shortcut]');toggle.dispatchEvent(new f.host.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));await settle();
  toggle=f.query('[data-shortcut]');assert.equal(toggle.checked,true);assert.equal(g.counts.mount,1);assert.match(f.doc.documentElement.textContent,/fixture mount failure/);
  await f.click('[data-center-tab="installed"]');assert.equal(g.counts.mount,1);
@@ -31,7 +32,7 @@ async function parity(t){
  f.host.HTMLDialogElement.prototype.showModal=function(){this.open=true;};f.host.HTMLDialogElement.prototype.close=function(){this.open=false;};
  const frame=f.doc.createElement('iframe');f.doc.body.append(frame);const probe=installNativeWindowAcceptance(frame.contentWindow);t.after(()=>frame.contentWindow.dispatchEvent(new frame.contentWindow.Event('pagehide')));await settle();
  assert.equal(probe.error,undefined);assert.equal(probe.stats.active,1);assert.equal(f.query('[data-native-parity-orb]'),null);
- await f.launch('extension-center');await f.click('[data-center-tab="installed"]');await f.click('[data-shortcut="'+probe.id+'"]');
+ await f.launch('extension-center');await f.click('[data-center-tab="installed"]');openInstalledDetails(f.host,probe.id);await f.click('[data-shortcut="'+probe.id+'"]');await f.click('.mm-description-dialog footer button');
  return {...f,probe,frame,captures,async native(){f.query('[data-native-parity-orb]').click();await settle();},snapshot:()=>probe.snapshot().business};
 }
 test('Native Parity Fixture: provider owns pointer drag/resize, draft, dialog, internal Back and unknown input',async t=>{

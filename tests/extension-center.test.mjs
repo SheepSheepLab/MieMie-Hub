@@ -1,6 +1,13 @@
+import {openInstalledDetails} from './fixtures/installed-details.js';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';import assert from 'node:assert/strict';import {JSDOM} from 'jsdom';import {createExtensionCenter} from '../src/extension-center.js';
 const tick=()=>new Promise(r=>setImmediate(r));
+function openCatalogDetails(f,id){
+ f.host.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+ f.host.HTMLDialogElement.prototype.close=function(){this.open=false;};
+ f.body.querySelector(`[data-catalog-id="${id}"] .mm-catalog-row-open`).click();
+ return f.body.querySelector('dialog');
+}
 const github={id:'dev-github',name:'Development Fixture <script>',description:'Test Data',author:'Fixture Author',sourceType:'github',sourceUrl:'https://github.com/example/extension',submitter:{displayName:'Development Submitter',avatarUrl:null},github:{compatibility:'installable',manifest:{id:'fixture.package'}},status:'listed',moderation:'visible'};
 const discord={...github,id:'dev-discord',sourceType:'discord',sourceUrl:'https://discord.com/channels/111111111111111111/222222222222222222',github:null};
 function fixture(t,{identity=null,request,defaultBase='',storedBase='https://registry.example',nativeEntries,exportDiagnostics}={}){
@@ -14,11 +21,66 @@ function fixture(t,{identity=null,request,defaultBase='',storedBase='https://reg
  async function click(text){const b=[...host.document.querySelectorAll('button')].find(x=>x.textContent===text);assert.ok(b,text);b.click();await tick();await tick();}
  return {host,body,account,center,calls,click,runtime,registry,packages};
 }
-test('discover keeps ordinary-user actions even for owner; source paths and install capability remain distinct',async t=>{const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}}});await f.center.activate('discover');assert.equal(f.body.querySelector('script'),null);assert.match(f.body.textContent,/Fixture Author/);assert.match(f.body.textContent,/Development Submitter/);assert.equal([...f.body.querySelectorAll('button')].some(b=>/编辑|下架/.test(b.textContent)),false);assert.equal(f.body.querySelector('[data-catalog-id="dev-discord"] a').href,discord.sourceUrl);assert.equal(f.body.querySelector('[data-catalog-id="dev-discord"] [data-package-install]'),null);await f.click('安装');assert.ok(f.calls.includes('inspect:'+github.sourceUrl));assert.ok(f.calls.includes('install:fixture.package'));assert.equal(f.center.getActive(),'installed');});
-test('Registry offline is isolated from installed background lifecycle and Core-facing local UI',async t=>{const f=fixture(t,{request:()=>{throw Error('offline');}});await f.center.activate('discover');assert.match(f.body.textContent,/扩展目录无法连接/);await f.center.activate('installed');assert.match(f.body.textContent,/Background Development Fixture/);assert.equal([...f.body.querySelectorAll('button')].some(b=>b.textContent==='打开'),false);await f.click('停用');assert.equal(f.runtime.list()[0].enabled,false);await f.click('启用');assert.equal(f.runtime.list()[0].enabled,true);await f.click('Runtime 注销');assert.equal(f.runtime.list().length,0);});
-test('mine login and editing controls stay separate; admin-hidden records cannot claim relisting',async t=>{const f=fixture(t,{request:path=>path.startsWith('/api/github/preview')?{compatibility:'installable'}:{items:[{...github,moderation:'hidden',moderationReason:'Development moderation fixture'}]}});await f.center.activate('mine');assert.match(f.body.textContent,/使用右上角 Discord 登录入口后/);await f.click('Discord 登录');assert.ok([...f.body.querySelectorAll('button')].some(x=>x.textContent==='编辑'));assert.equal([...f.body.querySelectorAll('button')].some(x=>x.textContent==='下架'||x.textContent==='重新上架'),false);assert.match(f.body.textContent,/hidden/);assert.equal([...f.body.querySelectorAll('button')].some(x=>x.textContent==='管理员管理'),false);await f.click('编辑');await f.click('读取 GitHub 资料');const input=f.body.querySelector('[name="name"]');input.value='New fixture name';const form=f.body.querySelector('form');if(form.querySelector('[name=sourceType]').value==='github'&&form.querySelector('[name=type]').value==='tavern_extension')await f.click('读取 GitHub 资料');form.dispatchEvent(new f.host.Event('submit',{bubbles:true,cancelable:true}));await tick();assert.ok(f.calls.some(x=>x.path==='/api/submissions/dev-github'&&x.options.method==='PATCH'&&x.options.body.name==='New fixture name'));});
+test('discover keeps ordinary-user actions even for owner; source paths and install capability remain distinct',async t=>{const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}}});await f.center.activate('discover');assert.equal(f.body.querySelector('script'),null);assert.match(f.body.textContent,/Fixture Author/);assert.doesNotMatch(f.body.textContent,/Development Submitter/);assert.equal([...f.body.querySelectorAll('button')].some(b=>/编辑|下架/.test(b.textContent)),false);assert.equal(f.body.querySelector('[data-catalog-id="dev-discord"] a').href,discord.sourceUrl);assert.equal(f.body.querySelector('[data-catalog-id="dev-discord"] [data-package-install]'),null);await f.click('安装');assert.ok(f.calls.includes('inspect:'+github.sourceUrl));assert.ok(f.calls.includes('install:fixture.package'));assert.equal(f.center.getActive(),'installed');});
+test('Registry offline is isolated from installed background lifecycle and Core-facing local UI',async t=>{const f=fixture(t,{request:()=>{throw Error('offline');}});await f.center.activate('discover');assert.match(f.body.textContent,/扩展目录无法连接/);await f.center.activate('installed');assert.match(f.body.textContent,/Background Development Fixture/);openInstalledDetails(f.host,'fixture.background');assert.equal([...f.body.querySelectorAll('button')].some(b=>b.textContent==='打开'),false);await f.click('停用');assert.equal(f.runtime.list()[0].enabled,false);await f.click('启用');assert.equal(f.runtime.list()[0].enabled,true);await f.click('Runtime 注销');assert.equal(f.runtime.list().length,0);});
+test('mine login and editing controls stay separate; admin-hidden records cannot claim relisting',async t=>{const f=fixture(t,{request:path=>path.startsWith('/api/github/preview')?{compatibility:'installable'}:{items:[{...github,moderation:'hidden',moderationReason:'Development moderation fixture'}]}});await f.center.activate('mine');assert.match(f.body.textContent,/使用右上角 Discord 登录入口后/);await f.click('Discord 登录');await f.click('授权窗口登录');assert.ok([...f.body.querySelectorAll('button')].some(x=>x.textContent==='编辑'));assert.equal([...f.body.querySelectorAll('button')].some(x=>x.textContent==='下架'||x.textContent==='重新上架'),false);assert.match(f.body.textContent,/hidden/);assert.equal([...f.body.querySelectorAll('button')].some(x=>x.textContent==='管理员管理'),false);await f.click('编辑');await f.click('读取 GitHub 资料');const input=f.body.querySelector('[name="name"]');input.value='New fixture name';const form=f.body.querySelector('form');if(form.querySelector('[name=sourceType]').value==='github'&&form.querySelector('[name=type]').value==='tavern_extension')await f.click('读取 GitHub 资料');form.dispatchEvent(new f.host.Event('submit',{bubbles:true,cancelable:true}));await tick();assert.ok(f.calls.some(x=>x.path==='/api/submissions/dev-github'&&x.options.method==='PATCH'&&x.options.body.name==='New fixture name'));});
 test('slow mine response cannot replace an open submission form',async t=>{let resolve;const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}},request:()=>new Promise(r=>{resolve=r;})});const pending=f.center.activate('mine');await tick();await f.click('提交扩展');resolve({items:[github]});await pending;assert.ok(f.body.querySelector('[data-submission-form]'));assert.equal(f.body.querySelectorAll('article').length,0);});
 test('Catalog pagination/search use optional authorized API and late previous tab results are discarded',async t=>{let resolve;const f=fixture(t,{request:()=>new Promise(r=>{resolve=r;})});const pending=f.center.activate('discover');await tick();await f.center.activate('installed');resolve({items:[github],hasMore:true});await pending;assert.equal(f.body.querySelector('[data-catalog-id]'),null);assert.match(f.body.textContent,/Background Development Fixture/);assert.ok(f.calls[0].path.startsWith('/api/catalog?page=1&pageSize=12'));});
+
+test('returning to Discover reuses only a recent public page; explicit search rereads it',async t=>{
+ const f=fixture(t,{request:()=>({items:[{...github,visibility:'public'}]})});
+ const count=()=>f.calls.filter(call=>call.path?.startsWith('/api/catalog')).length;
+ await f.center.activate('discover');await f.center.activate('installed');await f.center.activate('discover');
+ assert.equal(count(),1);assert.ok(f.body.querySelector('[data-catalog-id="dev-github"]'));
+ f.body.querySelector('.mm-catalog-search').dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();
+ assert.equal(count(),2);
+ f.center.leave();await f.center.activate('discover');assert.equal(count(),3);
+});
+
+test('signed-in Discover shows only public rows while rechecking Guild access and cancels a departed tab',async t=>{
+ let finish,signal,reads=0;
+ const f=fixture(t,{identity:{profile:{displayName:'Fixture User'}},request:(_path,options)=>{
+  if(++reads===1)return {items:[{...github,visibility:'public'},{...discord,visibility:'discord_guild'}]};
+  signal=options.signal;
+  return new Promise(resolve=>{finish=resolve;});
+ }});
+ await f.center.activate('discover');assert.ok(f.body.querySelector('[data-catalog-id="dev-discord"]'));
+ await f.center.activate('installed');
+ const pending=f.center.activate('discover');
+ assert.equal(reads,2);assert.ok(f.body.querySelector('[data-catalog-id="dev-github"]'));
+ assert.equal(f.body.querySelector('[data-catalog-id="dev-discord"]'),null);
+ await f.center.activate('installed');assert.equal(signal.aborted,true);
+ finish({items:[discord]});await pending;
+ assert.equal(f.body.querySelector('[data-catalog-id]'),null);
+});
+
+test('My submissions are reused only for the same account and cleared on identity change',async t=>{
+ const oldAccount={profile:{displayName:'Old Fixture'}};
+ let reads=0;
+ const f=fixture(t,{identity:oldAccount,request:()=>({items:[{...github,name:'Submission '+ ++reads}]})});
+ await f.center.activate('mine');await f.center.activate('installed');await f.center.activate('mine');
+ assert.equal(reads,1);assert.match(f.body.textContent,/Submission 1/);
+ f.registry.setIdentity({profile:{displayName:'New Fixture'}});
+ assert.doesNotMatch(f.body.textContent,/Submission 1/);
+ await tick();assert.equal(reads,2);assert.match(f.body.textContent,/Submission 2/);
+});
+
+test('an open public preview restores focus to the freshly verified Catalog row',async t=>{
+ let finish,reads=0;
+ const publicItem={...github,visibility:'public'};
+ const f=fixture(t,{identity:{profile:{displayName:'Fixture User'}},request:()=>{
+  if(++reads===1)return {items:[publicItem]};
+  return new Promise(resolve=>{finish=resolve;});
+ }});
+ await f.center.activate('discover');await f.center.activate('installed');
+ const request=f.center.activate('discover');
+ const details=openCatalogDetails(f,publicItem.id);
+ const previewOpener=f.body.querySelector('.mm-catalog-row-open');
+ finish({items:[publicItem]});await request;
+ assert.equal(previewOpener.isConnected,false);
+ details.querySelector('footer button').click();
+ assert.equal(f.host.document.activeElement,f.body.querySelector('.mm-catalog-row-open'));
+});
 
 test('Catalog requires active submission; opening discover never seeds Polisher or submits a repository',async t=>{
  const f=fixture(t,{request:()=>({items:[]})});await f.center.activate('discover');assert.equal(f.body.querySelector('[aria-label="GitHub Repository URL"]').value,'');assert.equal(f.body.querySelector('[data-catalog-id]'),null);assert.doesNotMatch(f.body.textContent,/Polisher|SheepSheepLab/);assert.ok(f.calls.every(call=>call.path?.startsWith('/api/catalog')));assert.equal(f.calls[0].options.authenticated,'optional');
@@ -27,7 +89,54 @@ test('official default supports discovery and Discord login without address cont
  const f=fixture(t,{defaultBase:'https://official-registry.example',storedBase:null});
  await f.center.activate('discover');assert.equal(f.registry.getBase(),'https://official-registry.example');assert.ok(f.calls.some(x=>x.path?.startsWith('/api/catalog')));assert.match(f.body.textContent,/Development Fixture/);
  for(const tab of ['discover','installed','mine']){await f.center.activate(tab);assert.equal(f.body.querySelector('[aria-label="Registry 服务地址"]'),null);assert.equal(f.body.querySelector('[data-action="registry:configure"]'),null);assert.doesNotMatch(f.body.textContent,/Registry|高级 \/ 开发者|服务地址/);}
- await f.click('Discord 登录');assert.match(f.account.textContent,/Development Submitter/);assert.ok(f.account.querySelector('[data-action="registry:logout"]'));await f.click('退出');assert.equal(f.account.querySelector('[data-action="registry:login"]').textContent,'Discord 登录');
+ await f.click('Discord 登录');await f.click('授权窗口登录');assert.match(f.account.textContent,/Development Submitter/);assert.ok(f.account.querySelector('[data-action="registry:logout"]'));await f.click('退出');assert.equal(f.account.querySelector('[data-action="registry:login"]').textContent,'Discord 登录');
+});
+test('Discord login opens a single disclosure and scan cancellation restores the entry focus',async t=>{
+ const f=fixture(t);await f.center.activate('mine');
+ f.host.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+ f.host.HTMLDialogElement.prototype.close=function(){this.open=false;};
+ let signal;const attempts=[];
+ f.registry.login=async options=>{
+  attempts.push(options);
+  ({signal}=options);
+  options.showQR('https://registry.example/api/auth/authorize?requestId='+'r'.repeat(43));
+  await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));
+ };
+ const trigger=f.account.querySelector('[data-action="registry:login"]');
+ await f.click('Discord 登录');
+ const menu=f.host.document.getElementById(trigger.getAttribute('aria-controls'));
+ assert.equal(menu.inert,false);assert.equal(trigger.getAttribute('aria-expanded'),'true');
+ assert.equal(attempts.length,0);assert.equal(f.host.document.activeElement.textContent,'授权窗口登录');
+ f.body.dispatchEvent(new f.host.Event('pointerdown',{bubbles:true}));assert.equal(menu.inert,true);
+ await f.click('Discord 登录');assert.equal(f.center.back(),true);assert.equal(f.host.document.activeElement,trigger);
+ await f.click('Discord 登录');
+ f.host.document.activeElement.dispatchEvent(new f.host.FocusEvent('focusout',{bubbles:true,relatedTarget:null}));
+ f.body.tabIndex=-1;f.body.focus();
+ assert.equal(menu.inert,false,'Safari can lose focus before delivering the option click');
+ await f.click('扫码登录');
+ const dialog=f.body.querySelector('dialog[open]');
+ assert.match(dialog.querySelector('img').src,/^data:image\/gif;base64,/);
+ assert.match(dialog.querySelector('[role=status]').textContent,/等待授权/);
+ assert.equal(f.center.back(),true);assert.ok(signal.aborted);assert.equal(dialog.isConnected,false);
+ assert.equal(f.host.document.activeElement,trigger);assert.equal(attempts.length,1);
+});
+test('failed scan can request a fresh QR without reopening the login menu',async t=>{
+ const f=fixture(t);await f.center.activate('mine');
+ f.host.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+ f.host.HTMLDialogElement.prototype.close=function(){this.open=false;};
+ let attempts=0;
+ f.registry.login=async ({showQR,signal})=>{
+  if(++attempts===1)throw Error('请求已过期');
+  showQR('https://registry.example/api/auth/authorize?requestId='+'s'.repeat(43));
+  await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));
+ };
+ await f.click('Discord 登录');await f.click('扫码登录');
+ const dialog=f.body.querySelector('dialog[open]');
+ assert.equal(dialog.dataset.qrState,'error');assert.match(dialog.textContent,/请求已过期/);
+ await f.click('重新扫码');
+ assert.equal(attempts,2);assert.equal(dialog.dataset.qrState,'waiting');
+ assert.ok(dialog.querySelector('.mm-auth-qr-image'));
+ assert.equal([...dialog.querySelectorAll('button')].find(b=>b.textContent==='重新扫码').hidden,true);
 });
 test('existing local override is retained without exposing a center configuration form',async t=>{
  const f=fixture(t,{defaultBase:'https://official-registry.example',storedBase:'http://127.0.0.1:8787'});await f.center.activate('mine');assert.equal(f.registry.getBase(),'http://127.0.0.1:8787');assert.equal(f.body.querySelector('input'),null);
@@ -64,7 +173,9 @@ test('installed UI shows persisted version and preserved name; failed update can
  await f.center.activate('installed');await f.click('检查更新');await f.click('更新');
  assert.match(f.body.querySelector('[role="status"]').textContent,/保存尚未确认/);
  assert.doesNotMatch(f.body.querySelector('[role="status"]').textContent,/更新完成/);
+ assert.equal(f.body.querySelector('[data-update-complete]'),null);
  assert.match(f.body.querySelector('article small').textContent,/1.0.0/);
+ openInstalledDetails(f.host,'fixture.background');
  assert.match(f.body.textContent,/Original Name 0.9.0（更新保留原名/);
  assert.equal(f.body.querySelector('[data-action="fixture.background:reload-page"]'),null);
  saved=null;await f.center.activate('installed');assert.match(f.body.querySelector('article small').textContent,/保存版本待确认/);
@@ -73,14 +184,75 @@ test('confirmed package update reports durable success and separately labels a s
  const f=fixture(t);f.packages.listInstalled=async()=>[{id:'fixture.background',name:'Fixture 1.0.0',version:'1.0.1',memoryVersion:'1.0.1',enabled:true,repoUrl:'https://github.com/example/extension'}];
  f.packages.check=async()=>({available:true,version:'1.0.2'});
  f.packages.update=async()=>({action:'updated',persistence:'confirmed',runtimeConfirmed:false});
- await f.center.activate('installed');assert.match(f.body.textContent,/已保存版本：1.0.1 · 实际运行版本：1.0.0/);assert.ok(f.body.querySelector('[data-action="fixture.background:reload-page"]'));assert.match(f.body.textContent,/停止生成并保存编辑/);
- await f.click('检查更新');await f.click('更新');assert.match(f.body.querySelector('[role="status"]').textContent,/确认服务器保存/);assert.doesNotMatch(f.body.querySelector('[role="status"]').textContent,/新版运行已确认/);
+ await f.center.activate('installed');openInstalledDetails(f.host,'fixture.background');assert.match(f.body.textContent,/已保存版本：1.0.1 · 实际运行版本：1.0.0/);assert.ok(f.body.querySelector('[data-action="fixture.background:reload-page"]'));assert.match(f.body.textContent,/停止生成并保存编辑/);
+ f.center.back();await f.click('检查更新');await f.click('更新');assert.match(f.body.querySelector('[role="status"]').textContent,/确认服务器保存/);assert.doesNotMatch(f.body.querySelector('[role="status"]').textContent,/新版运行已确认/);
+});
+
+test('inline update advances from real bytes and completes only after the verified result',async t=>{
+ const f=fixture(t),clock=uiClock(f),id='fixture.background';
+ let version='1.0.0',progress,finish;
+ f.packages.listInstalled=async()=>[{id,name:'Fixture',version,enabled:true,repoUrl:github.sourceUrl}];
+ f.packages.check=async()=>({available:true,version:'2.0.0'});
+ f.packages.update=(_id,_candidate,{onProgress})=>{progress=onProgress;return new Promise(resolve=>{finish=resolve;});};
+ const row=()=>f.body.querySelector('[data-extension-id="fixture.background"]'),meter=()=>row().querySelector('.mm-update-meter');
+ await f.center.activate('installed');await f.click('检查更新');
+ assert.equal(progress,undefined);assert.ok(row().querySelector('[data-action$=":update"]'));
+ await f.click('更新');assert.equal(meter().getAttribute('role'),'progressbar');assert.equal(meter().hasAttribute('aria-valuenow'),false);
+ progress('downloading',{receivedBytes:0,totalBytes:2048});await clock.advance(500);
+ progress('downloading',{receivedBytes:1024,totalBytes:2048});
+ assert.equal(meter().getAttribute('aria-valuenow'),'50');assert.equal(meter().getAttribute('aria-valuetext'),'50% · 2.0 KB/s');
+ progress('downloading',{receivedBytes:2048,totalBytes:2048});
+ progress('confirming');
+ assert.equal(row().hasAttribute('data-update-complete'),false);assert.match(meter().textContent,/保存/);
+ version='2.0.0';f.runtime.get(id).manifest.version=version;
+ finish({ok:true,action:'updated',persistence:'confirmed',runtimeConfirmed:true});await tick();await tick();
+ assert.equal(row().hasAttribute('data-update-complete'),true);assert.equal(meter().textContent,'✓');
+ progress('downloading',{receivedBytes:200,totalBytes:1000});assert.equal(meter().textContent,'✓');
+ await clock.advance(2200);assert.equal(row().hasAttribute('data-update-complete'),false);assert.equal(meter().hidden,true);
+ assert.ok(row().querySelector('[data-action$=":check"]:not([hidden])'));
+});
+
+test('an up-to-date check confirms in place and restores the original control without rereading settings',async t=>{
+ const f=fixture(t),clock=uiClock(f),id='fixture.background';
+ let reads=0,checks=0,finish;
+ f.packages.listInstalled=async()=>{reads++;return [{id,name:'Fixture',version:'1.0.0',enabled:true,repoUrl:github.sourceUrl}];};
+ f.packages.check=()=>{checks++;return new Promise(resolve=>{finish=resolve;});};
+ await f.center.activate('installed');
+ const row=f.body.querySelector('[data-extension-id]'),button=row.querySelector('[data-action$=":check"]');
+ button.click();assert.equal(button.textContent,'检查中…');assert.equal(button.getAttribute('aria-busy'),'true');
+ finish({installable:true,available:false,version:'1.0.0',currentVersion:'1.0.0'});await tick();
+ assert.equal(f.body.querySelector('[data-extension-id]'),row);
+ assert.equal(row.querySelector('[data-action$=":check"]'),button);
+ assert.equal(button.textContent,'✓已是最新');assert.equal(button.getAttribute('aria-disabled'),'true');
+ assert.equal(f.body.querySelector('.mm-center-notice').textContent,'');
+ assert.match(f.body.querySelector('.mm-update-check-announcement').textContent,/Fixture.*已是最新/);
+ button.click();assert.equal(checks,1);
+ await clock.advance(2200);
+ assert.equal(button.textContent,'检查更新');assert.equal(button.hasAttribute('aria-disabled'),false);assert.equal(reads,1);
+ openInstalledDetails(f.host,id);assert.match(f.body.textContent,/最新版本：1.0.0/);
+});
+
+test('native entry badges distinguish a mounted orb, a failed or pending mount and unverified submissions',async t=>{
+ let enabled=true,mounted=false;
+ const id='fixture.background';
+ const own={...github,extensionId:id},unrelated={...own,id:'other-repo',sourceUrl:'https://github.com/example/other'};
+ const f=fixture(t,{identity:{profile:{displayName:'Tester'}},request:()=>({items:[own,unrelated]}),nativeEntries:{enabled:()=>enabled,mounted:()=>mounted}});
+ const local=f.runtime.get(id);local.manifest.repository=github.sourceUrl;local.nativeWindowAvailable=true;
+ await f.center.activate('installed');
+ assert.equal(f.body.querySelector('[data-native-state]').dataset.nativeState,'inactive');
+ await f.center.activate('mine');
+ const states=()=>[...f.body.querySelectorAll('[data-native-state]')].map(badge=>badge.dataset.nativeState);
+ assert.deepEqual(states(),['inactive','unknown']);
+ mounted=true;f.center.refresh();assert.deepEqual(states(),['on','unknown']);
+ assert.equal(f.body.querySelector('[data-native-state=on]').textContent,'开启独立悬浮球');
+ enabled=false;mounted=false;f.center.refresh();assert.deepEqual(states(),['off','unknown']);
+ assert.equal(f.body.querySelector('[data-native-state=off]').textContent,'关闭独立悬浮球');
 });
 
 test('Standalone and Web listings cannot enter Package install despite installable discovery; official is explicit server metadata',async t=>{
  const items=[{...github,id:'app',type:'standalone_app',distribution:'external_release',platforms:['macos'],classification:'community',author:'SheepSheep'},{...github,id:'web',type:'web_tool',distribution:'open_url',websiteUrl:'https://author.example/tool',classification:'official'}];
  const f=fixture(t,{request:()=>({items})});await f.center.activate('discover');
- for(const id of ['app','web'])assert.equal(f.body.querySelector(`[data-catalog-id="${id}"] .mm-extension-actions button`),null);
+ for(const id of ['app','web'])assert.equal(f.body.querySelector(`[data-catalog-id="${id}"] .mm-catalog-row-actions button`),null);
  assert.match(f.body.querySelector('[data-catalog-id="app"]').textContent,/🧩社区扩展/);assert.doesNotMatch(f.body.querySelector('[data-catalog-id="app"]').textContent,/🐑官方扩展/);
  assert.equal(f.body.querySelector('[data-catalog-id="web"] a').href,'https://author.example/tool');assert.match(f.body.querySelector('[data-catalog-id="web"]').textContent,/🐑官方扩展/);
  assert.equal(f.calls.some(x=>typeof x==='string'&&x.startsWith('inspect:')),false);
@@ -103,7 +275,7 @@ test('legacy and self-claimed catalog items show community; only explicit server
  const f=fixture(t,{request:()=>({items})});await f.center.activate('discover');
  for(const id of ['old','unknown'])assert.match(f.body.querySelector(`[data-catalog-id="${id}"]`).textContent,/🧩社区扩展/);
  assert.match(f.body.querySelector('[data-catalog-id="external-official"]').textContent,/🐑官方扩展/);
- assert.match(f.body.querySelector('[data-catalog-id="external-official"]').textContent,/来源：Discord/);
+ assert.match(openCatalogDetails(f,'external-official').querySelector('.mm-catalog-meta').textContent,/来源：Discord/);
 });
 
 test('account labels use explicit banned first, then admin, without exposing Owner or guessing from canSubmit',async t=>{
@@ -126,9 +298,9 @@ test('header account reacts on installed tab; server roles stay intact and mine 
  f.registry.setIdentity({profile:{displayName:'Restricted'},isAdmin:true,banned:true});assert.equal(f.account.querySelector('[data-account-status]').textContent,'受限用户');
  await f.center.activate('mine');assert.equal(f.body.querySelector('[data-action="registry:login"]'),null);
 });
-test('compact cards use server identity badges and native accessible filter preserves request semantics',async t=>{
+test('compact rows use server identity badges and native accessible filter preserves request semantics',async t=>{
  const f=fixture(t,{request:()=>({items:[{...github,classification:'official'},discord]})});await f.center.activate('discover');
- assert.equal(f.body.querySelector('[data-catalog-id="dev-github"] .mm-catalog-assurance .mm-identity-badge').textContent,'🐑官方扩展');
+ assert.equal(f.body.querySelector('[data-catalog-id="dev-github"] .mm-identity-badge').textContent,'🐑官方扩展');
  assert.equal(f.body.querySelector('[data-catalog-id="dev-discord"] .mm-identity-badge').textContent,'🧩社区扩展');
  const filter=f.body.querySelector('select[aria-label="来源筛选"]');filter.value='discord';const search=f.body.querySelector('input[aria-label="搜索扩展"]');search.value='社区';filter.closest('form').dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();
  assert.match(f.calls.at(-1).path,/source=discord/);assert.match(f.calls.at(-1).path,/q=%E7%A4%BE%E5%8C%BA/);
@@ -141,23 +313,31 @@ test('synchronous session expiry while rendering header cannot duplicate login c
 });
 
 
-test('catalog title carries version, installed is a noninteractive status and submitter retains avatar',async t=>{
- const item={...github,version:'1.2.3',github:{...github.github,manifest:{id:'fixture.background'}},submitter:{displayName:'Distinct Submitter',avatarUrl:'https://registry.example/api/avatars/fixture'}};
- const f=fixture(t,{request:()=>({items:[item]})});await f.center.activate('discover');const card=f.body.querySelector('[data-catalog-id]');
- assert.equal(card.querySelector('.mm-catalog-title strong').textContent,item.name);
- assert.equal(card.querySelector('.mm-catalog-title .mm-catalog-version').textContent,'1.2.3');
- assert.equal(card.querySelector('.mm-installed-status').textContent,'已安装');assert.equal(card.querySelector('.mm-installed-status').tagName,'SPAN');
- assert.equal(card.querySelector('.mm-extension-actions button'),null);
- assert.ok(card.querySelector('.mm-catalog-assurance .mm-hub-note'));
- assert.ok(card.querySelector('.mm-catalog-footer .mm-catalog-links'));
- assert.ok(card.querySelector('.mm-catalog-details .mm-catalog-meta'));
- assert.ok(card.querySelector('.mm-catalog-details .mm-catalog-submitter'));
- assert.equal(card.querySelector('.mm-extension-actions a'),null);
- assert.equal(card.querySelector('.mm-catalog-links a').href,item.sourceUrl);
- assert.doesNotMatch(card.textContent,/查看 GitHub/);
- assert.equal(card.querySelector('.mm-catalog-submitter img').src,item.submitter.avatarUrl);
- assert.match(card.querySelector('.mm-catalog-submitter').textContent,/Distinct Submitter/);
- assert.doesNotMatch(card.querySelector('.mm-catalog-meta').textContent,/1.2.3|投稿者/);
+test('catalog row shows identity and install state; detail preserves the published project information',async t=>{
+ const item={...github,version:'1.2.3',icon:'https://example.com/icon.png',classification:'official',type:'tavern_extension',
+  distribution:'managed_install',platforms:['windows','macos'],tags:['writing','test'],visibility:'discord_guild',
+  visibilitySourceUrl:'https://discord.com/channels/333333333333333333/444444444444444444',discordPostUrl:null,
+  github:{...github.github,manifest:{id:'fixture.background'}},submitter:{displayName:'Distinct Submitter',avatarUrl:'https://registry.example/api/avatars/fixture'}};
+ const f=fixture(t,{request:()=>({items:[item]})});await f.center.activate('discover');const row=f.body.querySelector('[data-catalog-id]');
+ assert.equal(row.querySelector('strong').textContent,item.name);
+ assert.equal(row.querySelector('.mm-catalog-version').textContent,'1.2.3');
+ assert.equal(row.querySelector('.mm-installed-status').textContent,'已安装');assert.equal(row.querySelector('.mm-installed-status').tagName,'SPAN');
+ assert.equal(row.querySelector('.mm-catalog-row-actions').children.length,1);
+ assert.equal(row.querySelector('.mm-catalog-links'),null);
+ assert.doesNotMatch(row.textContent,/Distinct Submitter|Test Data/);
+ const detail=openCatalogDetails(f,item.id),meta=detail.querySelector('.mm-catalog-meta');
+ assert.equal(detail.querySelector('h2').textContent,item.name);
+ assert.match(detail.querySelector('header').textContent,/Fixture Author · 1.2.3🐑官方扩展/);
+ assert.equal(detail.querySelector('header img').src,item.icon);
+ assert.equal(detail.querySelector('.mm-catalog-detail-description').textContent,item.description);
+ assert.equal(detail.querySelector('.mm-catalog-links a').href,item.sourceUrl);
+ assert.match(detail.querySelector('.mm-catalog-links').textContent,/GitHub 仓库：查看仓库Discord 发布帖：暂无/);
+ assert.equal(detail.querySelector('.mm-catalog-submitter img').src,item.submitter.avatarUrl);
+ for(const fact of [/来源：GitHub/,/产品类型：酒馆扩展/,/分发方式：Hub 安装/,/平台：windows、macos/,/标签：writing、test/,/可见范围：仅该 Discord 服务器成员/,/投稿者：Distinct Submitter/])assert.match(meta.textContent,fact);
+ assert.match(detail.textContent,/安装兼容不代表已审核安全/);
+ assert.ok(!detail.innerHTML.includes(item.visibilitySourceUrl));
+ assert.equal(detail.querySelector('[data-package-install]'),null);
+ assert.ok(f.calls.every(call=>typeof call!=='string'||!call.startsWith('inspect:')));
 });
 
 test('public project links and private visibility evidence remain independent',async t=>{
@@ -170,8 +350,10 @@ test('public project links and private visibility evidence remain independent',a
 test('catalog shows both project links with explicit absent placeholders and safe URL handling',async t=>{
  const post='https://discord.com/channels/111111111111111111/222222222222222222';
  const f=fixture(t,{request:()=>({items:[{...github,discordUrl:post},{...discord,id:'none',sourceUrl:'javascript:alert(1)'}]})});await f.center.activate('discover');
- const links=f.body.querySelector('[data-catalog-id="dev-github"] .mm-catalog-links');assert.deepEqual([...links.querySelectorAll('a')].map(a=>a.href),[github.sourceUrl,post]);assert.deepEqual([...links.querySelectorAll('a')].map(a=>a.textContent),['查看仓库','查看发布帖']);assert.doesNotMatch(links.textContent,/https:/);
- const missing=f.body.querySelector('[data-catalog-id="none"] .mm-catalog-links');assert.equal(missing,null);assert.equal(f.body.querySelector('[data-catalog-id=none] a'),null);
+ const links=openCatalogDetails(f,'dev-github').querySelector('.mm-catalog-links');
+ assert.deepEqual([...links.querySelectorAll('a')].map(a=>a.href),[github.sourceUrl,post]);assert.deepEqual([...links.querySelectorAll('a')].map(a=>a.textContent),['查看仓库','查看发布帖']);assert.doesNotMatch(links.textContent,/https:/);
+ const missing=openCatalogDetails(f,'none').querySelector('.mm-catalog-links');
+ assert.match(missing.textContent,/Discord 原帖：暂无/);assert.equal(missing.querySelector('a'),null);assert.equal(f.body.querySelector('[data-catalog-id=none] a'),null);
 });
 
 test('Discord verification displays server identity, clears on edits and ignores stale responses',async t=>{
@@ -191,7 +373,7 @@ test('stale Catalog identity and expired installability are blocked after fresh 
 });
 test('external Tavern declaration never gains Install; preview language cannot change declared type',async t=>{
  const f=fixture(t,{identity:{profile:{displayName:'Tester'}},request:path=>path.startsWith('/api/catalog')?{items:[{...github,type:'tavern_extension',distribution:'external_release'}]}:path.startsWith('/api/github/preview')?{compatibility:'external',language:'JavaScript'}:{items:[]}});
- await f.center.activate('discover');assert.equal(f.body.querySelector('[data-catalog-id] .mm-extension-actions button'),null);
+ await f.center.activate('discover');assert.equal(f.body.querySelector('[data-catalog-id] .mm-catalog-row-actions button'),null);
  await f.center.activate('mine');await f.click('提交扩展');const type=f.body.querySelector('[name=type]');type.value='standalone_app';type.dispatchEvent(new f.host.Event('change'));f.body.querySelector('[name=githubUrl]').value=github.sourceUrl;await f.click('读取 GitHub 资料');assert.equal(type.value,'standalone_app');assert.match(f.body.querySelector('[data-package-detection]').textContent,/未检测到 Hub 安装包/);
  assert.equal(f.body.querySelector('[name=distribution]').disabled,true);assert.match(f.body.querySelector('[data-distribution]').textContent,/作者发布页/);
 });
@@ -199,8 +381,8 @@ test('external Tavern declaration never gains Install; preview language cannot c
 test('shortcut switch handles touch activation and disables while Runtime is busy',async t=>{
  let on=false,calls=0;const f=fixture(t,{nativeEntries:{enabled:()=>on,mounted:()=>on,set(_id,value){on=value;calls++;}}});
  const record=f.runtime.get('fixture.background');record.nativeWindowAvailable=true;record.launcherAvailable=true;record.busy=true;
- await f.center.activate('installed');let toggle=f.body.querySelector('[role="switch"]');assert.equal(toggle.disabled,true);toggle.click();assert.equal(calls,0);assert.equal(toggle.getAttribute('aria-checked'),'false');
- record.busy=false;await f.center.activate('installed');toggle=f.body.querySelector('[role="switch"]');assert.equal(toggle.disabled,false);
+ await f.center.activate('installed');openInstalledDetails(f.host,'fixture.background');let toggle=f.body.querySelector('[role="switch"]');assert.equal(toggle.disabled,true);toggle.click();assert.equal(calls,0);assert.equal(toggle.getAttribute('aria-checked'),'false');
+ record.busy=false;await f.center.activate('installed');openInstalledDetails(f.host,'fixture.background');toggle=f.body.querySelector('[role="switch"]');assert.equal(toggle.disabled,false);
  const tap=new f.host.MouseEvent('click',{bubbles:true,cancelable:true,detail:1});Object.defineProperty(tap,'pointerType',{value:'touch'});toggle.dispatchEvent(tap);assert.equal(calls,1);assert.equal(toggle.getAttribute('aria-checked'),'true');
  toggle.click();assert.equal(calls,2);assert.equal(toggle.getAttribute('aria-checked'),'false');
 });
@@ -223,13 +405,23 @@ test('edit fills new post field, legacy fallback is source-specific and explicit
   assert.equal(field('visibility').closest('label').hidden,item.sourceType==='discord');
  }
 });
-test('Discord cards retain type-specific CTA without duplicate footer links; GitHub post absence is explicit',async t=>{
+test('Discord rows retain type-specific actions and show original links in details',async t=>{
  const items=[{...discord,id:'disc-ext',type:'tavern_extension'},{...discord,id:'disc-app',type:'standalone_app'},{...discord,id:'disc-web',type:'web_tool',websiteUrl:'https://example.com/tool'},{...github,discordPostUrl:null,discordUrl:discord.sourceUrl,distribution:'external_release'}];
  const f=fixture(t,{request:()=>({items})});await f.center.activate('discover');
- for(const id of ['disc-ext','disc-app','disc-web']){const card=f.body.querySelector(`[data-catalog-id="${id}"]`);assert.equal(card.querySelector('.mm-catalog-links'),null);assert.ok(card.querySelector('.mm-catalog-submitter'));assert.equal(card.querySelector('.mm-extension-actions button'),null);}
- assert.equal(f.body.querySelector('[data-catalog-id=disc-ext] a').textContent,'前往 Discord');assert.equal(f.body.querySelector('[data-catalog-id=disc-app] a').href,discord.sourceUrl);
- assert.deepEqual([...f.body.querySelectorAll('[data-catalog-id=disc-web] a')].map(a=>a.textContent),['打开网站','原始来源']);
- const gh=f.body.querySelector('[data-catalog-id=dev-github]');assert.match(gh.querySelector('.mm-catalog-links').textContent,/GitHub 仓库：查看仓库Discord 发布帖：暂无/);assert.equal(gh.querySelector('.mm-extension-actions a').href,github.sourceUrl);
+ for(const id of ['disc-ext','disc-app','disc-web']){
+  const row=f.body.querySelector(`[data-catalog-id="${id}"]`);
+  assert.equal(row.querySelectorAll('a').length,1);assert.equal(row.querySelector('[data-package-install]'),null);
+  const detail=openCatalogDetails(f,id);
+  assert.ok(detail.querySelector('.mm-catalog-submitter'));
+  assert.equal(detail.querySelector('.mm-catalog-links a').href,discord.sourceUrl);
+ }
+ assert.equal(f.body.querySelector('[data-catalog-id=disc-ext] a').getAttribute('aria-label'),'前往 Discord');
+ assert.equal(f.body.querySelector('[data-catalog-id=disc-app] a').href,discord.sourceUrl);
+ assert.equal(f.body.querySelector('[data-catalog-id=disc-web] a').href,'https://example.com/tool');
+ const website=openCatalogDetails(f,'disc-web').querySelector('.mm-catalog-links');
+ assert.deepEqual([...website.querySelectorAll('a')].map(a=>a.textContent),['查看原帖','打开网站']);
+ const gh=openCatalogDetails(f,'dev-github');assert.match(gh.querySelector('.mm-catalog-links').textContent,/GitHub 仓库：查看仓库Discord 发布帖：暂无/);
+ assert.equal(f.body.querySelector('[data-catalog-id=dev-github] .mm-catalog-row-actions a').href,github.sourceUrl);
 });
 test('GitHub prefill still supplies metadata and package capability without verifying optional Discord post',async t=>{
  const f=fixture(t,{identity:{profile:{displayName:'Fixture'}},request:path=>path.startsWith('/api/github/preview')?{compatibility:'installable',manifest:{name:'Detected',author:'Author',description:'Description',iconUrl:'https://github.com/icon.png'}}:{items:[]}});
@@ -266,7 +458,7 @@ test('late preview cannot restore stale capability after source/type/URL changes
 });
 test('non-installable Catalog GitHub Tavern has a direct GitHub CTA, including legacy and stale DTOs',async t=>{
  for(const distribution of [undefined,'managed_install','external_release']){
-  const f=fixture(t,{request:()=>({items:[{...github,type:'tavern_extension',distribution,github:{compatibility:'external'}}]})});await f.center.activate('discover');const card=f.body.querySelector('[data-catalog-id]');assert.equal(card.querySelector('.mm-extension-actions button'),null);const cta=card.querySelector('.mm-extension-actions a');assert.equal(cta.textContent,'前往 GitHub');assert.equal(cta.href,github.sourceUrl);assert.doesNotMatch(card.textContent,/检查安装兼容性/);
+  const f=fixture(t,{request:()=>({items:[{...github,type:'tavern_extension',distribution,github:{compatibility:'external'}}]})});await f.center.activate('discover');const card=f.body.querySelector('[data-catalog-id]');assert.equal(card.querySelector('[data-package-install]'),null);const cta=card.querySelector('.mm-catalog-row-actions a');assert.equal(cta.getAttribute('aria-label'),'前往 GitHub');assert.equal(cta.href,github.sourceUrl);assert.doesNotMatch(card.textContent,/检查安装兼容性/);
  }
 });
 
@@ -436,14 +628,17 @@ test('rolling download speed falls to zero on silence, resets for relay, and cle
  finish({ok:true});await tick();await tick();assert.match(panel.textContent,/已写入 · 保存待确认/);assert.equal(timers.size,0);
 });
 
-test('cancel download aborts install signal, restores retry, and ignores late byte callbacks',async t=>{
+test('row Install opens only the independent download progress; cancel aborts and restores retry',async t=>{
  const f=fixture(t);let progress,signal;
  f.packages.install=(_candidate,options)=>{progress=options.onProgress;signal=options.signal;return new Promise((resolve,reject)=>{
   signal.addEventListener('abort',()=>reject(signal.reason),{once:true});
  });};
- await f.center.activate('discover');await f.click('安装');
+ await f.center.activate('discover');const install=f.body.querySelector('[data-catalog-id="dev-github"] [data-package-install]');
+ install.click();await tick();
+ assert.equal(f.body.querySelector('dialog'),null);
  progress('downloading',{receivedBytes:10,totalBytes:100});
  const panel=f.body.querySelector('[data-install-progress]'),cancel=panel.querySelector('[data-cancel-install]');
+ assert.equal(panel.hidden,false);assert.equal(panel.querySelector('progress').value,10);
  assert.equal(cancel.hidden,false);cancel.click();await tick();await tick();
  assert.equal(signal.aborted,true);assert.equal(panel.hidden,true);
  assert.match(f.body.querySelector('[role="status"]').textContent,/已取消安装/);
@@ -503,14 +698,22 @@ test('fresh save is neutral while pending, automatically refreshes to confirmed 
  f.packages.listInstalled=async()=>{reads++;return [{id:'fixture.background',instanceId:'test',version:reads<2?null:'1.0.0',name:'Fixture',repoUrl:github.sourceUrl,enabled:true,
   persistenceState:reads<2?'pending':undefined,persistenceError:reads<2?'尚未确认此脚本已持久保存。':''}];};
  await f.center.activate('installed');assert.doesNotMatch(f.body.textContent,/正在确认酒馆保存/);assert.equal(f.body.querySelector('[data-save-state=pending]').getAttribute('aria-busy'),'true');assert.equal(f.body.querySelector('.mm-extension-error'),null);
- await clock.advance(750);assert.equal(reads,2);assert.equal(f.body.querySelector('[data-save-state=confirmed]').getAttribute('aria-busy'),'false');assert.doesNotMatch(f.body.textContent,/正在确认|尚未确认|已保存版本：待确认/);assert.equal(clock.tasks.size,0);
+ const dialog=openInstalledDetails(f.host,'fixture.background'),body=dialog.querySelector('.mm-description-full');
+ body.scrollTop=32;dialog.querySelector('[data-action$=":toggle"]').focus();
+ await clock.advance(750);assert.equal(reads,2);
+ assert.equal(f.body.querySelector('dialog'),dialog);
+ assert.equal(dialog.querySelector('.mm-description-full').scrollTop,32);
+ assert.equal(f.host.document.activeElement,dialog.querySelector('[data-action$=":toggle"]'));
+ assert.equal(f.center.back(),true);
+ assert.equal(f.host.document.activeElement,f.body.querySelector('[data-extension-id="fixture.background"] > .mm-catalog-row-open'));
+ assert.equal(f.body.querySelector('[data-save-state=confirmed]').getAttribute('aria-busy'),'false');assert.doesNotMatch(f.body.textContent,/正在确认|尚未确认|已保存版本：待确认/);assert.equal(clock.tasks.size,0);
  await clock.advance(20000);assert.equal(reads,2);
 });
 
 test('unconfirmed save remains a real warning after bounded retries and can be checked again',async t=>{
  const f=fixture(t),clock=uiClock(f);
  f.packages.listInstalled=async()=>[{id:'fixture.background',version:null,name:'Fixture',repoUrl:github.sourceUrl,enabled:true,persistenceState:'pending',persistenceError:'尚未确认此脚本已持久保存。'}];
- await f.center.activate('installed');await clock.advance(15000);
+ await f.center.activate('installed');openInstalledDetails(f.host,'fixture.background');await clock.advance(15000);
  assert.match(f.body.querySelector('.mm-extension-error').textContent,/尚未确认/);assert.ok(f.body.querySelector('[data-save-state=error]'));assert.equal(clock.tasks.size,0);
  await f.click('重新检查保存');assert.ok(f.body.querySelector('[data-save-state=pending]'));assert.doesNotMatch(f.body.textContent,/正在确认酒馆保存/);
  f.center.leave();assert.equal(clock.tasks.size,0);
@@ -519,7 +722,7 @@ test('unconfirmed save remains a real warning after bounded retries and can be c
 test('actual mismatched save stays red during automatic checking',async t=>{
  const f=fixture(t);uiClock(f);
  f.packages.listInstalled=async()=>[{id:'fixture.background',version:'0.9.0',name:'Fixture',repoUrl:github.sourceUrl,enabled:true,persistenceError:'内存与已保存脚本不一致，尚未确认更新成功。'}];
- await f.center.activate('installed');assert.match(f.body.querySelector('.mm-extension-error').textContent,/不一致/);assert.match(f.body.textContent,/已保存版本：0.9.0/);assert.ok(f.body.querySelector('[data-save-state=error]'));assert.ok(f.body.querySelector('[data-action="fixture.background:recheck-save"]'));
+ await f.center.activate('installed');openInstalledDetails(f.host,'fixture.background');assert.match(f.body.querySelector('.mm-extension-error').textContent,/不一致/);assert.match(f.body.textContent,/已保存版本：0.9.0/);assert.ok(f.body.querySelector('[data-save-state=error]'));assert.ok(f.body.querySelector('[data-action="fixture.background:recheck-save"]'));
 });
 
 
@@ -529,17 +732,32 @@ test('full description is plain text in a separate dialog; Back/Escape restore f
  // jsdom has no top layer; actual native dialog layout/focus is covered in Chromium.
  f.host.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
  f.host.HTMLDialogElement.prototype.close=function(){this.open=false;};
- await f.center.activate('discover');const card=f.body.querySelector('[data-catalog-id]'),opener=card.querySelector('.mm-description-open');
+ await f.center.activate('discover');const card=f.body.querySelector('[data-catalog-id]'),opener=card.querySelector('.mm-catalog-row-open');
  assert.equal(opener.hidden,false);opener.click();
  let dialog=f.body.querySelector('dialog');assert.equal(card.contains(dialog),false);assert.equal(dialog.open,true);
- assert.equal(dialog.querySelector('.mm-description-full').textContent,description);assert.equal(dialog.querySelector('img'),null);
- dialog.querySelector('button').click();assert.equal(f.body.querySelector('dialog'),null);assert.equal(f.host.document.activeElement,opener);
+ assert.equal(dialog.querySelector('.mm-catalog-detail-description').textContent,description);assert.equal(dialog.querySelector('.mm-catalog-detail-description img'),null);
+ dialog.querySelector('button').dispatchEvent(new f.host.MouseEvent('click',{bubbles:true,detail:1}));
+ assert.equal(f.body.querySelector('dialog'),null);assert.equal(f.host.document.activeElement,opener);
+ assert.ok(opener.hasAttribute('data-pointer-return'));
+ opener.dispatchEvent(new f.host.KeyboardEvent('keydown',{bubbles:true,key:'Tab'}));
+ assert.ok(!opener.hasAttribute('data-pointer-return'));
  let parentEscapes=0;f.host.document.addEventListener('keydown',event=>{if(event.key==='Escape'&&f.center.back()){event.preventDefault();event.stopImmediatePropagation();}else parentEscapes++;},true);
  opener.click();f.body.querySelector('.mm-description-full').dispatchEvent(new f.host.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
  assert.equal(parentEscapes,0);assert.equal(f.body.querySelector('dialog'),null);assert.equal(f.host.document.activeElement,opener);
  opener.click();f.center.leave();assert.equal(f.body.querySelector('dialog'),null);
  f.host.document.dispatchEvent(new f.host.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert.equal(parentEscapes,1);
- await f.center.activate('discover');f.body.querySelector('.mm-description-open').click();await f.center.activate('mine');assert.equal(f.body.querySelector('dialog'),null);
+ await f.center.activate('discover');f.body.querySelector('.mm-catalog-row-open').click();await f.center.activate('mine');assert.equal(f.body.querySelector('dialog'),null);
+});
+test('installed rows and details use a registered script image, while catalog images stay HTTPS-only',async t=>{
+ const image='data:image/png;base64,AAAA';
+ const f=fixture(t,{request:()=>({items:[{...github,icon:image}]})});
+ f.runtime.list()[0].manifest.icon=image;
+ await f.center.activate('installed');
+ assert.equal(f.body.querySelector('[data-extension-id] .mm-extension-icon img').src,image);
+ const detail=openInstalledDetails(f.host,'fixture.background');
+ assert.equal(detail.querySelector('header .mm-extension-icon img').src,image);
+ await f.center.activate('discover');
+ assert.equal(f.body.querySelector('[data-catalog-id] .mm-extension-icon img'),null);
 });
 test('description editing preserves line breaks and brackets in the submission and reports its existing limit',async t=>{
  const f=fixture(t,{identity:{profile:{displayName:'Fixture'}}});await f.center.activate('mine');await f.click('编辑');
@@ -565,7 +783,7 @@ test('ordinary confirmed listings do not replay ready effects and a running-vers
  const f=fixture(t);uiClock(f);let mismatch=false;
  f.packages.listInstalled=async()=>[{id:'fixture.background',version:mismatch?'2.0.0':'1.0.0',name:'Fixture',enabled:true,persistenceError:''}];
  await f.center.activate('installed');assert.equal(f.body.querySelector('[data-save-state]'),null);
- mismatch=true;await f.center.activate('installed');assert.ok(f.body.querySelector('[data-save-state=error]'));assert.equal(f.body.querySelector('[data-save-state=confirmed]'),null);assert.match(f.body.textContent,/尚未完成新版运行确认/);
+ mismatch=true;await f.center.activate('installed');openInstalledDetails(f.host,'fixture.background');assert.ok(f.body.querySelector('[data-save-state=error]'));assert.equal(f.body.querySelector('[data-save-state=confirmed]'),null);assert.match(f.body.textContent,/尚未完成新版运行确认/);
 });
 test('System Back delegates to current submission picker without changing the form or keeping stale ownership',async t=>{
  const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}}});await f.center.activate('mine');await f.click('提交扩展');
@@ -580,10 +798,13 @@ test('Phase4 physical/API/Runtime/update states remain independent and latest AP
  f.packages.listInstalled=async()=>[{id:'fixture.legacy',instanceId:'old',version:'1.0.0',name:'用户旧脚本',enabled:true,repoUrl:'https://github.com/DevelopmentFixture/Example',runtimeCompatibility:compatibility,apiVersion:compatibility==='incompatible'?1:null}];
  f.packages.checkInstalledCompatibility=async()=>{compatibility='incompatible';};
  f.packages.check=async()=>({version:'2.0.0',available:false,reason:'此扩展声明 API 3，当前 Hub 仅支持 Extension API 2。'});
- await f.center.activate('installed');const card=()=>f.body.querySelector('[data-extension-id="fixture.legacy"]');
+ await f.center.activate('installed');const dialog=openInstalledDetails(f.host,'fixture.legacy');const card=()=>dialog;
  assert.match(card().textContent,/物理已安装/);assert.match(card().textContent,/API 未确认/);assert.match(card().textContent,/Runtime 尚未运行/);assert.doesNotMatch(card().textContent,/Runtime 可用/);
  card().querySelector('[data-action="fixture.legacy:verify-api"]').click();await tick();await tick();assert.match(card().textContent,/版本不兼容.*API 1/);
- card().querySelector('[data-action="fixture.legacy:check"]').click();await tick();await tick();assert.match(card().textContent,/最新版本：2.0.0.*API 3/);assert.equal(card().querySelector('[data-action="fixture.legacy:update"]'),null);assert.ok(card().querySelector('[data-action="fixture.legacy:uninstall"]'));
+ f.center.back();await f.click('检查更新');
+ const refreshed=openInstalledDetails(f.host,'fixture.legacy');
+ assert.match(refreshed.textContent,/最新版本：2.0.0.*API 3/);assert.equal(f.body.querySelector('[data-action="fixture.legacy:update"]'),null);
+ assert.ok(refreshed.querySelector('[data-action="fixture.legacy:uninstall"]'));
 });
 
 for (const runtimeConfirmed of [true,false]) test('Phase4 saved target removes stale Update action even when Runtime confirmation '+runtimeConfirmed,async t=>{
@@ -591,8 +812,8 @@ for (const runtimeConfirmed of [true,false]) test('Phase4 saved target removes s
  f.packages.listInstalled=async()=>[{id:'fixture.background',instanceId:'same',version,memoryVersion:version,name:'Custom',enabled:true,repoUrl:'https://github.com/DevelopmentFixture/Example',runtimeCompatibility:'compatible',apiVersion:2}];
  f.packages.check=async()=>({version:'2.0.0',available:true});
  f.packages.update=async()=>{version='2.0.0';if(!runtimeConfirmed)throw Error('已保存，但新版运行尚未确认。');f.runtime.get('fixture.background').manifest.version=version;return {ok:true,action:'updated',persistence:'confirmed',runtimeConfirmed:true};};
- await f.center.activate('installed');await f.click('检查更新');assert.match(f.body.textContent,/存在可更新版本，等待确认更新/);await f.click('更新');
+ await f.center.activate('installed');await f.click('检查更新');assert.match(f.body.textContent,/发现新版本 2.0.0/);await f.click('更新');
  assert.equal(f.body.querySelector('[data-action="fixture.background:update"]'),null);
  if(runtimeConfirmed)assert.match(f.body.textContent,/新版运行已确认/);
- else {assert.match(f.body.textContent,/尚未完成新版运行确认/);assert.doesNotMatch(f.body.textContent,/新版运行已确认/);}
+ else {openInstalledDetails(f.host,'fixture.background');assert.match(f.body.textContent,/尚未完成新版运行确认/);assert.doesNotMatch(f.body.textContent,/新版运行已确认/);}
 });

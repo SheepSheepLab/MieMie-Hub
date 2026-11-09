@@ -102,6 +102,32 @@ function pollingFixture({readyAfter=2,timeout=300,requestTimeout=200,complete,me
 test('detached popup with no message completes via PKCE polling, me, and UI subscription',async()=>{
  const f=pollingFixture();try{const pending=f.client.login();assert.equal(pending,f.client.login());const identity=await pending;assert.equal(identity.profile.displayName,'Current Fixture');assert.equal(f.changes.at(-1),identity);assert.equal(f.requests.filter(x=>x.url.endsWith('/complete')).length,2);const n=f.requests.length;f.host.dispatchEvent(new Event('focus'));await new Promise(r=>setTimeout(r,20));assert.equal(f.requests.length,n);}finally{f.client.dispose();}
 });
+test('scan login exposes only a validated, one-time URL and completes without opening a window',async()=>{
+ const f=pollingFixture();f.host.open=()=>assert.fail('Scan must not open a window');
+ try{
+  const shown=[];
+  const identity=await f.client.login({showQR:url=>{assert.equal(f.client.getIdentity(),null);shown.push(url);}});
+  assert.deepEqual(shown,['https://registry.example/api/auth/authorize?requestId='+'r'.repeat(43)]);
+  assert.equal(identity.profile.displayName,'Current Fixture');assert.equal(f.changes.filter(Boolean).length,1);
+  assert.deepEqual(f.requests.map(r=>new URL(r.url).pathname),['/api/auth/start','/api/auth/complete','/api/auth/complete','/api/me']);
+ }finally{f.client.dispose();}
+ const legacy=fixture();legacy.host.open=()=>assert.fail('Scan must not open a window');
+ try{await assert.rejects(legacy.client.login({showQR:()=>assert.fail('Legacy handoff cannot supply a QR code')}),/不支持扫码/);}
+ finally{legacy.client.dispose();}
+});
+test('canceling scan during account verification cannot publish a late identity and allows retry',async()=>{
+ const started=deferred(),response=deferred();
+ let calls=0;const f=pollingFixture({readyAfter:1,me:()=>{if(++calls===1){started.resolve();return response.promise;}return json({profile:{displayName:'Retried'}});}});
+ f.host.open=()=>assert.fail('Scan must not open a window');
+ const controller=new AbortController(),showQR=()=>{};
+ try{
+  const pending=assert.rejects(f.client.login({showQR,signal:controller.signal}),/取消/);
+  await started.promise;controller.abort();await pending;
+  response.resolve(json({profile:{displayName:'Late'}}));
+  assert.equal(f.client.getIdentity(),null);assert.ok(f.changes.every(x=>x===null));
+  assert.equal((await f.client.login({showQR})).profile.displayName,'Retried');
+ }finally{f.client.dispose();}
+});
 test('poll timeout and teardown stop future requests without resurrecting identity',async()=>{
  const f=pollingFixture({readyAfter:10000,timeout:30});await assert.rejects(f.client.login(),/超时/);const n=f.requests.length;await new Promise(r=>setTimeout(r,20));assert.equal(f.requests.length,n);assert.equal(f.client.getIdentity(),null);f.client.dispose();
  const started=deferred(),response=deferred();const g=pollingFixture({complete:()=>{started.resolve();return response.promise;}});

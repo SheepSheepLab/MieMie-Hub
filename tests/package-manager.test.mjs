@@ -117,7 +117,15 @@ test('duplicate installation rejected and failed downloads produce no half insta
 
 test('installed folder and renamed script update preserves all data, buttons, fields and siblings', async t => {
   const original = [other(), folder([script(), other()])]; original[1].scripts[1].id = 'sibling';
-  const sys = setup(t, fixture(), {trees: original}); const result = await sys.manager.update(ID);
+  const sys = setup(t, fixture(), {trees: original}), phases=[], bytes=[];
+  const result = await sys.manager.update(ID,undefined,{onProgress(phase,detail){
+    if(phases.at(-1)!==phase)phases.push(phase);
+    if(detail)bytes.push(detail);
+    if(phase==='confirming')throw Error('Presentation listener');
+  }});
+  assert.deepEqual(phases,['verifying','downloading','verifying','installing','confirming']);
+  assert.equal(bytes[0].receivedBytes,0);
+  assert.equal(bytes.at(-1).receivedBytes,bytes.at(-1).totalBytes);
   assert.equal(result.instanceId, 'installed-instance'); assert.equal(result.version, '1.0.2');
   const after = sys.read(); const newContent = after[1].scripts[0].content; after[1].scripts[0].content = original[1].scripts[0].content;
   assert.equal(after[1].scripts[0].name, 'My renamed script 1.0.2'); after[1].scripts[0].name = original[1].scripts[0].name;

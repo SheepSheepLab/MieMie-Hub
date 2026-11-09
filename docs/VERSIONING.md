@@ -4,6 +4,8 @@ SheepSheep 维护的 MieMie 官方项目，从本次发布起只使用无前导�
 
 内部快速迭代直接增加 PATCH；后续功能和兼容性变化按 SemVer 使用 MINOR / MAJOR。Hub 与 Extension 独立维护自己的版本。Hub 构建会拒绝违反格式的版本，并由 `package.json` 统一生成运行版本、设置页显示、身份标记和机器更新元数据。
 
+Hub 官方发行的 MINOR 和 PATCH 各使用一位数字（0–9）。递增超过 9 时向上一位进位，低位归零。本次功能版从 `0.9.0` 进到 `1.0.0`。
+
 Git Tag 使用 `v<version>`。GitHub 的 **Pre-release 是发布状态**，不是版本字符串的一部分，因此 `v0.2.1`、`v0.2.2`、`v1.0.1` 都可以标记为 Pre-release，不表示已完成所有真实宿主验证。
 
 产品版本在 `package.json`、Build Identity、Runtime、UI 和 Update Metadata 的 `version` 字段中保持相同的 `MAJOR.MINOR.PATCH`。只有 Git Tag 及明确指向它的 `tag` 字段、发布 URL 使用 `v` 前缀。例如产品版本 `0.9.0` 对应 Tag `v0.9.0`、Release Title `MieMie Hub 0.9.0` 和附件名 `MieMie-Hub-0.9.0.json`；命名规则与发布状态分别维护。发布状态与附件以 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 为准。
@@ -12,7 +14,7 @@ Git Tag 使用 `v<version>`。GitHub 的 **Pre-release 是发布状态**，不�
 
 | 字段 | 当前值／规则 |
 | --- | --- |
-| Hub 产品版本 | 0.9.0 |
+| Hub 产品版本 | 1.0.0 |
 | Extension API | 2，Runtime 契约 |
 | Manifest schemaVersion | 1，apiVersion 单独声明 |
 | Managed Package / Machine Metadata Schema | 1，机器安装契约 |

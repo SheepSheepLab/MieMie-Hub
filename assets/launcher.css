@@ -34,8 +34,8 @@
 #meeme-combined-menu .mm-honeycomb-scroll{transition:opacity var(--mie-motion-fast)}
 #meeme-combined-menu[data-surface=true] .mm-honeycomb-scroll,#meeme-combined-menu[data-surface=true] .mm-launcher-hint{opacity:0;pointer-events:none}
 
-/* Enlarge only System app artwork; cell geometry and Hub scale stay unchanged. */
-#miemie-hub-shell .mm-app:is(.mm-center,.mm-settings)>span{font-size:clamp(44px,9vw,56px);line-height:1}
+/* Size system emoji independently of the launcher cell. */
+#miemie-hub-shell .mm-app:is(.mm-center,.mm-settings)>span{font-size:clamp(34.1px,6.93vw,42.9px);line-height:1}
 
 /* Presentation-only wave underneath the unchanged honeycomb canvas. */
 #meeme-combined-menu .mm-launcher-ripple{position:absolute;pointer-events:none;border:1px solid var(--mie-highlight);border-radius:50%;box-shadow:var(--mie-glow);opacity:0;will-change:transform,opacity}

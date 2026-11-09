@@ -7,15 +7,28 @@ import {createDriver,click,wait,settle} from './driver.mjs';
 const host=process.env.TEST_HOST||'http://127.0.0.1:48190/';
 assert.ok(['http://127.0.0.1:48190/','http://127.0.0.1:48193/'].includes(host));
 const out=new URL('../../test-results/phase4-packages/',import.meta.url);await mkdir(out,{recursive:true});
-const bytes=await readFile(new URL('../../build/MieMie-Hub-0.9.0.json',import.meta.url));
+const version=JSON.parse(await readFile(new URL('../../package.json',import.meta.url))).version;
+const bytes=await readFile(new URL('../../build/MieMie-Hub-'+version+'.json',import.meta.url));
 const hub={...JSON.parse(bytes),id:'99000000-0000-4000-8000-000000000001',name:'PHASE4 ISOLATED Hub',enabled:true};
 const v1=packageFixture('1.0.0',2),v2=packageFixture('2.0.0',2),legacy=packageFixture('1.0.0',1),bad=packageFixture('3.0.0',1);
 let routes=packageRoutes([v1]),dialogAccept=true,delayAsset=false,releaseAsset, d,versions;
 const errors=[],results=[],observations={};
 const card='[data-extension-id="'+PACKAGE_PRODUCT+'"]';
 async function check(name,fn){try{await fn();results.push({name,status:'PASS'});console.log('PASS '+name);}catch(e){results.push({name,status:'FAIL',error:e.stack});throw e;}}
-async function installed(){await click(d,'[data-center-tab="installed"]');await wait(d,s=>document.querySelector(s),card);await settle(d);}
-const action=async key=>{await click(d,'[data-action="'+PACKAGE_PRODUCT+':'+key+'"]');};
+const detail='.mm-description-dialog[open]';
+async function installed(){
+ if(await d.eval(s=>!!document.querySelector(s),detail))await click(d,detail+' footer button');
+ await click(d,'[data-center-tab="installed"]');await wait(d,s=>document.querySelector(s),card);await settle(d);
+ await click(d,'[data-extension-id="'+PACKAGE_PRODUCT+'"] > .mm-catalog-row-open');await settle(d);
+}
+const openDetail=()=>click(d,card+' > .mm-catalog-row-open');
+const detailOpen=()=>d.eval(s=>!!document.querySelector(s),detail);
+const action=async key=>{
+ if(key==='check'||key==='update'){
+  if(await detailOpen())await click(d,detail+' footer button');
+ }else if(!await detailOpen())await openDetail();
+ await click(d,'[data-action="'+PACKAGE_PRODUCT+':'+key+'"]');
+};
 async function disk(){return d.eval(async()=>{const r=await fetch('/api/settings/get',{method:'POST',headers:SillyTavern.getContext().getRequestHeaders(),body:'{}'});const j=await r.json();return JSON.parse(j.settings).extension_settings.tavern_helper.script.scripts;});}
 async function saved(predicate){const end=Date.now()+20000;while(Date.now()<end){const tree=await disk();if(predicate(tree))return tree;await new Promise(r=>setTimeout(r,100));}throw Error('Real server persistence was not confirmed');}
 const flatten=tree=>tree.flatMap(x=>x.type==='folder'?x.scripts:[x]);
@@ -34,7 +47,7 @@ try{
  await d.eval(()=>__MieMieHub.open());await settle(d);await click(d,'[data-hub-app="extension-center"]');await settle(d);
  await check('API2 first install through built Hub UI, actual Helper registration and server readback',async()=>{
   await install();const savedTree=await saved(t=>flatten(t).some(x=>x.content===v1.script.content));const item=flatten(savedTree).find(x=>x.content===v1.script.content);
-  assert.notEqual(item.id,v1.script.id);assert.deepEqual(item.data,{});assert.equal(await d.eval(id=>__MieMieHub.extensions.get(id).manifest.version,PACKAGE_PRODUCT),'1.0.0');observations.installedInstance=item.id;await installed();assert.match(await d.eval(s=>document.querySelector(s).textContent,card),/Runtime 可用/);
+  assert.notEqual(item.id,v1.script.id);assert.deepEqual(item.data,{});assert.equal(await d.eval(id=>__MieMieHub.extensions.get(id).manifest.version,PACKAGE_PRODUCT),'1.0.0');observations.installedInstance=item.id;await installed();assert.match(await d.eval(s=>document.querySelector(s).textContent,detail),/Runtime 可用/);
  });
  await check('API2 update retains instance/custom name/data/folder/order/enabled and confirms new Runtime',async()=>{
   await d.eval(id=>TavernHelper.updateScriptTreesWith(t=>{const i=t.findIndex(x=>x.id===id),script=t.splice(i,1)[0];script.name='Phase4 用户名称';script.data={draft:'原稿',nested:{value:7}};t.push({type:'folder',id:'99000000-0000-4000-8000-000000000004',name:'Phase4 test folder',enabled:true,icon:'fa-folder',color:'#123456',scripts:[script]});return t;},{type:'global'}),observations.installedInstance);
@@ -51,15 +64,16 @@ try{
   await d.eval(id=>{const key='miemie_hub_extensions_v1',s=JSON.parse(localStorage.getItem(key));delete s.extensions[id];localStorage.setItem(key,JSON.stringify(s));},PACKAGE_PRODUCT);
   await d.page.reload();await wait(d,()=>window.__MieMieHub?.apiVersion===2,null,60000);await d.eval(()=>__MieMieHub.ready);await d.eval(()=>__MieMieHub.open());await settle(d);await click(d,'[data-hub-app="extension-center"]');await settle(d);
   routes=packageRoutes([legacy,v2]);await d.eval(s=>TavernHelper.updateScriptTreesWith(t=>{t.push({...s,id:'99000000-0000-4000-8000-000000000005',name:'Phase4 旧版用户名称',data:{draft:'API1 原数据'}});return t;},{type:'global'}),legacy.script);
-  await saved(t=>flatten(t).some(x=>x.content===legacy.script.content));await installed();assert.match(await d.eval(s=>document.querySelector(s).textContent,card),/API 未确认/);assert.equal(await d.eval(id=>__MieMieHub.extensions.get(id),PACKAGE_PRODUCT),null);
-  await action('verify-api');await wait(d,s=>document.querySelector(s)?.textContent.includes('版本不兼容'),card);assert.match(await d.eval(s=>document.querySelector(s).textContent,card),/API 1/);
+  await saved(t=>flatten(t).some(x=>x.content===legacy.script.content));await installed();assert.match(await d.eval(s=>document.querySelector(s).textContent,detail),/API 未确认/);assert.equal(await d.eval(id=>__MieMieHub.extensions.get(id),PACKAGE_PRODUCT),null);
+  await action('verify-api');await wait(d,s=>document.querySelector(s)?.textContent.includes('版本不兼容'),detail);assert.match(await d.eval(s=>document.querySelector(s).textContent,detail),/API 1/);
  });
  await check('safe API1 to API2 upgrade verifies target before write and waits for new registration and durable save',async()=>{
   await action('check');await wait(d,()=>document.querySelector('[data-action="fixture.package-contract:update"]'));await action('update');await wait(d,()=>document.documentElement.textContent.includes('更新完成：'),null,60000);
   const tree=await saved(t=>flatten(t).some(x=>x.content===v2.script.content));const item=flatten(tree).find(x=>x.content===v2.script.content);assert.equal(item.id,'99000000-0000-4000-8000-000000000005');assert.deepEqual(item.data,{draft:'API1 原数据'});assert.equal(item.name,'Phase4 旧版用户名称 2.0.0');assert.equal(await d.eval(id=>__MieMieHub.extensions.get(id).manifest.apiVersion,PACKAGE_PRODUCT),2);
  });
  await check('highest incompatible release is visibly refused, no fallback and no write',async()=>{
-  const before=await disk();routes=packageRoutes([legacy,v2,bad]);await action('check');await wait(d,s=>document.querySelector(s)?.textContent.includes('最新版本：3.0.0'),card);assert.equal(await d.eval(()=>!!document.querySelector('[data-action="fixture.package-contract:update"]')),false);assert.deepEqual(await disk(),before);
+  const before=await disk();routes=packageRoutes([legacy,v2,bad]);await action('check');await wait(d,()=>document.querySelector('[data-action$=":check"]:not(:disabled)'));await openDetail();
+  await wait(d,s=>document.querySelector(s)?.textContent.includes('最新版本：3.0.0'),detail);assert.equal(await d.eval(()=>!!document.querySelector('[data-action="fixture.package-contract:update"]')),false);assert.deepEqual(await disk(),before);
  });
  await d.screenshot(new URL('installed.png',out).pathname);
  await check('final physical uninstall and reload prove server removal and preserve external storage',async()=>{

@@ -64,16 +64,26 @@ function mountTimeline(extensionAPI, resources) {
     return 0;
   }
   function parseDatePart(text) {
-    const m=String(text).trim().match(/^(\d{1,6})年\s*(\d{1,2})月\s*(\d{1,2})日(?:\s*[/／]?\s*(?:(\d{1,2})[:：](\d{2})|(\d{1,2})时(?:(\d{1,2})分)?))?$/);
-    if (!m) throw Error('日期格式不明确，需要“60年3月15日”或带“10:15”的日期。');
-    const y=Number(m[1]),month=Number(m[2]),day=Number(m[3]),timed=m[4]!==undefined||m[6]!==undefined;
-    const hour=Number(m[4]??m[6]??0),minute=Number(m[5]??m[7]??0);
-    const leap=y%4===0&&(y%100!==0||y%400===0);
+    // Middle-dot suffixes carry season, period or location notes, not date components.
+    const date=String(text).split(/[·・‧]/,1)[0].trim();
+    const m=date.match(/^(?:大?[约約]\s*)?(?:(公元|西元)\s*(前)?\s*)?(\d{1,6})年(?:\s*(\d{1,2})月(?:\s*(\d{1,2})日(?:\s*[/／]?\s*(?:(\d{1,2})[:：](\d{2})|(\d{1,2})[时時](?:(\d{1,2})分)?))?)?)?$/);
+    if (!m) throw Error('日期格式不明确，需要明确的年份，例如“公元前60年12月”或“西元490年3月15日 10:15”。');
+    const [,era,before,year,monthPart,dayPart,clockHour,clockMinute,localHour,localMinute]=m;
+    const y=Number(year),month=Number(monthPart??1),day=Number(dayPart??1);
+    const hour=Number(clockHour??localHour??0),minute=Number(clockMinute??localMinute??0);
+    const timed=clockHour!==undefined||localHour!==undefined;
+    // Use an astronomical year for the existing Gregorian leap rule, but skip year zero in user-facing dates.
+    const leapYear=before?1-y:y;
+    const leap=leapYear%4===0&&(leapYear%100!==0||leapYear%400===0);
     const days=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31];
     if (y<1||month<1||month>12||day<1||day>days[month-1]||hour>23||minute>59) throw Error('日期或时刻无效，保持当前篇章。');
-    return {value:[y,month,day,hour,minute],timed};
+    const orderedYear=before?-y:y,lastMonth=monthPart===undefined?12:month;
+    const value=[orderedYear,month,day,hour,minute];
+    const end=timed?value:[orderedYear,lastMonth,dayPart===undefined?days[lastMonth-1]:day,23,59];
+    const period=(era??'')+(before??'')+y+'年'+(monthPart===undefined?'':month+'月')+(dayPart===undefined?'':day+'日');
+    return {value,end,period,timed};
   }
-  function dateLabel(value) { return `${value[0]}年${value[1]}月${value[2]}日 ${String(value[3]).padStart(2,'0')}:${String(value[4]).padStart(2,'0')}`; }
+  function dateLabel(value) { return `${value[0]<0?'公元前':''}${Math.abs(value[0])}年${value[1]}月${value[2]}日 ${String(value[3]).padStart(2,'0')}:${String(value[4]).padStart(2,'0')}`; }
   function threshold(entry) {
     const blocks=timelineInfo(entry).blocks;
     if (blocks.length!==1) throw Error('需要唯一、完整的 world_timeline，无法自动确定交接时间。');
@@ -84,19 +94,19 @@ function mountTimeline(extensionAPI, resources) {
     const m=line.match(/^\s*(?:[-*•]\s*)?事件[^:：\n]*[:：]\s*([^()（）]*?)\s*[（(]([^()（）]+)[）)](?:\s*[:：].*)?\s*$/);
     if (!m) throw Error('末事件行的日期括号不明确，保持当前篇章。');
     const sandbox=/沙盒模式/.test(m[1]);
-    let segment=m[2].trim(),date;
+    const segment=m[2].trim(),openEnded=sandbox&&segment.endsWith('∞');
+    const range=sandbox?segment.replace(/\s*起?\s*(?:[-－−—–~～至到]\s*)?∞\s*$/,'').replace(/\s*起\s*$/,'').trim():segment;
+    const parts=range.split(/\s*(?:[-－−—–~～]|至|到)\s*/);
+    if (parts.length>(sandbox&&!openEnded?1:2)) throw Error('末事件日期范围不明确，保持当前篇章。');
+    const date=parseDatePart(parts.at(-1));
+    if (parts.length===2&&compareDate(parseDatePart(parts[0]).value,sandbox?date.value:date.end)>0) throw Error('末事件日期范围倒序，保持当前篇章。');
     if (sandbox) {
-      segment=segment.replace(/\s*起?\s*(?:[-－—–~～至到]\s*)?∞\s*$/,'').replace(/\s*起\s*$/,'').trim();
-      date=parseDatePart(segment);
-      date.value=[...date.value.slice(0,3),0,0];
-      return {value:date.value,strict:false,label:dateLabel(date.value)+' 起（末事件：沙盒模式）'};
+      // A final ∞ opens the sandbox at the last finite anchor, retaining the single-date rule.
+      const value=[...date.value.slice(0,3),0,0];
+      return {value,strict:false,label:dateLabel(value)+' 起（末事件：沙盒模式）'};
     }
-    const parts=segment.split(/\s*(?:[-－—–~～]|至|到)\s*/);
-    if (parts.length<1||parts.length>2) throw Error('末事件日期范围不明确，保持当前篇章。');
-    const start=parseDatePart(parts[0]);date=parseDatePart(parts.at(-1));
-    if (compareDate(start.value,date.value)>0) throw Error('末事件日期范围倒序，保持当前篇章。');
     if (date.timed) return {value:date.value,strict:false,label:dateLabel(date.value)+' 起（末事件结束）'};
-    return {value:[...date.value.slice(0,3),23,59],strict:true,label:`${date.value[0]}年${date.value[1]}月${date.value[2]}日过完后（末事件结束）`};
+    return {value:date.end,strict:true,label:date.period+'过完后（末事件结束）'};
   }
   function wlogDate(text) {
     const raw=String(text||'');

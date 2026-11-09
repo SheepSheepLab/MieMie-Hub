@@ -1,3 +1,4 @@
+import {openInstalledDetails} from '../fixtures/installed-details.js';
 // Development Fixture only. Executes complete verified release artifacts against
 // an isolated jsdom host; never imports another project's source or calls a network.
 import assert from 'node:assert/strict';
@@ -150,8 +151,12 @@ async function fixture({legacy=false,cors=false,corrupt=false,oldHub=false}={}) 
     // tick is not evidence that the requested tab has finished rendering.
     await until(()=>q('[data-center-tab="'+tab+'"]')?.getAttribute('aria-selected')==='true' &&
       (tab!=='installed'||q('[data-hub-panel="extension-center"]')?.textContent.includes('已识别的全局')),'center tab '+tab);
+    if(tab==='installed'&&q('[data-extension-id="miemie.polisher"] > .mm-catalog-row-open'))openInstalledDetails(h,'miemie.polisher');
   }
-  async function action(name){click('[data-action="'+name+'"]');await tick();}
+  async function action(name){
+    if(/:(check|update)$/.test(name))q('.mm-description-dialog footer button')?.click();
+    click('[data-action="'+name+'"]');await tick();
+  }
   const installed=()=>flat(trees).map(x=>x.script).find(x=>x.content.startsWith('// MieMie-Extension-Build:')||x.content.startsWith('// MieMie Polisher ·'));
   async function drain(){await reconcileQueue;await tick();if(h.__MieMiePolisherSource)await h.__MieMiePolisherSource.settled();await tick();}
   return {h,d,q,click,center,action,installed,drain,calls,backups,writes,errors,subscriptions,frames,actualLegacyId,actualHubId,initialLegacy:legacyScript,other,vars,worldbook,ctx,
@@ -183,7 +188,7 @@ try {
     await f.center('installed');await f.action('miemie.polisher:toggle');await until(()=>f.h.__MieMieHub.extensions.get('miemie.polisher')?.enabled,'physical reenable');await f.drain();assert.equal(f.installed().enabled,true);assert.equal(f.d.querySelectorAll('#meeme-translation').length,1);assert.equal(f.d.querySelectorAll('[data-miemie-polisher-native]').length,1);
   });
   await check('installed version comparison reports the same author version without offering an update',async()=>{
-    await f.center('installed');await f.action('miemie.polisher:check');await until(()=>f.q('[data-extension-id="miemie.polisher"]').textContent.includes('最新版本：'+metadata.version),'same version result');
+    await f.center('installed');await f.action('miemie.polisher:check');await until(()=>f.q('.mm-center-notice')?.textContent.includes(metadata.version),'same version result');
     assert.equal(f.q('[data-action="miemie.polisher:update"]'),null);assert.equal(f.installed().content,polisherArtifact.content);
   });
   await check('physical uninstall creates no backup and removes only target script; saved business data survives',async()=>{
