@@ -82,13 +82,13 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
     }
     finally {signal?.removeEventListener('abort', abort); clearTimeout(timer); controllers.delete(controller);}
   }
-  function login({showQR, signal} = {}) {
+  function login({onAuthorizationUrl, signal} = {}) {
     if (loginOperation) return loginOperation;
     if (!base || disposed) return Promise.reject(Error('在线投稿服务暂未开放，请稍后重试。'));
     if (signal?.aborted) return Promise.reject(Error('登录已取消。'));
     // Open synchronously inside the click gesture; navigate only after state/PKCE preparation.
-    const popup = showQR ? null : host.open('about:blank', 'miemie-registry-login', 'popup,width=520,height=720');
-    if (!showQR && !popup) return Promise.reject(Error('登录窗口被浏览器阻止。请允许弹出窗口，或选择扫码登录。'));
+    const popup = onAuthorizationUrl ? null : host.open('about:blank', 'miemie-registry-login', 'popup,width=520,height=720');
+    if (!onAuthorizationUrl && !popup) return Promise.reject(Error('登录窗口被浏览器阻止。请选择授权链接或扫码登录。'));
     const expectedOrigin = base, expectedLogin = ++loginEpoch;
     const retryable = error => ['network_unavailable','request_timeout'].includes(error?.code);
     const stageError = (stage,error) => Error('Discord 登录：'+stage+'失败。'+error.message+
@@ -100,7 +100,7 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
     const abort = () => cancelLogin?.();
     signal?.addEventListener('abort', abort, {once: true});
     loginOperation = (async () => {
-      let listener, timer, closePoll, pollTimer, retryTimer, focusListener, stopped = false;
+      let listener, timer, closePoll, pollTimer, retryTimer, resumePolling, stopped = false;
       const retryPause = () => new Promise((resolve,reject)=>{
         cancelLogin=()=>{clearTimeout(retryTimer);reject(Error('登录已取消。'));};
         retryTimer=setTimeout(resolve,loginPollMs);
@@ -116,11 +116,9 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
         const auth = new URL(started.authorizationUrl);
         if (auth.origin !== expectedOrigin || auth.pathname !== '/api/auth/authorize' || auth.username || auth.password || auth.searchParams.get('requestId') !== started.requestId || typeof started.requestId !== 'string') throw Error('Discord 登录地址校验失败。');
         const polling = started.handoff === 'poll-v1';
-        if (showQR) {
-          if (!polling) throw Error('当前在线服务不支持扫码登录，请使用授权窗口登录。');
+        if (onAuthorizationUrl) {
+          if (!polling) throw Error('当前在线服务不支持跨浏览器授权，请使用授权窗口登录。');
           if (!/^[A-Za-z0-9_-]{43}$/.test(started.requestId)) throw Error('Discord 登录地址校验失败。');
-          showQR(auth.origin + auth.pathname + '?requestId=' + started.requestId);
-          assertLogin();
         }
         const result = await new Promise((resolve, reject) => {
           let exchanging = false, networkFailures = 0;
@@ -130,8 +128,9 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
           // COOP may report a detached WindowProxy as closed while consent continues.
           // poll-v1 deliberately does not interpret popup.closed as OAuth cancellation.
           if (!polling) closePoll = setInterval(() => {if (popup.closed && !exchanging) finish(Error('登录窗口已关闭。'));}, 500);
+          const detachedAndHidden = () => onAuthorizationUrl && host.document?.visibilityState === 'hidden';
           const poll = async () => {
-            if (stopped || exchanging) return;
+            if (stopped || exchanging || detachedAndHidden()) return;
             clearTimeout(pollTimer); exchanging = true;
             try {
               assertLogin();
@@ -142,9 +141,9 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
             } catch (error) {
               // A backgrounded Tavern tab can briefly lose network while consent succeeds.
               // Retry only transport failures, never invalid/consumed handoffs or auth errors.
-              if(!retryable(error)||++networkFailures>=3) finish(stageError('接收授权结果',error));
+              if(!retryable(error)||(!detachedAndHidden()&&++networkFailures>=3)) finish(stageError('接收授权结果',error));
             }
-            finally {exchanging = false; if (!stopped) pollTimer = setTimeout(poll, loginPollMs);}
+            finally {exchanging = false; if (!stopped&&!detachedAndHidden()) pollTimer = setTimeout(poll, loginPollMs);}
           };
           listener = async event => {
             if (event.origin !== expectedOrigin || event.source !== popup || event.data?.type !== 'miemie-registry-auth' || event.data.requestId !== started.requestId || stopped) return;
@@ -155,8 +154,16 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
             catch (error) {finish(error);}
           };
           if (popup) host.addEventListener('message', listener);
-          if (polling) {focusListener = () => {void poll();}; host.addEventListener('focus', focusListener);}
+          if (polling) {
+            resumePolling = () => {if (host.document?.visibilityState !== 'hidden') void poll();};
+            host.addEventListener('focus', resumePolling);
+            host.document?.addEventListener('visibilitychange', resumePolling);
+          }
           if (popup) popup.location.href = auth.href;
+          if (onAuthorizationUrl) {
+            onAuthorizationUrl(auth.origin + auth.pathname + '?requestId=' + started.requestId);
+            assertLogin();
+          }
           if (polling) void poll();
         });
         assertLogin();
@@ -177,7 +184,12 @@ export function createRegistryClient({host, fetch: request = globalThis.fetch, c
           watchExpiry(); notify(); return identity;
         } catch (error) {if (loginEpoch === expectedLogin) clearSession(); throw error;}
       } finally {
-        stopped = true; clearTimeout(retryTimer); clearTimeout(timer); clearTimeout(pollTimer); clearInterval(closePoll); if (focusListener) host.removeEventListener('focus', focusListener); if (listener) host.removeEventListener('message', listener);
+        stopped = true; clearTimeout(retryTimer); clearTimeout(timer); clearTimeout(pollTimer); clearInterval(closePoll);
+        if (resumePolling) {
+          host.removeEventListener('focus', resumePolling);
+          host.document?.removeEventListener('visibilitychange', resumePolling);
+        }
+        if (listener) host.removeEventListener('message', listener);
         signal?.removeEventListener('abort', abort);
         cancelLogin = null; try {popup?.close();} catch (_) {}
       }

@@ -32,7 +32,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
   }
   let clearForm=()=>{},backForm=()=>false;
   let descriptionDialog=null;
-  let closeLoginMenu=()=>false, disposeLoginButton=()=>{}, qrLogin=null, windowLoginPending=false;
+  let closeLoginMenu=()=>false, disposeLoginButton=()=>{}, authDialog=null, windowLoginPending=false;
   function el(tag, text, className) {const e = doc.createElement(tag); if (text !== undefined) e.textContent = text; if (className) e.className = className; return e;}
   function closeDescription(restoreFocus=true,pointerReturn=false) {
     if(!descriptionDialog)return;
@@ -181,7 +181,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
   }
   function stopSavedCheck() {host.clearTimeout(savedCheckTimer);savedCheckTimer=null;}
   function leave() {
-    closeLoginMenu();closeQRLogin(false);closeDescription(false);visible=false;++serial;stopViewRequest();clearOnlineSnapshots();stopSavedCheck();hideProgress();
+    closeLoginMenu();closeAuthDialog(false);closeDescription(false);visible=false;++serial;stopViewRequest();clearOnlineSnapshots();stopSavedCheck();hideProgress();
     if(installationPhase!=='installing')installController?.abort();
     if(speedTimer!==null)host.clearInterval(speedTimer);speedTimer=null;
   }
@@ -922,55 +922,110 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
     }catch(error){if(disposed||generation!==serial||active!=='mine')return;report('我的投稿无法读取：'+error.message);if(!registry.getIdentity())void activate('mine');}
     finally{if(viewRequest===request)viewRequest=undefined;}
   }
-  function closeQRLogin(restoreFocus=true) {
-    if(!qrLogin)return false;
-    const {dialog,opener,controller,closeTimer}=qrLogin;qrLogin=null;
-    host.clearTimeout(closeTimer);controller.abort();dialog.close();dialog.remove();
+  function closeAuthDialog(restoreFocus=true) {
+    if(!authDialog)return false;
+    const {dialog,opener,controller,closeTimer,copyTimer}=authDialog;
+    authDialog=null;
+    host.clearTimeout(closeTimer);host.clearTimeout(copyTimer);
+    controller.abort();dialog.close();dialog.remove();
     if(restoreFocus&&opener.isConnected)opener.focus({preventScroll:true});
     return true;
   }
-  function openQRLogin(opener) {
-    const dialog=el('dialog',undefined,'mm-description-dialog mm-auth-qr-dialog');
-    const title=el('h2','Discord 扫码登录'),content=el('div',undefined,'mm-auth-qr-content');
-    const instructions=el('p','用手机相机扫码，在 Discord 官方页面点「授权」。');
-    const frame=el('div',undefined,'mm-auth-qr-frame'),status=el('p',undefined,'mm-auth-qr-status');
-    const footer=el('footer'),cancel=el('button','取消'),retry=el('button','重新扫码');
+  function openAuthDialog(opener, method, openInBrowser) {
+    const scan = method === 'qr', external = method === 'browser';
+    const manualInstructions='复制链接，在你想用的浏览器中打开。完成 Discord 授权后，请切回 Hub。';
+    const initialInstructions=scan?'用手机相机扫码，在 Discord 官方页面点「授权」。':
+      external?'在默认浏览器完成 Discord 授权后，请切回 Hub。':manualInstructions;
+    const dialog=el('dialog',undefined,'mm-description-dialog mm-auth-dialog');
+    dialog.dataset.authMethod=method;
+    const title=el('h2',scan?'Discord 扫码登录':external?'在默认浏览器中授权':'Discord 授权链接');
+    const content=el('div',undefined,'mm-auth-content'),instructions=el('p',initialInstructions);
+    const frame=el('div',undefined,'mm-auth-frame'),status=el('p',undefined,'mm-auth-status');
+    const footer=el('footer'),cancel=el('button','取消'),retry=el('button',scan?'重新扫码':'重新获取链接');
     const controller=new AbortController();
-    title.id='mm-auth-qr-title';dialog.setAttribute('aria-labelledby',title.id);
+    title.id='mm-auth-dialog-title';dialog.setAttribute('aria-labelledby',title.id);
     status.setAttribute('role','status');content.append(instructions,frame,status);
-    cancel.type='button';cancel.autofocus=true;cancel.onclick=()=>closeQRLogin();
+    cancel.type='button';cancel.autofocus=true;cancel.onclick=()=>closeAuthDialog();
     retry.type='button';retry.hidden=true;retry.onclick=()=>{cancel.focus({preventScroll:true});void run();};
-    dialog.addEventListener('cancel',event=>{event.preventDefault();closeQRLogin();});
+    dialog.addEventListener('cancel',event=>{event.preventDefault();closeAuthDialog();});
     footer.append(cancel,retry);dialog.append(title,content,footer);
     (progressContainer||body).append(dialog);
-    const attempt=qrLogin={dialog,opener,controller,closeTimer:null};
+    const attempt=authDialog={dialog,opener,controller,closeTimer:null,copyTimer:null};
+    let authorizationUrl;
     function setState(state,message){
-      dialog.dataset.qrState=state;status.textContent=message;
+      dialog.dataset.authState=state;status.textContent=message;
+    }
+    function showLink(url) {
+      const row=el('div',undefined,'mm-auth-copy');
+      const field=el('input'),copy=el('button','复制'),feedback=el('p',undefined,'mm-auth-copy-feedback');
+      field.type='text';field.readOnly=true;field.value=url;field.setAttribute('aria-label','一次性授权链接');
+      field.spellcheck=false;field.autocapitalize='off';
+      copy.type='button';copy.setAttribute('aria-label','复制授权链接');
+      feedback.setAttribute('role','status');feedback.hidden=true;
+      let copying=false;
+      async function copyUrl() {
+        if(copying)return;
+        copying=true;
+        host.clearTimeout(attempt.copyTimer);
+        try {
+          await host.navigator.clipboard.writeText(url);
+          if(authDialog!==attempt||!row.isConnected)return;
+          copy.dataset.copied='true';copy.textContent='已复制';
+          feedback.textContent='已复制授权链接';feedback.hidden=false;
+          attempt.copyTimer=host.setTimeout(()=>{
+            delete copy.dataset.copied;copy.textContent='复制';feedback.hidden=true;
+          },1800);
+        }catch(_){
+          if(authDialog!==attempt||!row.isConnected)return;
+          delete copy.dataset.copied;copy.textContent='复制';
+          field.focus({preventScroll:true});field.select();
+          feedback.textContent='链接已选中，请手动复制。';feedback.hidden=false;
+        }finally{copying=false;}
+      }
+      field.addEventListener('click',copyUrl);copy.onclick=copyUrl;
+      row.append(field,copy);frame.replaceChildren(row,feedback);
     }
     async function run(){
+      authorizationUrl=undefined;
+      instructions.textContent=initialInstructions;
       frame.replaceChildren();retry.hidden=true;cancel.textContent='取消';
-      setState('loading','正在生成二维码…');
+      setState('loading',scan?'正在生成二维码…':'正在准备授权链接…');
       try {
-        await registry.login({signal:controller.signal,showQR(url){
-          const code=hubQRCode(0,'M');code.addData(url);code.make();
-          const image=el('img',undefined,'mm-auth-qr-image');
-          image.alt='Discord 登录二维码';image.src=code.createDataURL(6);
-          frame.replaceChildren(image);setState('waiting','等待授权 · 完成后自动登录');
+        await registry.login({signal:controller.signal,onAuthorizationUrl(url){
+          authorizationUrl=url;
+          setState('waiting','等待授权 · 完成后自动登录');
+          if(scan){
+            const code=hubQRCode(0,'M');code.addData(url);code.make();
+            const image=el('img',undefined,'mm-auth-qr-image');
+            image.alt='Discord 登录二维码';image.src=code.createDataURL(6);
+            frame.replaceChildren(image);
+          }else if(external){
+            void (async()=>{
+              try{await openInBrowser(url);}
+              catch(_){
+                if(authDialog!==attempt||authorizationUrl!==url||dialog.dataset.authState!=='waiting')return;
+                instructions.textContent='默认浏览器未能打开。'+manualInstructions;
+                showLink(url);
+              }
+            })();
+          }else showLink(url);
         }});
-        if(qrLogin!==attempt)return;
-        const mark=el('span','✓','mm-auth-qr-mark');mark.setAttribute('aria-hidden','true');frame.replaceChildren(mark);
+        if(authDialog!==attempt)return;
+        host.clearTimeout(attempt.copyTimer);
+        const mark=el('span','✓','mm-auth-mark');mark.setAttribute('aria-hidden','true');frame.replaceChildren(mark);
         setState('success','Discord 已登录');
         const finish=async()=>{
-          if(qrLogin!==attempt)return;
-          closeQRLogin(false);
+          if(authDialog!==attempt)return;
+          closeAuthDialog(false);
           if(!registry.subscribe)await activate();
           account.querySelector('[data-action="registry:logout"]')?.focus({preventScroll:true});
         };
         if(host.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)await finish();
         else attempt.closeTimer=host.setTimeout(()=>{void finish();},360);
       }catch(error){
-        if(qrLogin!==attempt)return;
-        frame.replaceChildren();setState('error',error.message||'扫码登录失败，请重试。');
+        if(authDialog!==attempt)return;
+        host.clearTimeout(attempt.copyTimer);
+        frame.replaceChildren();setState('error',error.message||'Discord 登录失败，请重试。');
         cancel.textContent='关闭';retry.hidden=false;
       }
     }
@@ -1005,17 +1060,25 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
       close();host.clearTimeout(tabTimer);
       group.removeEventListener('keydown',handleTab);
     };
-    const popup=action(menu,'授权窗口登录',async()=>{
+    const tauriCore=host.__TAURI__?.core;
+    const openInBrowser=host.__TAURITAVERN_HOST__ && typeof host.__TAURI_INTERNALS__?.invoke==='function' && typeof tauriCore?.invoke==='function'
+      ? url=>tauriCore.invoke('plugin:opener|open_url',{url}) : null;
+    const primary=openInBrowser ? action(menu,'在默认浏览器中授权',()=>{
+      close(true);openAuthDialog(trigger,'browser',openInBrowser);
+    },'registry:login-browser') : action(menu,'授权窗口登录',async()=>{
       close(true);windowLoginPending=true;trigger.disabled=true;
       try{await registry.login();if(!registry.subscribe)await activate();}
       finally{windowLoginPending=false;const current=account.querySelector('[data-action="registry:login"]');if(current)current.disabled=false;}
     },'registry:login-window');
-    const qr=action(menu,'扫码登录',()=>{close(true);openQRLogin(trigger);},'registry:login-qr');
+    const manual=action(menu,'授权链接',()=>{close(true);openAuthDialog(trigger,'link');},'registry:login-link');
+    const qr=action(menu,'扫码登录',()=>{close(true);openAuthDialog(trigger,'qr');},'registry:login-qr');
+    if(openInBrowser)primary.setAttribute('aria-haspopup','dialog');
+    manual.setAttribute('aria-haspopup','dialog');
     qr.setAttribute('aria-haspopup','dialog');
     trigger.onclick=()=>{
       if(close())return;
       menu.inert=false;menu.removeAttribute('aria-hidden');trigger.setAttribute('aria-expanded','true');closeLoginMenu=close;
-      doc.addEventListener('pointerdown',outside,true);popup.focus({preventScroll:true});
+      doc.addEventListener('pointerdown',outside,true);primary.focus({preventScroll:true});
     };
     group.append(trigger,menu);account.append(group);
   }
@@ -1048,5 +1111,5 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
     try{if(active==='installed')await renderInstalled();else if(active==='mine')await renderMine();else await renderDiscover();}catch(e){report(e.message);}
   }
   renderAccount();
-  return {activate,report,leave,back(){if(disposed||!visible)return false;if(closeQRLogin()||closeLoginMenu(true))return true;if(descriptionDialog){closeDescription();return true;}return backForm();},enter(){if(!visible)void activate();},refresh(){if(active==='installed')void renderInstalled();else if(active==='mine')refreshNativeStatuses();},dispose(){leave();disposed=true;disposeLoginButton();for(const state of updateChecks.values())host.clearTimeout(state.timer);updateChecks.clear();for(const state of updateActivity.values()){host.clearInterval(state.timer);host.clearTimeout(state.expiry);}updateActivity.clear();installController?.abort();installProgress.remove();if(speedTimer!==null)host.clearInterval(speedTimer);speedTimer=null;clearForm();++serial;unsubscribe?.();registry.dispose();packages?.dispose();tabs.remove();main.remove();checkAnnouncement.remove();account.replaceChildren();if(!accountContainer)account.remove();body.classList.remove('mm-center-layout');},getActive:()=>active};
+  return {activate,report,leave,back(){if(disposed||!visible)return false;if(closeAuthDialog()||closeLoginMenu(true))return true;if(descriptionDialog){closeDescription();return true;}return backForm();},enter(){if(!visible)void activate();},refresh(){if(active==='installed')void renderInstalled();else if(active==='mine')refreshNativeStatuses();},dispose(){leave();disposed=true;disposeLoginButton();for(const state of updateChecks.values())host.clearTimeout(state.timer);updateChecks.clear();for(const state of updateActivity.values()){host.clearInterval(state.timer);host.clearTimeout(state.expiry);}updateActivity.clear();installController?.abort();installProgress.remove();if(speedTimer!==null)host.clearInterval(speedTimer);speedTimer=null;clearForm();++serial;unsubscribe?.();registry.dispose();packages?.dispose();tabs.remove();main.remove();checkAnnouncement.remove();account.replaceChildren();if(!accountContainer)account.remove();body.classList.remove('mm-center-layout');},getActive:()=>active};
 }

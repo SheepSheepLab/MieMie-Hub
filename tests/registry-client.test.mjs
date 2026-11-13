@@ -106,26 +106,40 @@ test('scan login exposes only a validated, one-time URL and completes without op
  const f=pollingFixture();f.host.open=()=>assert.fail('Scan must not open a window');
  try{
   const shown=[];
-  const identity=await f.client.login({showQR:url=>{assert.equal(f.client.getIdentity(),null);shown.push(url);}});
+  const identity=await f.client.login({onAuthorizationUrl:url=>{assert.equal(f.client.getIdentity(),null);shown.push(url);}});
   assert.deepEqual(shown,['https://registry.example/api/auth/authorize?requestId='+'r'.repeat(43)]);
   assert.equal(identity.profile.displayName,'Current Fixture');assert.equal(f.changes.filter(Boolean).length,1);
   assert.deepEqual(f.requests.map(r=>new URL(r.url).pathname),['/api/auth/start','/api/auth/complete','/api/auth/complete','/api/me']);
  }finally{f.client.dispose();}
  const legacy=fixture();legacy.host.open=()=>assert.fail('Scan must not open a window');
- try{await assert.rejects(legacy.client.login({showQR:()=>assert.fail('Legacy handoff cannot supply a QR code')}),/不支持扫码/);}
+ try{await assert.rejects(legacy.client.login({onAuthorizationUrl:()=>assert.fail('Legacy handoff cannot supply a QR code')}),/不支持跨浏览器授权/);}
  finally{legacy.client.dispose();}
+});
+test('returning from an external browser resumes authorization immediately',async()=>{
+ const f=pollingFixture({readyAfter:1,timeout:1000});
+ f.host.document=new EventTarget();f.host.document.visibilityState='hidden';
+ f.host.open=()=>assert.fail('External authorization must not open a popup');
+ try{
+  const prepared=deferred();
+  const pending=f.client.login({onAuthorizationUrl:prepared.resolve});
+  await prepared.promise;
+  assert.equal(f.requests.length,1);
+  f.host.document.visibilityState='visible';f.host.document.dispatchEvent(new Event('visibilitychange'));
+  assert.equal((await pending).profile.displayName,'Current Fixture');
+  assert.deepEqual(f.requests.map(r=>new URL(r.url).pathname),['/api/auth/start','/api/auth/complete','/api/me']);
+ }finally{f.client.dispose();}
 });
 test('canceling scan during account verification cannot publish a late identity and allows retry',async()=>{
  const started=deferred(),response=deferred();
  let calls=0;const f=pollingFixture({readyAfter:1,me:()=>{if(++calls===1){started.resolve();return response.promise;}return json({profile:{displayName:'Retried'}});}});
  f.host.open=()=>assert.fail('Scan must not open a window');
- const controller=new AbortController(),showQR=()=>{};
+ const controller=new AbortController(),onAuthorizationUrl=()=>{};
  try{
-  const pending=assert.rejects(f.client.login({showQR,signal:controller.signal}),/取消/);
+  const pending=assert.rejects(f.client.login({onAuthorizationUrl,signal:controller.signal}),/取消/);
   await started.promise;controller.abort();await pending;
   response.resolve(json({profile:{displayName:'Late'}}));
   assert.equal(f.client.getIdentity(),null);assert.ok(f.changes.every(x=>x===null));
-  assert.equal((await f.client.login({showQR})).profile.displayName,'Retried');
+  assert.equal((await f.client.login({onAuthorizationUrl})).profile.displayName,'Retried');
  }finally{f.client.dispose();}
 });
 test('poll timeout and teardown stop future requests without resurrecting identity',async()=>{
