@@ -1,6 +1,6 @@
 import {validateExtensionAPIDeclaration, assertExtensionRuntimeCompatibility} from './extension-runtime.js';
 import {applyScriptUpdate} from './script-update-fields.js';
-import {compareSemVer} from './hub-update-check.js';
+import {compareSemVer, requestPublicGitHubRelease} from './hub-update-check.js';
 import {registryBaseURL} from './registry-client.js';
 
 // Downloaded scripts are never evaluated by this module. Only the host starts
@@ -196,9 +196,13 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
   async function publicBytes(url, {limit, size, binary = false, signal, relayContext, progress = () => {}}) {
     let response, relayBase = '', relayURL = '';
     const direct = async directSignal => {
-      const response = await request(url, {method: 'GET', headers: {Accept: binary ? 'application/octet-stream' : 'application/vnd.github+json'}, mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', redirect: binary ? 'follow' : 'error', cache: 'no-store', signal: directSignal});
+      const init = {method: 'GET', headers: {Accept: binary ? 'application/octet-stream' : 'application/vnd.github+json'}, mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', redirect: binary ? 'follow' : 'error', cache: 'no-store', signal: directSignal};
+      const base = binary ? '' : registryBaseURL(getRegistryBaseURL());
+      const response = binary ? await request(url, init) : await requestPublicGitHubRelease(request,url,init,base);
       directSignal.throwIfAborted();
-      return readPublicResponse(response, {limit, size, binary, signal: directSignal, progress});
+      const bytes = await readPublicResponse(response, {limit, size, binary, signal: directSignal, progress});
+      if (!binary && registryBaseURL(getRegistryBaseURL()) !== base) throw extensionPackageError('cancelled', '在线服务已切换，请重新预览项目。');
+      return bytes;
     };
     try {
       // Bound the complete direct transfer, including a stalled response body.
@@ -345,7 +349,7 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
     for (let page = 1; page <= 10; page++) {
       const releases = await query(repo.api + '/releases?per_page=100&page=' + page, signal);
       if (!Array.isArray(releases)) throw extensionPackageError('release', 'GitHub Release 列表格式异常。');
-      for (const release of releases) if (extensionObject(release) && release.draft === false && Number.isSafeInteger(release.id) && release.id > 0 && Array.isArray(release.assets)
+      for (const release of releases) if (extensionObject(release) && release.draft === false && Number.isSafeInteger(release.id) && release.id > 0
         && typeof release.tag_name === 'string' && release.tag_name.startsWith('v') && extensionVersion(release.tag_name.slice(1))
         && (!highest || compareSemVer(release.tag_name.slice(1), highest.tag_name.slice(1)) > 0)) highest = release;
       if (releases.length < 100) break;

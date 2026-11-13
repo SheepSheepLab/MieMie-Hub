@@ -1,7 +1,7 @@
 import {HUB_PRODUCT} from './product-identity.js';
 import {updatedScriptName} from './script-update-fields.js';
 import {registryBaseURL} from './registry-client.js';
-import {compareSemVer} from './hub-update-check.js';
+import {compareSemVer, requestPublicGitHubRelease} from './hub-update-check.js';
 import {parseHubBuildIdentity} from './hub-script-host.js';
 
 // Only public release bytes leave/enter this transport. Host credentials and
@@ -143,11 +143,12 @@ export async function validateHubUpdatePackage(bytes, metadata, crypto = globalT
   return script;
 }
 
-async function hubUpdatePublicBytes(request, url, {signal, limit, size, binary = false, relay}) {
+async function hubUpdatePublicBytes(request, url, {signal, limit, size, binary = false, relay, registryBase = ''}) {
   let response, relayed = false;
   try {
-    response = await request(url, {method: 'GET', headers: {Accept: binary ? 'application/octet-stream' : 'application/vnd.github+json'},
-      mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', redirect: binary ? 'follow' : 'error', signal});
+    const init = {method: 'GET', headers: {Accept: binary ? 'application/octet-stream' : 'application/vnd.github+json'},
+      mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', redirect: binary ? 'follow' : 'error', signal};
+    response = binary ? await request(url,init) : await requestPublicGitHubRelease(request,url,init,registryBase);
   } catch (error) {
     signal.throwIfAborted();
     if (!binary || !relay?.base) throw hubUpdateFail('download', '无法读取 GitHub 更新文件（网络或 CORS 限制），且安全下载服务不可用；未安装更新，可手动下载官方 Release。');
@@ -265,10 +266,11 @@ export function createHubSelfUpdater({currentVersion, host, storage, backup, rea
     storage.removeItem(HUB_UPDATE_PENDING_KEY);
     if (storage.getItem(HUB_UPDATE_PENDING_KEY) !== null) throw hubUpdateFail('storage', '更新交接记录未能清除，请重新确认保存状态。');
   }
-  async function getRelease(target, signal) {
+  async function getRelease(target, signal, base) {
     return hubUpdateDeadline(async stageSignal => {
       const bytes = await hubUpdatePublicBytes(request, HUB_UPDATE_REPOSITORY_API + '/releases/' + target.releaseId,
-        {signal: stageSignal, limit: HUB_UPDATE_METADATA_LIMIT});
+        {signal: stageSignal, limit: HUB_UPDATE_METADATA_LIMIT, registryBase:base});
+      if (registryBaseURL(getRegistryBaseURL()) !== base) throw hubUpdateFail('cancelled', '下载服务已切换，请重新检查更新。');
       return validateHubUpdateRelease(hubUpdateParseJSON(bytes), target);
     }, metadataTimeoutMs, signal);
   }
@@ -291,7 +293,7 @@ export function createHubSelfUpdater({currentVersion, host, storage, backup, rea
     // Feature checks and old-content digest happen before requesting any bytes.
     const previousContentSha256 = await hashHubUpdateBytes(new TextEncoder().encode(snapshot.content), crypto);
     signal.throwIfAborted();
-    const release = await getRelease(target, signal);
+    const release = await getRelease(target, signal, registryBase);
     publish({status: 'downloading'});
     const metadataBytes = await download(release.metadata, HUB_UPDATE_METADATA_LIMIT, metadataTimeoutMs, signal, release.releaseId, registryBase);
     const metadata = validateHubUpdateMetadata(hubUpdateParseJSON(metadataBytes), release);
@@ -299,7 +301,7 @@ export function createHubSelfUpdater({currentVersion, host, storage, backup, rea
     publish({status: 'verifying'});
     const script = await validateHubUpdatePackage(bytes, metadata, crypto);
     signal.throwIfAborted();
-    const checked = await getRelease(target, signal);
+    const checked = await getRelease(target, signal, registryBase);
     if (JSON.stringify(checked) !== JSON.stringify(release)) throw hubUpdateFail('release-changed', '下载期间 Release 或附件发生变化，请重新检查更新。');
     signal.throwIfAborted();
     if (typeof backup !== 'function') throw hubUpdateFail('backup', '无法准备旧 Hub 恢复文件；未安装更新。');
