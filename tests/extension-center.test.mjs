@@ -10,12 +10,13 @@ function openCatalogDetails(f,id){
 }
 const github={id:'dev-github',name:'Development Fixture <script>',description:'Test Data',author:'Fixture Author',sourceType:'github',sourceUrl:'https://github.com/example/extension',submitter:{displayName:'Development Submitter',avatarUrl:null},github:{compatibility:'installable',manifest:{id:'fixture.package'}},status:'listed',moderation:'visible'};
 const discord={...github,id:'dev-discord',sourceType:'discord',sourceUrl:'https://discord.com/channels/111111111111111111/222222222222222222',github:null};
-function fixture(t,{identity=null,request,defaultBase='',storedBase='https://registry.example',nativeEntries,exportDiagnostics}={}){
+function fixture(t,{identity=null,request,defaultBase='',storedBase='https://registry.example',nativeEntries,exportDiagnostics,configureHost}={}){
  const dom=new JSDOM('<header id="account"></header><div id="body"></div>',{url:'https://tavern.example'}),host=dom.window,body=host.document.querySelector('#body');if(storedBase!==null)host.localStorage.setItem('miemie_registry_url_v1',storedBase);
  const calls=[],listeners=new Set();const notify=()=>{for(const listener of listeners)listener(who);};let base=defaultBase,who=identity,records=[{manifest:{id:'fixture.background',name:'Background Development Fixture',version:'1.0.0'},enabled:true,launcherAvailable:false,state:'enabled'}];
  const registry={setBase(v){if(base!==v){base=v;notify();}},getBase:()=>base,getDefaultBase:()=>defaultBase,getIdentity:()=>who,subscribe(listener){listeners.add(listener);return()=>listeners.delete(listener);},setIdentity(value){who=value;notify();},async login(){who={profile:{displayName:'Development Submitter'}};notify();},async logout(){who=null;notify();},dispose(){calls.push('registry.dispose');},async api(path,options){calls.push({path,options});if(request)return request(path,options);if(path.startsWith('/api/catalog'))return {items:[github,discord],hasMore:false};if(path.startsWith('/api/github/preview'))return {compatibility:'installable'};if(path==='/api/submissions'&&!options?.method)return {items:[github]};return {ok:true};}};
  const runtime={list:()=>records,get:id=>records.find(x=>x.manifest.id===id),open:async id=>{calls.push('open:'+id);return {ok:true};},disable:async id=>{records.find(x=>x.manifest.id===id).enabled=false;},enable:async id=>{records.find(x=>x.manifest.id===id).enabled=true;},uninstall:async id=>{records=records.filter(x=>x.manifest.id!==id);}};
  const packages={exportDiagnostics,async listInstalled(){return [];},async inspect(url){calls.push('inspect:'+url);return {installable:true,id:'fixture.package',manifest:{name:'Development Fixture'},version:'1.0.1'};},async install(candidate){calls.push('install:'+candidate.id);},dispose(){calls.push('packages.dispose');}};
+ configureHost?.(host);
  const account=host.document.querySelector('#account');const center=createExtensionCenter({host,body,accountContainer:account,runtime,nativeEntries,sources:{list:()=>[],register:async()=>{}},packages,registry});
  t.after(()=>{center.dispose();dom.window.close();});
  async function click(text){const b=[...host.document.querySelectorAll('button')].find(x=>x.textContent===text);assert.ok(b,text);b.click();await tick();await tick();}
@@ -99,7 +100,7 @@ test('Discord login opens a single disclosure and scan cancellation restores the
  f.registry.login=async options=>{
   attempts.push(options);
   ({signal}=options);
-  options.showQR('https://registry.example/api/auth/authorize?requestId='+'r'.repeat(43));
+  options.onAuthorizationUrl('https://registry.example/api/auth/authorize?requestId='+'r'.repeat(43));
   await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));
  };
  const trigger=f.account.querySelector('[data-action="registry:login"]');
@@ -125,18 +126,74 @@ test('failed scan can request a fresh QR without reopening the login menu',async
  f.host.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
  f.host.HTMLDialogElement.prototype.close=function(){this.open=false;};
  let attempts=0;
- f.registry.login=async ({showQR,signal})=>{
+ f.registry.login=async ({onAuthorizationUrl,signal})=>{
   if(++attempts===1)throw Error('请求已过期');
-  showQR('https://registry.example/api/auth/authorize?requestId='+'s'.repeat(43));
+  onAuthorizationUrl('https://registry.example/api/auth/authorize?requestId='+'s'.repeat(43));
   await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));
  };
  await f.click('Discord 登录');await f.click('扫码登录');
  const dialog=f.body.querySelector('dialog[open]');
- assert.equal(dialog.dataset.qrState,'error');assert.match(dialog.textContent,/请求已过期/);
+ assert.equal(dialog.dataset.authState,'error');assert.match(dialog.textContent,/请求已过期/);
  await f.click('重新扫码');
- assert.equal(attempts,2);assert.equal(dialog.dataset.qrState,'waiting');
+ assert.equal(attempts,2);assert.equal(dialog.dataset.authState,'waiting');
  assert.ok(dialog.querySelector('.mm-auth-qr-image'));
  assert.equal([...dialog.querySelectorAll('button')].find(b=>b.textContent==='重新扫码').hidden,true);
+});
+test('authorization link copies in either control and selects the URL if clipboard access fails',async t=>{
+ const copied=[],url='https://registry.example/api/auth/authorize?requestId='+'r'.repeat(43);
+ let blocked=false;
+ const f=fixture(t,{configureHost(host){
+  Object.defineProperty(host.navigator,'clipboard',{value:{async writeText(value){if(blocked)throw Error('blocked');copied.push(value);}}});
+ }});
+ f.host.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+ f.host.HTMLDialogElement.prototype.close=function(){this.open=false;};
+ let signal;
+ f.registry.login=async options=>{
+  ({signal}=options);options.onAuthorizationUrl(url);
+  await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));
+ };
+ await f.center.activate('mine');await f.click('Discord 登录');
+ assert.deepEqual([...f.account.querySelectorAll('.mm-auth-menu button')].map(x=>x.textContent),['授权窗口登录','授权链接','扫码登录']);
+ await f.click('授权链接');
+ const dialog=f.body.querySelector('dialog[open]'),field=dialog.querySelector('input');
+ assert.equal(field.value,url);assert.ok(field.readOnly);
+ field.click();await tick();
+ assert.equal(dialog.querySelector('.mm-auth-copy button').textContent,'已复制');
+ dialog.querySelector('.mm-auth-copy button').click();await tick();
+ assert.deepEqual(copied,[url,url]);
+ blocked=true;
+ dialog.querySelector('.mm-auth-copy button').click();await tick();
+ assert.equal(f.host.document.activeElement,field);assert.equal(field.selectionStart,0);assert.equal(field.selectionEnd,url.length);
+ assert.match(dialog.textContent,/请手动复制/);
+ assert.ok(f.center.back());assert.ok(signal.aborted);
+});
+test('TT uses its native opener only after preparation and keeps the same link when opening fails',async t=>{
+ const url='https://registry.example/api/auth/authorize?requestId='+'r'.repeat(43),opened=[];
+ const f=fixture(t,{configureHost(host){
+  host.__TAURITAVERN_HOST__={platform:'macos',kind:'desktop'};
+  host.__TAURI__={core:{async invoke(...args){opened.push(args);throw Error('Unavailable');}}};
+  host.__TAURI_INTERNALS__={invoke(){}};
+ }});
+ f.host.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+ f.host.HTMLDialogElement.prototype.close=function(){this.open=false;};
+ let prepared,finish;
+ f.registry.login=async ({onAuthorizationUrl})=>{
+  await new Promise(resolve=>{prepared=resolve;});
+  onAuthorizationUrl(url);
+  await new Promise(resolve=>{finish=resolve;});
+  f.registry.setIdentity({profile:{displayName:'Authorized Fixture'}});
+ };
+ await f.center.activate('mine');await f.click('Discord 登录');
+ assert.deepEqual([...f.account.querySelectorAll('.mm-auth-menu button')].map(x=>x.textContent),['在默认浏览器中授权','授权链接','扫码登录']);
+ await f.click('在默认浏览器中授权');assert.deepEqual(opened,[]);
+ prepared();await tick();
+ assert.deepEqual(opened,[['plugin:opener|open_url',{url}]]);
+ const dialog=f.body.querySelector('dialog[open]');
+ assert.match(dialog.textContent,/默认浏览器未能打开/);
+ assert.equal(dialog.querySelector('input').value,url);
+ finish();await tick();
+ assert.match(f.account.textContent,/Authorized Fixture/);
+ assert.equal(dialog.dataset.authState,'success');assert.equal(dialog.querySelector('input'),null);
 });
 test('existing local override is retained without exposing a center configuration form',async t=>{
  const f=fixture(t,{defaultBase:'https://official-registry.example',storedBase:'http://127.0.0.1:8787'});await f.center.activate('mine');assert.equal(f.registry.getBase(),'http://127.0.0.1:8787');assert.equal(f.body.querySelector('input'),null);
