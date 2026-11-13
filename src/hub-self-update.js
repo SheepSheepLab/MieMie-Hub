@@ -195,6 +195,12 @@ export function createHubSavedScriptReader({fetch: request, origin, getRequestHe
       method: 'POST', headers: getRequestHeaders(), body: '{}', credentials: 'same-origin',
       redirect: 'error', cache: 'no-store', signal,
     });
+    if (response?.status === 401 || response?.status === 403) {
+      throw hubUpdateFail('host-session', '酒馆拒绝读取保存状态（HTTP ' + response.status + '）。请先备份未保存的编辑，刷新酒馆页面后重新检查更新。');
+    }
+    if (!response?.ok) {
+      throw hubUpdateFail('persistence', '无法读取酒馆保存状态' + (response?.status ? '（HTTP ' + response.status + '）' : '') + '，尚未确认更新已保存。');
+    }
     const payload = hubUpdateParseJSON(await hubUpdateReadBytes(response, 64 * 1024 * 1024, signal));
     let settings;
     try { settings = JSON.parse(payload.settings); } catch (_) {throw hubUpdateFail('persistence', '无法读取宿主保存结果。');}
@@ -303,6 +309,13 @@ export function createHubSelfUpdater({currentVersion, host, storage, backup, rea
     signal.throwIfAborted();
     const checked = await getRelease(target, signal, registryBase);
     if (JSON.stringify(checked) !== JSON.stringify(release)) throw hubUpdateFail('release-changed', '下载期间 Release 或附件发生变化，请重新检查更新。');
+    // Tavern's settings writer uses this same page session. Check it before
+    // the Helper can reload with code that the host would reject on save.
+    if (typeof readSavedScript !== 'function') throw hubUpdateFail('persistence', '宿主保存核验接口不可用，未写入更新。');
+    const saved = await hubUpdateDeadline(stageSignal => readSavedScript(snapshot.id, stageSignal), confirmationTimeoutMs, signal);
+    if (saved?.id !== snapshot.id || saved.content !== snapshot.content || saved.name !== snapshot.script.name) {
+      throw hubUpdateFail('persistence', '当前 Hub 与酒馆已保存的脚本不一致。请核对并保存脚本后重试，未写入更新。');
+    }
     signal.throwIfAborted();
     if (typeof backup !== 'function') throw hubUpdateFail('backup', '无法准备旧 Hub 恢复文件；未安装更新。');
     await backup(snapshot.script, currentVersion);
