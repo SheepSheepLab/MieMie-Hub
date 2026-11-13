@@ -1,3 +1,5 @@
+import {registryBaseURL} from './registry-client.js';
+
 // Public Hub release metadata only. No host data, credentials or asset downloads.
 export const HUB_RELEASES_API = 'https://api.github.com/repos/SheepSheepLab/MieMie-Hub/releases';
 export const HUB_UPDATE_TIMEOUT_MS = 15000;
@@ -38,6 +40,40 @@ export function compareSemVer(left, right) {
 
 function failure(code, message) { return Object.assign(Error(message), {code, hubUpdateError: true}); }
 
+export async function requestPublicGitHubRelease(request, url, init, registryBase) {
+  const base = registryBaseURL(registryBase);
+  if (!base) return request(url, init);
+  const github = new URL(url);
+  if (github.origin !== 'https://api.github.com' || github.username || github.password || github.hash ||
+      !github.pathname.startsWith('/repos/')) {
+    throw failure('release-route', 'GitHub Release 查询地址无效。');
+  }
+  const endpoint = base + '/api/github' + github.pathname + github.search;
+  const {signal} = init;
+  const direct = new AbortController();
+  signal?.throwIfAborted();
+  let interrupt;
+  const interrupted = new Promise((_, reject) => {
+    interrupt = () => {direct.abort();reject(Error('GitHub direct request interrupted'));};
+  });
+  signal?.addEventListener('abort', interrupt, {once:true});
+  const timer = setTimeout(interrupt, 3500);
+  try {
+    const response = await Promise.race([request(url, {...init, signal:direct.signal}), interrupted]);
+    if (response?.status !== 429 && !(response?.status === 403 && response.headers?.get('x-ratelimit-remaining') === '0')) return response;
+    void response.body?.cancel().catch(() => {});
+  } catch (_) {
+    signal?.throwIfAborted();
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', interrupt);
+  }
+  signal?.throwIfAborted();
+  const response = await request(endpoint, {...init, headers:{Accept:'application/json'}, credentials:'omit', redirect:'error'});
+  if (response?.url !== endpoint || response.redirected) throw failure('release-route', '在线服务返回了意外的 Release 地址。');
+  return response;
+}
+
 export function selectLatestRelease(releases) {
   if (!Array.isArray(releases)) throw failure('invalid-data', 'GitHub 返回的数据格式异常，请稍后重试。');
   let latest = null;
@@ -51,21 +87,23 @@ export function selectLatestRelease(releases) {
 }
 
 export function createHubUpdateChecker({currentVersion, fetch: request = (...args) => globalThis.fetch(...args),
-  timeoutMs = HUB_UPDATE_TIMEOUT_MS, onChange = () => {}}) {
+  timeoutMs = HUB_UPDATE_TIMEOUT_MS, getRegistryBaseURL = () => '', onChange = () => {}}) {
   let state = {status: 'unchecked', latestVersion: null, error: ''}, pending = null, disposed = false;
   const current = parseSemVer(currentVersion);
   function publish(next) { state = next; onChange({...state}); return {...state}; }
   async function query(signal) {
     if (!current) throw failure('invalid-version', '当前 Hub 版本格式异常。');
+    const base = getRegistryBaseURL();
     let latest = null;
     for (let page = 1; page <= MAX_RELEASE_PAGES; page++) {
       signal.throwIfAborted();
       // Build every page URL locally; never follow response URLs or redirects.
-      const response = await request(HUB_RELEASES_API + '?per_page=' + RELEASE_PAGE_SIZE + '&page=' + page, {
+      const response = await requestPublicGitHubRelease(request, HUB_RELEASES_API + '?per_page=' + RELEASE_PAGE_SIZE + '&page=' + page, {
         method: 'GET', headers: {Accept: 'application/vnd.github+json'},
         credentials: 'omit', referrerPolicy: 'no-referrer', mode: 'cors', redirect: 'error', cache: 'no-store', signal,
-      });
+      }, base);
       signal.throwIfAborted();
+      if (getRegistryBaseURL() !== base) throw failure('release-route', '在线服务已切换，请重新检查。');
       if (!response || typeof response.ok !== 'boolean' || typeof response.json !== 'function') throw failure('invalid-data', 'GitHub 返回的数据格式异常，请稍后重试。');
       if (!response.ok) throw failure('http', 'GitHub API 返回 HTTP ' + response.status + '，请稍后重试。');
       let releases;

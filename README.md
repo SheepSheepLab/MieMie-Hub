@@ -2,7 +2,7 @@
 
 咩咩Hub 是咩咩（MieMie）开源软件与社区生态的官方项目。生态由 SheepSheep 发起和创建（Founder / 创始人）；SheepSheepLab 是官方 GitHub 开发、维护与发布命名空间，官方项目主要通过该命名空间维护和发布，并欢迎社区贡献者共同参与。
 
-本仓库源码对应 **1.0.0**。安装或升级请使用 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 中正式发布的完整包。
+本仓库源码对应 **1.0.1**。安装或升级请使用 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 中正式发布的完整包。
 
 当前契约为 Extension API v2：统一 Native Window、严格 Surface Lease。Core 负责 Runtime、Package 安全及 Self Update；扩展中心和设置为 System Modules。Bundled Timeline 使用 API2，随 Hub 打包并通过 Launcher 打开。
 
@@ -53,8 +53,8 @@ MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL="$OFFICIAL_REGISTRY_HTT
 输出：
 
 ```text
-build/MieMie-Hub-1.0.0.json
-build/咩咩Hub-1.0.0.json
+build/MieMie-Hub-1.0.1.json
+build/咩咩Hub-1.0.1.json
 build/MieMie-Hub-update.json
 build/miemie-hub.js
 ```

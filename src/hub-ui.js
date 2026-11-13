@@ -138,7 +138,7 @@ export function createHubUI(host, shell, assets, runtime, localSources, hubVersi
   const checkUpdateButton = doc.createElement('button'); checkUpdateButton.type = 'button'; checkUpdateButton.className = 'mm-system-action';
   checkUpdateButton.dataset.hubAction = 'check-updates'; checkUpdateButton.textContent = '检查更新'; checkUpdateButton.onclick = checkHubUpdate;
   // Use the helper iframe's fetch, keeping this request separate from host / Extension hooks.
-  const updateChecker = createHubUpdateChecker({currentVersion: hubVersion, onChange: renderUpdateState});
+  const updateChecker = createHubUpdateChecker({currentVersion: hubVersion, getRegistryBaseURL: () => ecosystemOptions?.registry?.getBase?.() || '', onChange: renderUpdateState});
   const installButton = doc.createElement('button'); installButton.type = 'button'; installButton.className = 'mm-system-action';
   installButton.dataset.hubAction = 'update'; installButton.textContent = '更新';
   installButton.onclick = () => {if (!disposed && updateState.status === 'available') void selfUpdater?.start(updateState.targetRelease);};

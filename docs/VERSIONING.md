@@ -14,7 +14,7 @@ Git Tag 使用 `v<version>`。GitHub 的 **Pre-release 是发布状态**，不�
 
 | 字段 | 当前值／规则 |
 | --- | --- |
-| Hub 产品版本 | 1.0.0 |
+| Hub 产品版本 | 1.0.1 |
 | Extension API | 2，Runtime 契约 |
 | Manifest schemaVersion | 1，apiVersion 单独声明 |
 | Managed Package / Machine Metadata Schema | 1，机器安装契约 |

@@ -394,12 +394,29 @@ test('relay timeout and teardown cancel pending byte transfers with no late inst
 });
 
 test('direct successful downloads do not contact Registry and HTTP or digest failures are not rescued by relay', async t => {
-  let reads = 0;
-  const sys = setup(t, fixture(), {manager: {getRegistryBaseURL() {reads++; return RELAY;}}});
-  await sys.manager.inspect(REPO); assert.equal(reads, 0);
-  let rejected;
-  rejected = setup(t, fixture(), {manager: {getRegistryBaseURL() {reads++; return RELAY;}}, fetch: async (url, init) => url.includes('/releases/assets/') ? response(encode('forbidden'), url, 403) : rejected.baseRequest(url, init)});
-  await assert.rejects(rejected.manager.inspect(REPO), code('http')); assert.equal(reads, 0); assert.equal(rejected.writes(), 0);
+  for (const scenario of ['success', 'http', 'digest']) {
+    const contacted = [];
+    const source = fixture();
+    const alteredMetadata = source.metadataBytes.slice();
+    alteredMetadata[0] ^= 1;
+    const sys = setup(t, source, {
+      manager: {getRegistryBaseURL: () => RELAY},
+      fetch: async (url, init) => {
+        contacted.push(new URL(url).origin);
+        if (url.endsWith('/releases/assets/302')) {
+          if (scenario === 'http') return response(encode('forbidden'), url, 403);
+          if (scenario === 'digest') return response(alteredMetadata, url);
+        }
+        return sys.baseRequest(url, init);
+      },
+    });
+    const inspect = sys.manager.inspect(REPO);
+    if (scenario === 'success') await inspect;
+    else await assert.rejects(inspect, code(scenario === 'http' ? 'http' : 'hash'));
+    assert.ok(contacted.length > 0);
+    assert.ok(contacted.every(origin => origin === 'https://api.github.com'));
+    assert.equal(sys.writes(), 0);
+  }
 });
 
 

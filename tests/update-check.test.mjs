@@ -75,6 +75,29 @@ test('all pages participate in selection, using only locally constructed GitHub 
   assert.equal(calls[0][1].signal, calls[1][1].signal);
 });
 
+test('blocked GitHub release discovery falls back to a credential-free Registry query', async t => {
+  const base = 'https://registry.example.org';
+  const {checker,calls} = setup(t, async url => {
+    if (url.startsWith('https://api.github.com/')) throw TypeError('direct connection unavailable');
+    return {url,...response([release('v1.0.0',{id:12})])};
+  },{getRegistryBaseURL:()=>base});
+  assert.deepEqual((await checker.check()).targetRelease,{releaseId:12,version:'1.0.0',tag:'v1.0.0'});
+  assert.equal(calls.length,2);
+  assert.equal(calls[1][0],base+'/api/github/repos/SheepSheepLab/MieMie-Hub/releases?per_page=100&page=1');
+  assert.equal(calls[1][1].credentials,'omit');
+  assert.equal(calls[1][1].redirect,'error');
+  assert.deepEqual(calls[1][1].headers,{Accept:'application/json'});
+});
+
+test('Registry discovery refuses an unexpected response URL', async t => {
+  const {checker} = setup(t, async url => {
+    if (url.startsWith('https://api.github.com/')) throw TypeError('direct connection unavailable');
+    return {url:'https://elsewhere.example/',...response([release('v1.0.0',{id:12})])};
+  },{getRegistryBaseURL:()=> 'https://registry.example.org'});
+  assert.equal((await checker.check()).status,'failed');
+  assert.match(checker.getState().error,/意外的 Release 地址/);
+});
+
 const failures = [
   ['HTTP 403', async () => ({ok: false, status: 403, json() {throw Error('must not read error body');}}), /HTTP 403/],
   ['HTTP 500', async () => ({ok: false, status: 500, json() {throw Error('must not read error body');}}), /HTTP 500/],
