@@ -72,6 +72,7 @@ function system(t, data, options = {}) {
   };
   const updaterOptions = {currentVersion: '0.2.1', host: createHubScriptHost(hostOptions), storage,
     backup: async (script, version) => {backups.push({script: clone(script), version});},
+    readSavedScript: async id => clone(trees.find(script => script.id === id) ?? null),
     fetch: request, crypto: webcrypto, metadataTimeoutMs: 200, assetTimeoutMs: 200,
     confirmationTimeoutMs: 100, confirmationIntervalMs: 1, now: () => 1700000000000,
     ...options.updater};
@@ -439,6 +440,26 @@ test('saved-script reader is same-origin, read-only, and extracts only the exact
   assert.equal(await reader('missing', signal), null);
   settings.extension_settings.tavern_helper.script.scripts.push(installedScript());
   await assert.rejects(reader('actual-installed-id', signal), hasCode('persistence'));
+});
+
+test('rejected or inconsistent Tavern readback blocks self-update before backup, handoff and write', async t => {
+  const data = await fixture();
+  const reader = createHubSavedScriptReader({origin: 'https://tavern.example',
+    getRequestHeaders: () => ({'X-CSRF-Token': 'stale-fixture-token'}),
+    fetch: async () => new Response('private host error', {status: 403})});
+  for (const [readSavedScript, message] of [
+    [reader, /酒馆拒绝读取保存状态（HTTP 403）。.*刷新酒馆页面/],
+    [async () => installedScript({content: buildContent('0.2.0')}), /已保存的脚本不一致/],
+    [undefined, /保存核验接口不可用/],
+  ]) {
+    const sys = system(t, data, {updater: {readSavedScript}});
+    const result = await sys.updater.start(target());
+    assert.equal(result.status, 'failed');
+    assert.match(result.error, message);
+    assert.equal(sys.writes(), 0);
+    assert.equal(sys.backups.length, 0);
+    assert.equal(sys.storage.getItem(HUB_UPDATE_PENDING_KEY), null);
+  }
 });
 
 test('CORS fallback installs verified Hub content through fixed-ID anonymous Registry request', async t => {

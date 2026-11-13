@@ -123,8 +123,9 @@ async function fixture(t, mode = 'success') {
     }
     if (url === repo + '/releases/assets/902') return response(update.bytes, url);
     if (url === host.location.origin + '/api/settings/get') {
-      savedReads++;
-      const savedTrees = savedReads === 1 ? initialTrees : diskTrees;
+      if (mode === 'expired-session') return new Response('Forbidden', {status: 403});
+      if (writes) savedReads++;
+      const savedTrees = savedReads <= 1 ? initialTrees : diskTrees;
       const settings = {extension_settings: {tavern_helper: {script: {scripts: savedTrees}}}};
       return response(encode({settings: JSON.stringify(settings)}), url);
     }
@@ -245,6 +246,16 @@ test('built Hub UI reports CORS failure without backup, write or iframe reload',
   assert.equal(f.writes(), 0); assert.equal(f.reloads(), 0); assert.equal(f.downloads.length, 0);
   assert.deepEqual(f.readTrees(), f.initialTrees);
   assert.equal(f.host.__MieMieHub.version, currentVersion);
+});
+
+test('built Hub UI explains a rejected host session without restarting or rewriting Hub', async t => {
+  const f = await fixture(t, 'expired-session'); await f.discover();
+  f.query('[data-hub-action="update"]').click();
+  await until(() => f.query('[data-hub-update-status]').dataset.hubUpdateStatus === 'failed', 'host rejection not displayed');
+  assert.match(f.query('[data-hub-update-error]').textContent, /酒馆拒绝读取保存状态（HTTP 403）。.*刷新酒馆页面/);
+  assert.equal(f.writes(), 0); assert.equal(f.reloads(), 0); assert.equal(f.downloads.length, 0);
+  assert.deepEqual(f.readTrees(), f.initialTrees);
+  assert.equal(f.host.sessionStorage.getItem('miemie_hub_update_pending_v1'), null);
 });
 
 test('built Hub UI rejects a non-global instance before any update download', async t => {

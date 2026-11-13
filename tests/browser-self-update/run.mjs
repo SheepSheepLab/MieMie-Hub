@@ -55,6 +55,7 @@ try {
       const saved=structuredClone(trees),storage=new Map();
       const updater=createHubSelfUpdater({currentVersion:'0.5.1',host:createHubScriptHost({currentVersion:'0.5.1',getScriptId:()=> 'installed-instance',getScriptTrees:()=>structuredClone(trees),updateScriptTreesWith:fn=>{trees=fn(structuredClone(trees));writes++;return structuredClone(trees);}}),
         storage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},backup:()=>{},getRegistryBaseURL:()=>service,
+        readSavedScript:async id=>saved.find(script=>script.id===id)??null,
         metadataTimeoutMs:timeout,assetTimeoutMs:timeout,fetch:(url,init)=>fetch(url.startsWith(base)?upstream+new URL(url).pathname:url,init)});
       const operation=updater.start({releaseId:20,tag:'v0.5.2',version:'0.5.2'});
       if(dispose)setTimeout(()=>updater.dispose(),20);
