@@ -1,6 +1,6 @@
 import {validateExtensionAPIDeclaration, assertExtensionRuntimeCompatibility} from './extension-runtime.js';
 import {applyScriptUpdate} from './script-update-fields.js';
-import {compareSemVer, requestPublicGitHubRelease} from './hub-update-check.js';
+import {compareSemVer, isGitHubAccessDenied, isGitHubAssetResponseURL, requestPublicGitHubRelease} from './hub-update-check.js';
 import {registryBaseURL} from './registry-client.js';
 
 // Downloaded scripts are never evaluated by this module. Only the host starts
@@ -200,6 +200,10 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
       const base = binary ? '' : registryBaseURL(getRegistryBaseURL());
       const response = binary ? await request(url, init) : await requestPublicGitHubRelease(request,url,init,base);
       directSignal.throwIfAborted();
+      if (binary && relayContext && registryBaseURL(getRegistryBaseURL()) && isGitHubAccessDenied(response) && isGitHubAssetResponseURL(response.url)) {
+        void response.body?.cancel().catch(() => {});
+        throw extensionPackageError('github-access', 'GitHub 拒绝读取公开附件，正在切换安全下载服务。');
+      }
       const bytes = await readPublicResponse(response, {limit, size, binary, signal: directSignal, progress});
       if (!binary && registryBaseURL(getRegistryBaseURL()) !== base) throw extensionPackageError('cancelled', '在线服务已切换，请重新预览项目。');
       return bytes;
@@ -210,8 +214,9 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
       return await (binary && relayContext ? deadline(direct, directAttemptTimeoutMs, signal, 'GitHub 直连停滞，正在切换安全下载服务。') : direct(signal));
     } catch (error) {
       signal.throwIfAborted();
-      // HTTP, redirect, size and validation failures are never rescued by relay.
-      if (error?.code && error.code !== 'timeout') throw error;
+      // An upstream access rejection can use the same verified asset relay.
+      // Other HTTP responses and all validation failures remain terminal.
+      if (error?.code && error.code !== 'timeout' && error.code !== 'github-access') throw error;
       if (binary && relayContext) progress('relaying');
       if (!binary || !relayContext) throw extensionPackageError('download', '无法读取作者 GitHub Release 信息，请检查网络后重试；未安装扩展。');
       // GitHub's final Release CDN may omit CORS headers. The configured Registry
@@ -240,6 +245,7 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
   async function readPublicResponse(response, {limit, size, binary, signal, relayBase = '', relayURL = '', progress = () => {}, onBodyStarted = () => {}, onBytes = () => {}}) {
     signal.throwIfAborted();
     if (relayBase && (response?.url !== relayURL || response.redirected)) throw extensionPackageError('redirect', '安全下载响应地址发生变化，已拒绝安装。');
+    if (!relayBase && binary && response?.url && !isGitHubAssetResponseURL(response.url)) throw extensionPackageError('redirect', '附件跳转到不受支持的地址。');
     if (relayBase && !response?.ok && !['opaque', 'opaqueredirect'].includes(response?.type)) {
       // Only consume a bounded structured error. Never show arbitrary upstream
       // HTML/body text (which may contain IPs or internal service details).
@@ -265,9 +271,8 @@ export function createExtensionPackageManager({getScriptTrees, updateScriptTrees
       (relayBase ? '安全下载服务暂不可用，请稍后重试' : 'GitHub 请求失败') + (response?.status ? '（HTTP ' + response.status + '）' : '') + '；未安装扩展。');
     if (relayBase) {
       if (response.url !== relayURL || response.redirected) throw extensionPackageError('redirect', '安全下载响应地址发生变化，已拒绝安装。');
-    } else if (binary) {
-      let final; try {final = new URL(response.url);} catch {}
-      if (!final || final.protocol !== 'https:' || final.username || final.password || final.port || !['api.github.com', 'github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'].includes(final.hostname)) throw extensionPackageError('redirect', '附件跳转到不受支持的地址。');
+    } else if (binary && !isGitHubAssetResponseURL(response.url)) {
+      throw extensionPackageError('redirect', '附件跳转到不受支持的地址。');
     }
     const length = response.headers?.get('content-length');
     if (length && (!/^\d+$/.test(length) || Number(length) > limit)) throw extensionPackageError('size', 'GitHub 响应超过大小限制。');

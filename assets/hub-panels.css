@@ -214,12 +214,29 @@
 #miemie-hub-shell .mm-auth-frame:has(.mm-auth-copy){width:100%}
 #miemie-hub-shell [data-auth-method=browser][data-auth-state=waiting] .mm-auth-frame:empty,#miemie-hub-shell [data-auth-state=error] .mm-auth-frame{display:none}
 #miemie-hub-shell [data-auth-state=error] .mm-auth-status{color:var(--mie-error);overflow-wrap:anywhere}
-#miemie-hub-shell .mm-auth-copy{box-sizing:border-box;width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px;padding:4px;border:1px solid var(--mie-border);border-radius:var(--mie-radius-control);background:var(--mie-bg);animation:mm-auth-reveal 180ms ease-out both}
-#miemie-hub-shell .mm-auth-copy input{box-sizing:border-box;width:100%;min-width:0;padding:0 8px;background:transparent;border:1px solid transparent;border-radius:8px;color:var(--mie-text);font:inherit;font-size:13px;cursor:copy}
-#miemie-hub-shell .mm-auth-copy button{display:flex;align-items:center;justify-content:center;gap:5px;min-width:86px;min-height:var(--mie-control-height);margin:0;padding:4px 7px;border-radius:8px;font-size:13px}
-#miemie-hub-shell .mm-auth-copy button::before{content:"";width:13px;height:13px;flex:none;background:currentColor;mask:center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.5' stroke-linejoin='round'%3E%3Crect x='7' y='7' width='10' height='10' rx='2'/%3E%3Cpath d='M13 5V4a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h1'/%3E%3C/svg%3E")}
-#miemie-hub-shell .mm-auth-copy button[data-copied]{color:var(--mie-highlight);background:var(--mie-selected-fill);border-color:var(--mie-selected-border)}
-#miemie-hub-shell .mm-auth-copy button[data-copied]::before{mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 10 4 4 8-8'/%3E%3C/svg%3E");animation:mm-auth-reveal 160ms ease-out both}
+#miemie-hub-shell .mm-auth-copy{position:relative;width:100%;min-width:0;animation:mm-auth-reveal 180ms ease-out both}
+#miemie-hub-shell .mm-auth-copy :is(.mm-auth-copy-link,input){box-sizing:border-box;width:100%;min-width:0;min-height:var(--mie-control-height);margin:0;padding:8px 12px;border:1px solid var(--mie-border);border-radius:var(--mie-radius-control);background:var(--mie-bg);color:var(--mie-text);font:inherit;font-size:13px;line-height:1.5;text-align:start}
+#miemie-hub-shell .mm-auth-copy-link:not([hidden]){display:flex;align-items:center;gap:9px;cursor:copy}
+#miemie-hub-shell .mm-auth-copy-link span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#miemie-hub-shell .mm-auth-copy-link::before{content:"";width:16px;height:16px;flex:none;background:var(--mie-accent);mask:center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='m8 12 4-4m-6 2-2 2a2.8 2.8 0 0 0 4 4l2-2m0-8 2-2a2.8 2.8 0 0 1 4 4l-2 2'/%3E%3C/svg%3E")}
+#miemie-hub-shell .mm-auth-copy-link:hover,#miemie-hub-shell .mm-auth-copy-link:focus-visible{border-color:var(--mie-selected-border);background:var(--mie-selected-fill)}
+#miemie-hub-shell .mm-auth-copy-feedback:empty{display:none}
+#miemie-hub-shell .mm-auth-copy-toast{position:absolute;inset:50% auto auto 50%;translate:-50% -50%;width:min(248px,100%);pointer-events:none;white-space:nowrap}
+#miemie-hub-shell .mm-auth-copy-toast>span{
+ display:flex;align-items:center;justify-content:center;gap:8px;padding:7px 0;
+ background:linear-gradient(90deg,transparent,#8cf0bc65,transparent) bottom / 78% 1px no-repeat,
+ radial-gradient(ellipse at center,#286748 0%,#1a4637eb 32%,#1943318c 55%,transparent 76%);
+ color:#e5fff0;font-size:13px;font-weight:650;line-height:1.5;text-shadow:0 1px 5px #0a2119;
+ animation:mm-auth-copy-confirm 2100ms ease-out both;
+}
+#miemie-hub-shell .mm-auth-copy-toast>span::before{content:"";width:19px;height:19px;flex:none;border-radius:50%;background:#a6efc7 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%231b4935' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5.5 10 3 3 6-6'/%3E%3C/svg%3E") center / 16px no-repeat;box-shadow:0 0 12px #99f4bb52}
+@keyframes mm-auth-copy-confirm{
+ 0%{opacity:0;transform:translateY(9px)}
+ 10%{opacity:1;transform:translateY(-1px)}
+ 16%,87%{opacity:1;transform:translateY(0)}
+ 100%{opacity:0;transform:translateY(0)}
+}
+@media(prefers-reduced-motion:reduce){#miemie-hub-shell :is(.mm-auth-copy,.mm-auth-copy-toast>span){animation:none}}
 #miemie-hub-shell .mm-auth-dialog footer{gap:8px}
 #miemie-hub-shell .mm-auth-mark{display:grid;place-items:center;width:54px;aspect-ratio:1;border:1px solid var(--mie-selected-border);border-radius:50%;background:var(--mie-selected-fill);color:var(--mie-highlight);font-size:26px;animation:mm-auth-reveal 180ms ease-out both}
 #miemie-hub-shell .mm-auth-dialog[data-auth-state=success]{animation:mm-auth-done 360ms ease both}

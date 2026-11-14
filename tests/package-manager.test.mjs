@@ -394,7 +394,7 @@ test('relay timeout and teardown cancel pending byte transfers with no late inst
 });
 
 test('direct successful downloads do not contact Registry and HTTP or digest failures are not rescued by relay', async t => {
-  for (const scenario of ['success', 'http', 'digest']) {
+  for (const scenario of ['success', 'http', 'redirect', 'digest']) {
     const contacted = [];
     const source = fixture();
     const alteredMetadata = source.metadataBytes.slice();
@@ -404,7 +404,8 @@ test('direct successful downloads do not contact Registry and HTTP or digest fai
       fetch: async (url, init) => {
         contacted.push(new URL(url).origin);
         if (url.endsWith('/releases/assets/302')) {
-          if (scenario === 'http') return response(encode('forbidden'), url, 403);
+          if (scenario === 'http') return response(encode('missing'), url, 404);
+          if (scenario === 'redirect') return response(encode('forbidden'), 'https://elsewhere.example/file', 403);
           if (scenario === 'digest') return response(alteredMetadata, url);
         }
         return sys.baseRequest(url, init);
@@ -412,11 +413,19 @@ test('direct successful downloads do not contact Registry and HTTP or digest fai
     });
     const inspect = sys.manager.inspect(REPO);
     if (scenario === 'success') await inspect;
-    else await assert.rejects(inspect, code(scenario === 'http' ? 'http' : 'hash'));
+    else await assert.rejects(inspect, code(({http:'http',redirect:'redirect',digest:'hash'})[scenario]));
     assert.ok(contacted.length > 0);
     assert.ok(contacted.every(origin => origin === 'https://api.github.com'));
     assert.equal(sys.writes(), 0);
   }
+});
+
+test('GitHub 403/429 falls back for both metadata and the verified extension asset', async t => {
+  const sys=relaySetup(t,{direct(url){return response(encode('access restricted'),url,url.endsWith('/302')?403:429);}});
+  const candidate=await sys.manager.inspect(REPO);
+  const result=await sys.manager.install(candidate);
+  assert.equal(result.action,'installed');assert.equal(sys.writes(),1);
+  assert.deepEqual(sys.relayCalls.map(({init})=>JSON.parse(init.body).assetId),[302,301]);
 });
 
 

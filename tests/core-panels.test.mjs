@@ -67,7 +67,10 @@ async function fixture(t, releaseFetch = async () => ({ok: true, json: async () 
       if(pendingInstall&&url.startsWith('https://registry.example/api/catalog'))return Promise.resolve(Response.json({items:[{id:'pending-fixture',name:'Fixture',description:'【简介】\n'+('正文。'.repeat(300)),sourceType:'github',sourceUrl:'https://github.com/DevelopmentFixture/Example',github:{compatibility:'installable',manifest:{id:'fixture.example'}}}],hasMore:false}));
       if(pendingInstall&&url==='https://api.github.com/repos/DevelopmentFixture/Example'){installSignal=init.signal;return new Promise(()=>{});}
       if (registryBase && url === registryBase + '/api/catalog?page=1&pageSize=12&q=&source=') return Promise.resolve(Response.json({items:[],hasMore:false}));
-      assert.equal(url, 'https://api.github.com/repos/SheepSheepLab/MieMie-Hub/releases?per_page=100&page=1');
+      const github = '/repos/SheepSheepLab/MieMie-Hub/releases?per_page=100&page=1';
+      if (registryBase && url === registryBase + '/api/github' + github)
+        return Promise.resolve({ok: false, status: 403, url, json() {throw Error('unused');}});
+      assert.equal(url, 'https://api.github.com' + github);
       releaseRequests.push({url, init}); return releaseFetch(url, init);
     };
     scope.getCharWorldbookNames = () => ({primary: '', additional: []});

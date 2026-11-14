@@ -462,11 +462,14 @@ test('rejected or inconsistent Tavern readback blocks self-update before backup,
   }
 });
 
-test('CORS fallback installs verified Hub content through fixed-ID anonymous Registry request', async t => {
+for (const status of [0, 403, 429]) test('blocked direct Hub download uses the fixed-ID anonymous Registry request (' + status + ')', async t => {
   const data=await fixture(),base='https://registry.example.org',endpoint=base+'/api/hub/releases/asset';
   const sys=system(t,data,{updater:{getRegistryBaseURL:()=>base},fetch:async(url,init)=>{
     if(url===HUB_UPDATE_REPOSITORY_API+'/releases/201')return response(encode(data.release),url);
-    if(url.startsWith(HUB_UPDATE_REPOSITORY_API+'/releases/assets/'))throw TypeError('Failed to fetch (CORS)');
+    if(url.startsWith(HUB_UPDATE_REPOSITORY_API+'/releases/assets/')){
+      if(status)return response('',url,{status});
+      throw TypeError('Failed to fetch (CORS)');
+    }
     assert.equal(url,endpoint);assert.equal(init.method,'POST');assert.equal(init.credentials,'omit');assert.equal(init.redirect,'error');assert.equal(init.mode,'cors');
     assert.deepEqual(Object.keys(init.headers).sort(),['Accept','Content-Type']);
     const body=JSON.parse(init.body);assert.deepEqual(Object.keys(body).sort(),['assetId','releaseId']);assert.equal(body.releaseId,201);
@@ -475,6 +478,20 @@ test('CORS fallback installs verified Hub content through fixed-ID anonymous Reg
   const result=await sys.updater.start(target());assert.equal(result.status,'awaiting-reload');assert.equal(sys.writes(),1);
   const installed=sys.readTrees().find(x=>x.id==='actual-installed-id');assert.equal(installed.content,data.script.content);assert.deepEqual(installed.data,installedScript().data);
   assert.equal(sys.calls.filter(c=>c.url===endpoint).length,2);
+});
+
+test('only a recognized TT host can read settings over the exact native origin', async () => {
+  const options={getRequestHeaders:()=>({}),fetch:async(url,init)=>{
+    assert.equal(url,'tauri://localhost/api/settings/get');assert.equal(init.credentials,'same-origin');
+    return Response.json({settings:JSON.stringify({extension_settings:{tavern_helper:{script:{scripts:[installedScript()]}}}})});
+  }};
+  const signal=new AbortController().signal;
+  const native=createHubSavedScriptReader({...options,origin:'tauri://localhost',tauriTavern:true});
+  assert.equal((await native('actual-installed-id',signal)).id,'actual-installed-id');
+  for(const [origin,tauriTavern] of [['tauri://localhost',false],['tauri://elsewhere',true],['tauri://localhost:80',true],['tauri://localhost@evil.invalid',true],['null',true]]){
+    const read=createHubSavedScriptReader({...options,origin,tauriTavern,fetch:()=>assert.fail('unexpected request')});
+    await assert.rejects(read('actual-installed-id',signal),hasCode('persistence'));
+  }
 });
 test('Hub relay errors, tampering, redirects, opaque responses and service switching never write',async t=>{
   for(const scenario of ['offline','http','quota','tamper','redirect','opaque','switch']){

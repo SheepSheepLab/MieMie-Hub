@@ -40,6 +40,17 @@ export function compareSemVer(left, right) {
 
 function failure(code, message) { return Object.assign(Error(message), {code, hubUpdateError: true}); }
 
+export function isGitHubAccessDenied(response) {
+  return response?.status === 403 || response?.status === 429;
+}
+
+export function isGitHubAssetResponseURL(value) {
+  let url;
+  try {url = new URL(value);} catch {return false;}
+  return url.protocol === 'https:' && !url.username && !url.password && !url.port &&
+    ['api.github.com', 'github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'].includes(url.hostname);
+}
+
 export async function requestPublicGitHubRelease(request, url, init, registryBase) {
   const base = registryBaseURL(registryBase);
   if (!base) return request(url, init);
@@ -60,7 +71,7 @@ export async function requestPublicGitHubRelease(request, url, init, registryBas
   const timer = setTimeout(interrupt, 3500);
   try {
     const response = await Promise.race([request(url, {...init, signal:direct.signal}), interrupted]);
-    if (response?.status !== 429 && !(response?.status === 403 && response.headers?.get('x-ratelimit-remaining') === '0')) return response;
+    if (!isGitHubAccessDenied(response)) return response;
     void response.body?.cancel().catch(() => {});
   } catch (_) {
     signal?.throwIfAborted();

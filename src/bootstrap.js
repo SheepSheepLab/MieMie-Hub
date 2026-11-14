@@ -77,7 +77,9 @@ const hubScriptHost = createHubScriptHost({currentVersion: HUB_VERSION,
   getScriptTrees: typeof getScriptTrees === 'function' ? getScriptTrees : undefined,
   updateScriptTreesWith: typeof updateScriptTreesWith === 'function' ? updateScriptTreesWith : undefined,
 });
-const readSavedExtensionScript = createHubSavedScriptReader({fetch: (...args) => window.fetch(...args), origin: h.location.origin,
+const tauriTavern = !!h.__TAURITAVERN_HOST__ && typeof h.__TAURI_INTERNALS__?.invoke === 'function';
+const readSavedExtensionScript = createHubSavedScriptReader({
+    fetch: (...args) => (tauriTavern ? h : window).fetch(...args), origin: h.location.origin, tauriTavern,
     getRequestHeaders: () => {
       const context = h.SillyTavern?.getContext?.();
       if (typeof context?.getRequestHeaders !== 'function') throw Error('宿主保存确认接口不可用。');

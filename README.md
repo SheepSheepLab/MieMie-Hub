@@ -2,7 +2,7 @@
 
 咩咩Hub 是咩咩（MieMie）开源软件与社区生态的官方项目。生态由 SheepSheep 发起和创建（Founder / 创始人）；SheepSheepLab 是官方 GitHub 开发、维护与发布命名空间，官方项目主要通过该命名空间维护和发布，并欢迎社区贡献者共同参与。
 
-本仓库源码对应 **1.0.3**。安装或升级请使用 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 中正式发布的完整包。
+本仓库源码对应 **1.1.0**。安装或升级请使用 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 中正式发布的完整包。
 
 当前契约为 Extension API v2：统一 Native Window、严格 Surface Lease。Core 负责 Runtime、Package 安全及 Self Update；扩展中心和设置为 System Modules。Bundled Timeline 使用 API2，随 Hub 打包并通过 Launcher 打开。
 
@@ -28,7 +28,7 @@ Extension 安装和更新先验证目标 API2 兼容性、Release/Asset、Manife
 
 物理卸载会删除目标脚本条目及其 data，仅确认删除，不自动生成备份；不清空 localStorage、酒馆变量、Polisher 历史设置或其他脚本。请保存编辑并停止正在生成的任务后更新。Hash 校验不能保证作者代码安全，软件并未运行在完整沙盒里。
 
-GitHub Extension 下载首先直连作者 Release；浏览器因 CORS 无法读取附件时，使用内置官方服务（或开发者显式覆盖的 Registry）受限字节转发。转发无需 Discord 登录，不携带 Token、聊天、密钥或宿主凭据。Registry 必须先验证作者仓库、Release 与 Manifest，只能转发匹配的两个附件；Hub 再独立校验 digest／SHA-256／身份。Registry 不持久托管软件文件。没有配置服务、服务不可达、超时或校验失败时拒绝写入，不开启宿主 Proxy、不使用公共代理或 no-cors。当前下载规则见 [Package v1 网络与安全边界](docs/EXTENSION-PACKAGE.md#网络与安全边界)，历史排查见 [浏览器下载修复与复测](docs/DOWNLOAD-TRANSPORT.md)。Hub 自更新使用官方仓库限定的安全转发入口，需要 Registry 0.3.1 或以上，详见 [自更新说明](docs/SELF-UPDATE.md)。
+GitHub Extension 下载首先直连作者 Release。已验证来源的附件遇到网络／CORS 失败、直连超时或 HTTP 403／429 时，可使用内置官方服务（或开发者显式覆盖的 Registry）受限字节转发。转发无需 Discord 登录，不携带 Token、聊天、密钥或宿主凭据。Registry 必须先验证作者仓库、Release 与 Manifest，只能转发匹配的两个附件；Hub 再独立校验 digest／SHA-256／身份。Registry 不持久托管软件文件。没有配置服务、服务不可达、超时或校验失败时拒绝写入，不开启宿主 Proxy、不使用公共代理或 no-cors。当前下载规则见 [Package v1 网络与安全边界](docs/EXTENSION-PACKAGE.md#网络与安全边界)，历史排查见 [浏览器下载修复与复测](docs/DOWNLOAD-TRANSPORT.md)。Hub 自更新使用官方仓库限定的安全转发入口，需要 Registry 0.3.1 或以上，详见 [自更新说明](docs/SELF-UPDATE.md)。
 
 Hub 自更新使用设置页独立流程，仅更新自己；安装实例定位、content 与名称末尾版本号同步写入、新 iframe 交接与保存读回确认见 [自更新说明](docs/SELF-UPDATE.md)。首次安装或从不支持自更新的版本引导时，手动导入正式包。
 
@@ -53,8 +53,8 @@ MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL="$OFFICIAL_REGISTRY_HTT
 输出：
 
 ```text
-build/MieMie-Hub-1.0.3.json
-build/咩咩Hub-1.0.3.json
+build/MieMie-Hub-1.1.0.json
+build/咩咩Hub-1.1.0.json
 build/MieMie-Hub-update.json
 build/miemie-hub.js
 ```
@@ -112,7 +112,7 @@ Copyright © 2026 SheepSheep。社区贡献者（Community Contributors）保留
 
 ### Discord 登录
 
-普通网页酒馆从「Discord 登录」菜单选择授权窗口、授权链接或扫码。支持系统浏览器跳转的 TT 酒馆会显示「在默认浏览器中授权」，需要 Registry 0.7.3 或以上并启用 TT 来源。选择「授权链接」可复制一次性链接，在指定浏览器里打开。扫码时用手机相机打开授权链接。在 Discord 官方页面完成授权后，返回原 Hub 页面。登录结果使用绑定原 Origin 和 PKCE 的一次性交接，不依赖弹窗消息或第三方 Cookie；收到 Registry 会话后验证当前用户并刷新「我的」。原消息交接保持旧服务兼容。生产发布构建使用 `MIEMIE_BUILD_MODE=production` 和真实 `MIEMIE_DEFAULT_REGISTRY_URL`。关闭 Hub/重载后需重新登录；不要复制任何 Token。
+普通网页酒馆从「Discord 登录」菜单选择授权窗口、授权链接或扫码。支持系统浏览器跳转的 TT 酒馆会显示「在默认浏览器中授权」，需要 Registry 0.7.3 或以上并启用 TT 来源。选择「授权链接」后，点击链接即可复制一次性地址，成功时会短暂显示「已复制」。在指定浏览器里打开该链接，或用手机相机打开扫码入口提供的授权链接。在 Discord 官方页面完成授权后，返回原 Hub 页面。登录结果使用绑定原 Origin 和 PKCE 的一次性交接，不依赖弹窗消息或第三方 Cookie；收到 Registry 会话后验证当前用户并刷新「我的」。原消息交接保持旧服务兼容。生产发布构建使用 `MIEMIE_BUILD_MODE=production` 和真实 `MIEMIE_DEFAULT_REGISTRY_URL`。关闭 Hub/重载后需重新登录；不要复制任何 Token。
 
 ## Catalog 类型与治理
 

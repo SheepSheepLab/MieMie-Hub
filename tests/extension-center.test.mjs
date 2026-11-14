@@ -139,12 +139,13 @@ test('failed scan can request a fresh QR without reopening the login menu',async
  assert.ok(dialog.querySelector('.mm-auth-qr-image'));
  assert.equal([...dialog.querySelectorAll('button')].find(b=>b.textContent==='重新扫码').hidden,true);
 });
-test('authorization link copies in either control and selects the URL if clipboard access fails',async t=>{
+test('the authorization link shows a temporary copy toast and allows manual copy if access fails',async t=>{
  const copied=[],url='https://registry.example/api/auth/authorize?requestId='+'r'.repeat(43);
  let blocked=false;
  const f=fixture(t,{configureHost(host){
   Object.defineProperty(host.navigator,'clipboard',{value:{async writeText(value){if(blocked)throw Error('blocked');copied.push(value);}}});
  }});
+ const clock=uiClock(f);
  f.host.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
  f.host.HTMLDialogElement.prototype.close=function(){this.open=false;};
  let signal;
@@ -156,13 +157,17 @@ test('authorization link copies in either control and selects the URL if clipboa
  assert.deepEqual([...f.account.querySelectorAll('.mm-auth-menu button')].map(x=>x.textContent),['授权窗口登录','授权链接','扫码登录']);
  await f.click('授权链接');
  const dialog=f.body.querySelector('dialog[open]'),field=dialog.querySelector('input');
- assert.equal(field.value,url);assert.ok(field.readOnly);
- field.click();await tick();
- assert.equal(dialog.querySelector('.mm-auth-copy button').textContent,'已复制');
- dialog.querySelector('.mm-auth-copy button').click();await tick();
- assert.deepEqual(copied,[url,url]);
+ const link=dialog.querySelector('.mm-auth-copy-link'),toast=dialog.querySelector('.mm-auth-copy-toast');
+ assert.equal(field.value,url);assert.ok(field.readOnly);assert.ok(field.hidden);
+ assert.equal(link.textContent,url);assert.equal(dialog.querySelectorAll('.mm-auth-copy button').length,1);
+ assert.equal(toast.getAttribute('role'),'status');assert.equal(toast.textContent,'');
+ link.click();await tick();
+ assert.equal(toast.textContent,'已复制');assert.equal(link.textContent,url);
+ assert.deepEqual(copied,[url]);
+ await clock.advance(2100);assert.equal(toast.textContent,'');
  blocked=true;
- dialog.querySelector('.mm-auth-copy button').click();await tick();
+ link.click();await tick();
+ assert.equal(toast.textContent,'');assert.ok(link.hidden);assert.equal(field.hidden,false);
  assert.equal(f.host.document.activeElement,field);assert.equal(field.selectionStart,0);assert.equal(field.selectionEnd,url.length);
  assert.match(dialog.textContent,/请手动复制/);
  assert.ok(f.center.back());assert.ok(signal.aborted);
@@ -190,7 +195,7 @@ test('TT uses its native opener only after preparation and keeps the same link w
  assert.deepEqual(opened,[['plugin:opener|open_url',{url}]]);
  const dialog=f.body.querySelector('dialog[open]');
  assert.match(dialog.textContent,/默认浏览器未能打开/);
- assert.equal(dialog.querySelector('input').value,url);
+ assert.equal(dialog.querySelector('.mm-auth-copy-link').textContent,url);
  finish();await tick();
  assert.match(f.account.textContent,/Authorized Fixture/);
  assert.equal(dialog.dataset.authState,'success');assert.equal(dialog.querySelector('input'),null);

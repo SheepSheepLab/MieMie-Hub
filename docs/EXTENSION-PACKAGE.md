@@ -128,7 +128,7 @@ Hub 浏览器客户端公开读取不要求用户提供 GitHub Token，不发送
 | Attachment total upper bound | 单个脚本附件下载及 digest 校验合计最多 10 分钟；进度不会延长此上限，不是整个安装流程的无限预算 |
 | Asset digest validation | 附件 digest 计算另限 15 秒，同时受所在操作的外层时限约束 |
 
-浏览器使用正常 CORS，从 GitHub API 读取作者 Release 附件，并仅接受官方 GitHub/CDN 重定向。具备有效附件上下文时，直连网络／CORS 失败或直连时限到期（包括正文停滞）可以切换到已配置的受限 Registry Relay。HTTP、重定向、大小、digest 或其他校验错误不会通过 Relay 绕过；取消操作也不会触发继续下载。
+浏览器使用正常 CORS，从 GitHub API 读取作者 Release 附件，并仅接受官方 GitHub/CDN 重定向。具备有效附件上下文时，直连网络／CORS 失败、直连时限到期（包括正文停滞），或官方 GitHub 附件地址返回 HTTP 403／429，可以切换到已配置的受限 Registry Relay。其他 HTTP 错误、重定向、大小、digest 或其他校验错误会中止下载；取消操作也会中止下载。
 
 Relay 只接收 `repository`、`releaseId`、`assetId`，由服务端验证公开仓库、Release、Manifest 及对应附件，不接受任意 URL，不是通用代理。Hub 仍独立核对 Release identity、Asset identity、GitHub digest、原始附件 SHA-256、`contentSha256`、`productId`、`scriptId` 和 repository identity，并在写入前重新读取 Release。Relay 不可用、超时或任一校验失败时拒绝写入，不使用公共代理、`no-cors` 或未校验安装。自动测试不能替代真实酒馆网络测试。
 

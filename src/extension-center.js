@@ -933,7 +933,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
   }
   function openAuthDialog(opener, method, openInBrowser) {
     const scan = method === 'qr', external = method === 'browser';
-    const manualInstructions='复制链接，在你想用的浏览器中打开。完成 Discord 授权后，请切回 Hub。';
+    const manualInstructions='点击下方链接复制，在你想用的浏览器中打开。完成 Discord 授权后，请切回 Hub。';
     const initialInstructions=scan?'用手机相机扫码，在 Discord 官方页面点「授权」。':
       external?'在默认浏览器完成 Discord 授权后，请切回 Hub。':manualInstructions;
     const dialog=el('dialog',undefined,'mm-description-dialog mm-auth-dialog');
@@ -957,33 +957,31 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
     }
     function showLink(url) {
       const row=el('div',undefined,'mm-auth-copy');
-      const field=el('input'),copy=el('button','复制'),feedback=el('p',undefined,'mm-auth-copy-feedback');
+      const copy=el('button',undefined,'mm-auth-copy-link'),field=el('input');
+      const toast=el('div',undefined,'mm-auth-copy-toast'),feedback=el('p',undefined,'mm-auth-copy-feedback');
+      copy.type='button';copy.setAttribute('aria-label','点击复制授权链接');
+      copy.append(el('span',url));
       field.type='text';field.readOnly=true;field.value=url;field.setAttribute('aria-label','一次性授权链接');
-      field.spellcheck=false;field.autocapitalize='off';
-      copy.type='button';copy.setAttribute('aria-label','复制授权链接');
-      feedback.setAttribute('role','status');feedback.hidden=true;
+      field.spellcheck=false;field.autocapitalize='off';field.hidden=true;
+      toast.setAttribute('role','status');feedback.setAttribute('role','status');
       let copying=false;
-      async function copyUrl() {
+      copy.onclick=async()=>{
         if(copying)return;
         copying=true;
         host.clearTimeout(attempt.copyTimer);
         try {
           await host.navigator.clipboard.writeText(url);
           if(authDialog!==attempt||!row.isConnected)return;
-          copy.dataset.copied='true';copy.textContent='已复制';
-          feedback.textContent='已复制授权链接';feedback.hidden=false;
-          attempt.copyTimer=host.setTimeout(()=>{
-            delete copy.dataset.copied;copy.textContent='复制';feedback.hidden=true;
-          },1800);
+          toast.replaceChildren(el('span','已复制'));
+          attempt.copyTimer=host.setTimeout(()=>{toast.textContent='';},2100);
         }catch(_){
           if(authDialog!==attempt||!row.isConnected)return;
-          delete copy.dataset.copied;copy.textContent='复制';
+          toast.textContent='';copy.hidden=true;field.hidden=false;
           field.focus({preventScroll:true});field.select();
-          feedback.textContent='链接已选中，请手动复制。';feedback.hidden=false;
+          feedback.textContent='链接已选中，请手动复制。';
         }finally{copying=false;}
-      }
-      field.addEventListener('click',copyUrl);copy.onclick=copyUrl;
-      row.append(field,copy);frame.replaceChildren(row,feedback);
+      };
+      row.append(copy,field,toast);frame.replaceChildren(row,feedback);
     }
     async function run(){
       authorizationUrl=undefined;

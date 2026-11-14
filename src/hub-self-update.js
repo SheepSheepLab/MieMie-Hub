@@ -1,7 +1,7 @@
 import {HUB_PRODUCT} from './product-identity.js';
 import {updatedScriptName} from './script-update-fields.js';
 import {registryBaseURL} from './registry-client.js';
-import {compareSemVer, requestPublicGitHubRelease} from './hub-update-check.js';
+import {compareSemVer, isGitHubAccessDenied, isGitHubAssetResponseURL, requestPublicGitHubRelease} from './hub-update-check.js';
 import {parseHubBuildIdentity} from './hub-script-host.js';
 
 // Only public release bytes leave/enter this transport. Host credentials and
@@ -149,6 +149,10 @@ async function hubUpdatePublicBytes(request, url, {signal, limit, size, binary =
     const init = {method: 'GET', headers: {Accept: binary ? 'application/octet-stream' : 'application/vnd.github+json'},
       mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', redirect: binary ? 'follow' : 'error', signal};
     response = binary ? await request(url,init) : await requestPublicGitHubRelease(request,url,init,registryBase);
+    if (binary && relay?.base && isGitHubAccessDenied(response) && isGitHubAssetResponseURL(response.url)) {
+      void response.body?.cancel().catch(() => {});
+      throw hubUpdateFail('download', 'GitHub 拒绝读取公开附件，正在切换安全下载服务。');
+    }
   } catch (error) {
     signal.throwIfAborted();
     if (!binary || !relay?.base) throw hubUpdateFail('download', '无法读取 GitHub 更新文件（网络或 CORS 限制），且安全下载服务不可用；未安装更新，可手动下载官方 Release。');
@@ -173,22 +177,18 @@ async function hubUpdatePublicBytes(request, url, {signal, limit, size, binary =
       throw hubUpdateFail('relay', (errors[detail?.code] || '安全下载服务暂不可用（HTTP ' + response.status + '）') + '；未安装更新。');
     }
   }
-  if (binary && !relayed) {
-    let finalURL;
-    try { finalURL = new URL(response.url); } catch (_) {}
-    const officialHosts = ['api.github.com', 'github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com'];
-    if (!finalURL || finalURL.protocol !== 'https:' || finalURL.username || finalURL.password || finalURL.port || !officialHosts.includes(finalURL.hostname)) {
-      throw hubUpdateFail('redirect', '更新附件跳转到不受支持的地址；拒绝安装。');
-    }
+  if (binary && !relayed && !isGitHubAssetResponseURL(response?.url)) {
+    throw hubUpdateFail('redirect', '更新附件跳转到不受支持的地址；拒绝安装。');
   }
   return hubUpdateReadBytes(response, limit, signal, size);
 }
 
-// This is a version-bounded SillyTavern 1.18 persistence readback, not a
-// TavernHelper flush API. No settings are POSTed back or sent to GitHub.
-export function createHubSavedScriptReader({fetch: request, origin, getRequestHeaders}) {
+// Use only the local host's settings readback. TT exposes the same route via
+// its native bridge. No settings are written or sent to the download service.
+export function createHubSavedScriptReader({fetch: request, origin, getRequestHeaders, tauriTavern = false}) {
+  const supportedOrigin = /^https?:\/\//.test(origin || '') || (tauriTavern && origin === 'tauri://localhost');
   async function readMany(ids, signal) {
-    if (typeof request !== 'function' || typeof getRequestHeaders !== 'function' || !/^https?:\/\//.test(origin || '')) {
+    if (typeof request !== 'function' || typeof getRequestHeaders !== 'function' || !supportedOrigin) {
       throw hubUpdateFail('persistence', '宿主未提供保存确认接口；请保留恢复文件并手动确认。');
     }
     const response = await request(new URL('/api/settings/get', origin).href, {

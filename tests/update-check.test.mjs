@@ -75,10 +75,13 @@ test('all pages participate in selection, using only locally constructed GitHub 
   assert.equal(calls[0][1].signal, calls[1][1].signal);
 });
 
-test('blocked GitHub release discovery falls back to a credential-free Registry query', async t => {
+for (const status of [0,403]) test('blocked GitHub release discovery falls back to a credential-free Registry query ('+status+')', async t => {
   const base = 'https://registry.example.org';
   const {checker,calls} = setup(t, async url => {
-    if (url.startsWith('https://api.github.com/')) throw TypeError('direct connection unavailable');
+    if (url.startsWith('https://api.github.com/')) {
+      if(status)return new Response('Forbidden',{status});
+      throw TypeError('direct connection unavailable');
+    }
     return {url,...response([release('v1.0.0',{id:12})])};
   },{getRegistryBaseURL:()=>base});
   assert.deepEqual((await checker.check()).targetRelease,{releaseId:12,version:'1.0.0',tag:'v1.0.0'});
