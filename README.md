@@ -2,7 +2,7 @@
 
 咩咩Hub 是咩咩（MieMie）开源软件与社区生态的官方项目。生态由 SheepSheep 发起和创建（Founder / 创始人）；SheepSheepLab 是官方 GitHub 开发、维护与发布命名空间，官方项目主要通过该命名空间维护和发布，并欢迎社区贡献者共同参与。
 
-本仓库源码对应 **1.1.0**。安装或升级请使用 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 中正式发布的完整包。
+本仓库源码对应 **1.1.1**。安装或升级请使用 [GitHub Releases](https://github.com/SheepSheepLab/MieMie-Hub/releases) 中正式发布的完整包。
 
 当前契约为 Extension API v2：统一 Native Window、严格 Surface Lease。Core 负责 Runtime、Package 安全及 Self Update；扩展中心和设置为 System Modules。Bundled Timeline 使用 API2，随 Hub 打包并通过 Launcher 打开。
 
@@ -17,6 +17,8 @@
 - **Discord**：仅展示原帖入口，不缓存临时 CDN 附件或自动安装。
 - **已安装**：打开、启停、检查更新、更新，以及确认后物理卸载已识别的全局 Package。未识别为 Package 的运行扩展明确标为「Runtime 注销」，不会冒称已删除助手条目。
 - **我的**：投稿、编辑、上下架，以及服务器成员限定可见。Registry 登录会话仅留在当前 Hub 内存；重载后需重新登录。Official 身份来自服务端可信角色；治理后台独立于 Hub。
+
+从 1.1.1 起，GitHub 投稿的简介取自作者仓库 About，修改后会在目录同步时更新。Discord 投稿仍在 Hub 填写简介。投稿表单与详情已移除自定义标签。
 
 普通用户打开「发现」直接使用构建内置的官方服务，在扩展中心右上角使用 Discord 登录，不需要 MieMie 账号或任何服务配置。扩展中心不提供 Registry 地址输入。设置不再显示高级入口；开发服务通过构建参数配置，已有自定义地址偏好继续沿用。官方生产构建内置 https://registry.sheepsheeplab.com；普通开发构建可离线。OAuth Secret、管理员 ID 名单始终只在服务器。配置见 [生态使用与安全边界](docs/ECOSYSTEM.md) 及 [Registry 部署说明](https://github.com/SheepSheepLab/MieMie-Registry/blob/main/docs/DEPLOYMENT.md)。
 
@@ -53,8 +55,8 @@ MIEMIE_BUILD_MODE=production MIEMIE_DEFAULT_REGISTRY_URL="$OFFICIAL_REGISTRY_HTT
 输出：
 
 ```text
-build/MieMie-Hub-1.1.0.json
-build/咩咩Hub-1.1.0.json
+build/MieMie-Hub-1.1.1.json
+build/咩咩Hub-1.1.1.json
 build/MieMie-Hub-update.json
 build/miemie-hub.js
 ```

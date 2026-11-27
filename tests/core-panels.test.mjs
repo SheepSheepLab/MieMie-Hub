@@ -64,7 +64,7 @@ async function fixture(t, releaseFetch = async () => ({ok: true, json: async () 
     blockNetwork(scope);
     Object.assign(scope, {TextDecoder, TextEncoder});
     scope.fetch = (url, init) => {
-      if(pendingInstall&&url.startsWith('https://registry.example/api/catalog'))return Promise.resolve(Response.json({items:[{id:'pending-fixture',name:'Fixture',description:'【简介】\n'+('正文。'.repeat(300)),sourceType:'github',sourceUrl:'https://github.com/DevelopmentFixture/Example',github:{compatibility:'installable',manifest:{id:'fixture.example'}}}],hasMore:false}));
+      if(pendingInstall&&url.startsWith('https://registry.example/api/catalog'))return Promise.resolve(Response.json({items:[{id:'pending-fixture',name:'Fixture',sourceType:'github',sourceUrl:'https://github.com/DevelopmentFixture/Example',github:{repositoryDescription:'【简介】\n'+('正文。'.repeat(300)),compatibility:'installable',manifest:{id:'fixture.example'}}}],hasMore:false}));
       if(pendingInstall&&url==='https://api.github.com/repos/DevelopmentFixture/Example'){installSignal=init.signal;return new Promise(()=>{});}
       if (registryBase && url === registryBase + '/api/catalog?page=1&pageSize=12&q=&source=') return Promise.resolve(Response.json({items:[],hasMore:false}));
       const github = '/repos/SheepSheepLab/MieMie-Hub/releases?per_page=100&page=1';
