@@ -206,14 +206,23 @@ test('existing local override is retained without exposing a center configuratio
 test('GitHub defaults public; Discord source enforces guild-only without auxiliary fields',async t=>{
  const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}}});await f.center.activate('mine');await f.click('提交扩展');const form=f.body.querySelector('[data-submission-form]');const field=name=>form.querySelector('[name="'+name+'"]');assert.equal(field('visibility').value,'public');
  field('sourceType').value='discord';field('sourceType').dispatchEvent(new f.host.Event('change'));assert.equal(field('visibility').closest('label').hidden,true);assert.equal(field('visibilitySourceUrl').disabled,true);assert.equal(field('githubUrl').closest('label').hidden,true);assert.equal(field('discordPostUrl').closest('label').hidden,true);assert.match(form.textContent,/🔒 Discord 来源项目仅对原帖所在服务器成员显示/);
- assert.equal(field('discordUrl').required,true);assert.equal(field('githubUrl').required,false);for(const[key,value]of Object.entries({name:'Development Guild Fixture',author:'Fixture Author',description:'Test Data',discordUrl:'https://discord.com/channels/111111111111111111/222222222222222222/333333333333333333',tags:'test, development'}))field(key).value=value;
+ assert.equal(field('discordUrl').required,true);assert.equal(field('githubUrl').required,false);assert.equal(field('tags'),null);for(const[key,value]of Object.entries({name:'Development Guild Fixture',author:'Fixture Author',description:'Test Data',discordUrl:'https://discord.com/channels/111111111111111111/222222222222222222/333333333333333333'}))field(key).value=value;
  field('discordUrl').dispatchEvent(new f.host.Event('input'));if(form.querySelector('[name=sourceType]').value==='github'&&form.querySelector('[name=type]').value==='tavern_extension')await f.click('读取 GitHub 资料');form.dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();const sent=f.calls.find(x=>x.path==='/api/submissions'&&x.options?.method==='POST').options.body;
- assert.equal(sent.visibility,'discord_guild');assert.equal(sent.sourceType,'discord');assert.deepEqual(sent.tags,['test','development']);assert.equal(sent.visibilitySourceUrl,sent.sourceUrl);assert.equal(sent.visibilityGuildId,undefined);assert.equal(sent.ownerDiscordUserId,undefined);
+ assert.equal(sent.visibility,'discord_guild');assert.equal(sent.sourceType,'discord');assert.equal(sent.description,'Test Data');assert.equal(sent.tags,undefined);assert.equal(sent.visibilitySourceUrl,sent.sourceUrl);assert.equal(sent.visibilityGuildId,undefined);assert.equal(sent.ownerDiscordUserId,undefined);
 });
 test('GitHub restricted submission sends an explicit Discord post while editing cannot change owner',async t=>{
  const own={...github,visibility:'discord_guild',visibilitySourceUrl:'https://discord.com/channels/111111111111111111/222222222222222222/333333333333333333',tags:['development'],ownerDiscordUserId:'not-for-client-edit'};
- const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}},request:path=>path.startsWith('/api/github/preview')?{compatibility:'installable'}:{items:[own]}});await f.center.activate('mine');await f.click('编辑');const form=f.body.querySelector('form'),field=name=>form.querySelector('[name="'+name+'"]');assert.equal(field('visibility').value,'discord_guild');assert.equal(field('visibilitySourceUrl').value,own.visibilitySourceUrl);assert.equal(field('visibilitySourceUrl').required,true);assert.equal(field('discordUrl').value,'');assert.equal(field('discordUrl').required,false);assert.equal(field('ownerDiscordUserId'),null);
- field('githubUrl').value='https://github.com/example/changed';field('description').value='Changed Test Data';if(form.querySelector('[name=sourceType]').value==='github'&&form.querySelector('[name=type]').value==='tavern_extension')await f.click('读取 GitHub 资料');form.dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();const payload=f.calls.find(x=>x.options?.method==='PATCH').options.body;assert.equal(payload.visibilitySourceUrl,own.visibilitySourceUrl);assert.equal(payload.sourceUrl,'https://github.com/example/changed');assert.equal(payload.ownerDiscordUserId,undefined);
+ const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}},request:path=>path.startsWith('/api/github/preview')?{compatibility:'installable',repositoryDescription:'GitHub About',manifest:{description:'Package summary'}}:{items:[own]}});await f.center.activate('mine');await f.click('编辑');const form=f.body.querySelector('form'),field=name=>form.querySelector('[name="'+name+'"]');assert.equal(field('visibility').value,'discord_guild');assert.equal(field('visibilitySourceUrl').value,own.visibilitySourceUrl);assert.equal(field('visibilitySourceUrl').required,true);assert.equal(field('discordUrl').value,'');assert.equal(field('discordUrl').required,false);assert.equal(field('ownerDiscordUserId'),null);
+ assert.equal(field('description').value,'');
+ assert.equal(field('description').closest('label').hidden,true);
+ assert.equal(field('description').required,false);
+ field('githubUrl').value='https://github.com/example/changed';
+ await f.click('读取 GitHub 资料');
+ assert.equal(form.querySelector('[data-github-description]').textContent,'GitHub About');
+ assert.equal(field('description').value,'');
+ form.dispatchEvent(new f.host.Event('submit',{cancelable:true}));await tick();const payload=f.calls.find(x=>x.options?.method==='PATCH').options.body;assert.equal(payload.visibilitySourceUrl,own.visibilitySourceUrl);assert.equal(payload.sourceUrl,'https://github.com/example/changed');assert.equal(payload.ownerDiscordUserId,undefined);
+ assert.equal(payload.description,undefined);
+ assert.equal(payload.tags,undefined);
 });
 test('GitHub preview only prefills current source and never auto-creates a Catalog entry',async t=>{
  let finish;const f=fixture(t,{identity:{profile:{displayName:'Development Submitter'}},request:path=>path.startsWith('/api/github/preview')?new Promise(r=>{finish=r;}):{items:[]}});await f.center.activate('mine');await f.click('提交扩展');const form=f.body.querySelector('form'),url=form.querySelector('[name="githubUrl"]'),name=form.querySelector('[name="name"]');url.value='https://github.com/example/first';await f.click('读取 GitHub 资料');url.value='https://github.com/example/second';finish({manifest:{name:'Stale Repository',author:'Old',description:'Old'}});await tick();assert.equal(name.value,'');assert.ok(!f.calls.some(x=>x.options?.method==='POST'&&x.path==='/api/submissions'));
@@ -379,7 +388,7 @@ test('catalog row shows identity and install state; detail preserves the publish
  const item={...github,version:'1.2.3',icon:'https://example.com/icon.png',classification:'official',type:'tavern_extension',
   distribution:'managed_install',platforms:['windows','macos'],tags:['writing','test'],visibility:'discord_guild',
   visibilitySourceUrl:'https://discord.com/channels/333333333333333333/444444444444444444',discordPostUrl:null,
-  github:{...github.github,manifest:{id:'fixture.background'}},submitter:{displayName:'Distinct Submitter',avatarUrl:'https://registry.example/api/avatars/fixture'}};
+  github:{...github.github,repositoryDescription:'Repository About',manifest:{id:'fixture.background'}},submitter:{displayName:'Distinct Submitter',avatarUrl:'https://registry.example/api/avatars/fixture'}};
  const f=fixture(t,{request:()=>({items:[item]})});await f.center.activate('discover');const row=f.body.querySelector('[data-catalog-id]');
  assert.equal(row.querySelector('strong').textContent,item.name);
  assert.equal(row.querySelector('.mm-catalog-version').textContent,'1.2.3');
@@ -391,11 +400,12 @@ test('catalog row shows identity and install state; detail preserves the publish
  assert.equal(detail.querySelector('h2').textContent,item.name);
  assert.match(detail.querySelector('header').textContent,/Fixture Author · 1.2.3🐑官方扩展/);
  assert.equal(detail.querySelector('header img').src,item.icon);
- assert.equal(detail.querySelector('.mm-catalog-detail-description').textContent,item.description);
+ assert.equal(detail.querySelector('.mm-catalog-detail-description').textContent,'Repository About');
  assert.equal(detail.querySelector('.mm-catalog-links a').href,item.sourceUrl);
  assert.match(detail.querySelector('.mm-catalog-links').textContent,/GitHub 仓库：查看仓库Discord 发布帖：暂无/);
  assert.equal(detail.querySelector('.mm-catalog-submitter img').src,item.submitter.avatarUrl);
- for(const fact of [/来源：GitHub/,/产品类型：酒馆扩展/,/分发方式：Hub 安装/,/平台：windows、macos/,/标签：writing、test/,/可见范围：仅该 Discord 服务器成员/,/投稿者：Distinct Submitter/])assert.match(meta.textContent,fact);
+ for(const fact of [/来源：GitHub/,/产品类型：酒馆扩展/,/分发方式：Hub 安装/,/平台：windows、macos/,/可见范围：仅该 Discord 服务器成员/,/投稿者：Distinct Submitter/])assert.match(meta.textContent,fact);
+ assert.doesNotMatch(meta.textContent,/writing|标签/);
  assert.match(detail.textContent,/安装兼容不代表已审核安全/);
  assert.ok(!detail.innerHTML.includes(item.visibilitySourceUrl));
  assert.equal(detail.querySelector('[data-package-install]'),null);
@@ -790,7 +800,7 @@ test('actual mismatched save stays red during automatic checking',async t=>{
 
 test('full description is plain text in a separate dialog; Back/Escape restore focus and leaving removes it',async t=>{
  const description='【功能】\n'+('很长的简介。\n'.repeat(150))+'<img src=x onerror=alert(1)>';
- const f=fixture(t,{request:()=>({items:[{...github,description}]})});
+ const f=fixture(t,{request:()=>({items:[{...github,github:{...github.github,repositoryDescription:description}}]})});
  // jsdom has no top layer; actual native dialog layout/focus is covered in Chromium.
  f.host.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
  f.host.HTMLDialogElement.prototype.close=function(){this.open=false;};
@@ -810,6 +820,27 @@ test('full description is plain text in a separate dialog; Back/Escape restore f
  f.host.document.dispatchEvent(new f.host.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert.equal(parentEscapes,1);
  await f.center.activate('discover');f.body.querySelector('.mm-catalog-row-open').click();await f.center.activate('mine');assert.equal(f.body.querySelector('dialog'),null);
 });
+test('Catalog details from an older Registry use public GitHub About instead of the old submission',async t=>{
+ const fetches=[];
+ let about='Public GitHub About';
+ const f=fixture(t,{request:()=>({items:[github]}),configureHost(host){
+   host.fetch=async (url,options)=>{
+     fetches.push({url,credentials:options.credentials});
+     return Response.json({private:false,full_name:'example/extension',description:about});
+   };
+ }});
+ await f.center.activate('discover');
+ let detail=openCatalogDetails(f,github.id);
+ assert.doesNotMatch(detail.textContent,/Test Data/);
+ await tick();
+ assert.equal(detail.querySelector('.mm-catalog-detail-description').textContent,'Public GitHub About');
+ assert.deepEqual(fetches,[{url:'https://api.github.com/repos/example/extension',credentials:'omit'}]);
+ detail.querySelector('footer button').click();
+ about=null;
+ detail=openCatalogDetails(f,github.id);
+ await tick();
+ assert.equal(detail.querySelector('.mm-catalog-detail-description').textContent,'该仓库暂无简介。');
+});
 test('installed rows and details use a registered script image, while catalog images stay HTTPS-only',async t=>{
  const image='data:image/png;base64,AAAA';
  const f=fixture(t,{request:()=>({items:[{...github,icon:image}]})});
@@ -821,8 +852,8 @@ test('installed rows and details use a registered script image, while catalog im
  await f.center.activate('discover');
  assert.equal(f.body.querySelector('[data-catalog-id] .mm-extension-icon img'),null);
 });
-test('description editing preserves line breaks and brackets in the submission and reports its existing limit',async t=>{
- const f=fixture(t,{identity:{profile:{displayName:'Fixture'}}});await f.center.activate('mine');await f.click('编辑');
+test('Discord description editing preserves line breaks and brackets and reports its existing limit',async t=>{
+ const f=fixture(t,{identity:{profile:{displayName:'Fixture'}},request:()=>({items:[discord]})});await f.center.activate('mine');await f.click('编辑');
  const form=f.body.querySelector('form'),input=form.querySelector('[name=description]'),hint=form.querySelector('.mm-description-hint');
  assert.equal(input.tagName,'TEXTAREA');assert.equal(input.maxLength,2000);
  input.value='文'.repeat(2000);input.dispatchEvent(new f.host.Event('input'));assert.match(hint.textContent,/2000 \/ 2000.*已达上限/);

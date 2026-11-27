@@ -7,6 +7,7 @@ import hubQRCode from './vendor/qrcode-generator.mjs';
 const catalogTypes={tavern_extension:'酒馆扩展',standalone_app:'独立应用',web_tool:'Web 工具'};
 const catalogDistributions={managed_install:'Hub 安装',external_release:'作者发布页',open_url:'打开链接'};
 const centerSnapshotMs=15000;
+const emptyRepositoryAbout='该仓库暂无简介。';
 // Catalog is optional online UI; this module is never a Core startup dependency.
 export function createExtensionCenter({host, body, accountContainer, progressContainer, runtime, sources, nativeEntries, packages, registry, panelIcon, refreshLaunchers = () => {}}) {
   const doc = host.document, configKey = 'miemie_registry_url_v1';
@@ -75,10 +76,26 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
   function fact(list,label,value) {
     const field=el('dd');field.append(value);list.append(el('dt',label+'：'),field);return field;
   }
+  async function readRepositoryAbout(sourceUrl) {
+    const controller=new AbortController();
+    const timer=host.setTimeout(()=>controller.abort(),6000);
+    try {
+      const repo=parseExtensionRepository(sourceUrl);
+      const response=await host.fetch(repo.api,{credentials:'omit',redirect:'error',signal:controller.signal});
+      if(!response.ok)return null;
+      const data=await response.json();
+      if(data?.private!==false||data.full_name?.toLowerCase()!==`${repo.owner}/${repo.repo}`.toLowerCase())return null;
+      return typeof data.description==='string'?data.description.trim().slice(0,2000):'';
+    } catch {return null;}
+    finally {host.clearTimeout(timer);}
+  }
   function openDescription(item,opener,managed) {
     const header=detailHeader({...item,iconUrl:item.github?.manifest?.iconUrl||item.icon},catalogBadge(item));
     const text=el('div',undefined,'mm-description-full');
-    text.append(el('h3','简介'),el('p',item.description,'mm-catalog-detail-description'));
+    const github=item.sourceType==='github', about=item.github?.repositoryDescription;
+    const checkRepository=github&&typeof about!=='string';
+    const description=el('p',checkRepository?'正在读取仓库简介…':github?about||emptyRepositoryAbout:item.description,'mm-catalog-detail-description');
+    text.append(el('h3','简介'),description);
 
     const sources=el('dl',undefined,'mm-catalog-facts mm-catalog-links');
     function projectLink(label,caption,url) {
@@ -100,7 +117,6 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
     fact(meta,'产品类型',Object.hasOwn(catalogTypes,item.type)?catalogTypes[item.type]:catalogTypes.tavern_extension);
     if(Object.hasOwn(catalogDistributions,item.distribution))fact(meta,'分发方式',catalogDistributions[item.distribution]);
     if(item.platforms?.length)fact(meta,'平台',item.platforms.join('、'));
-    if(item.tags?.length)fact(meta,'标签',item.tags.join('、'));
     if(item.visibility==='public'||item.visibility==='discord_guild')fact(meta,'可见范围',item.visibility==='public'?'所有人':'仅该 Discord 服务器成员');
     const submitter=el('span',undefined,'mm-catalog-submitter');
     icon(submitter,item.submitter?.avatarUrl,'投稿者头像');
@@ -109,6 +125,9 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
     if(managed)text.append(el('p','安装兼容不代表已审核安全','mm-catalog-detail-note'));
 
     showDetail(header,text,opener);
+    if(checkRepository&&description.isConnected)void readRepositoryAbout(item.sourceUrl).then(value=>{
+      if(description.isConnected)description.textContent=(value??'仓库简介暂不可读。')||emptyRepositoryAbout;
+    });
   }
   const tabs = el('nav', undefined, 'mm-ecosystem-tabs'), content = el('div'), notice = el('p', '', 'mm-hub-note');
   const main = el('div', undefined, 'mm-center-main');
@@ -760,8 +779,10 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
     const generation = ++serial;
     const form=el('form',undefined,'mm-submission-form'); form.dataset.submissionForm='';let choices=null;
     const fields={};
-    for(const [name,label,multiline] of [['name','项目名称'],['author','作者'],['description','简介',true],['githubUrl','GitHub Repository URL'],['discordPostUrl','Discord 发布帖（可选）'],['discordUrl','Discord 原帖 URL'],['websiteUrl','Website URL（Web Tool 必填）'],['icon','Icon URL（可选）'],['tags','标签（逗号分隔）']]) {
-      const wrap=el('label',label),input=el(multiline?'textarea':'input'); input.name=name;input.value=name==='tags'?(item?.tags||[]).join(', '):(item?.[name]||'');input.maxLength=name==='description'?2000:name==='githubUrl'||name==='discordUrl'||name==='discordPostUrl'||name==='icon'||name==='websiteUrl'?2048:120; if(['name','author','description'].includes(name))input.required=true;wrap.append(input);form.append(wrap);fields[name]=input;
+    for(const [name,label,multiline] of [['name','项目名称'],['author','作者'],['description','简介',true],['githubUrl','GitHub Repository URL'],['discordPostUrl','Discord 发布帖（可选）'],['discordUrl','Discord 原帖 URL'],['websiteUrl','Website URL（Web Tool 必填）'],['icon','Icon URL（可选）']]) {
+      const wrap=el('label',label),input=el(multiline?'textarea':'input'); input.name=name;
+      input.value=name==='description'&&item?.sourceType!=='discord'?'':(item?.[name]||'');
+      input.maxLength=name==='description'?2000:name==='githubUrl'||name==='discordUrl'||name==='discordPostUrl'||name==='icon'||name==='websiteUrl'?2048:120; if(['name','author'].includes(name))input.required=true;wrap.append(input);form.append(wrap);fields[name]=input;
     }
     const descriptionHint=el('small',undefined,'mm-description-hint');descriptionHint.id='mm-description-hint';
     fields.description.rows=6;fields.description.setAttribute('aria-describedby',descriptionHint.id);
@@ -775,6 +796,8 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
     const discordWrap=fields.discordUrl.parentElement,discordRow=el('div',undefined,'mm-link-verify-row');discordRow.append(fields.discordUrl);discordWrap.append(discordRow);
     const githubWrap=fields.githubUrl.closest('label'),githubRow=el('div',undefined,'mm-github-inspect-row');githubRow.append(fields.githubUrl);githubWrap.append(githubRow);
     const prefillWrap=el('div'),detection=el('p','', 'mm-hub-note');
+    const githubDescription=el('p','', 'mm-hub-note');
+    githubDescription.dataset.githubDescription='';githubDescription.hidden=true;
     detection.dataset.packageDetection='';detection.setAttribute('role','status');
     let inspectedPackage=null,previewSerial=0,submitting=false,save,autoTimer=null,pendingPreview=null,inspectionState='waiting',pastePending=false,previewWantsPrefill=false;
     const source=el('select');source.name='sourceType';source.setAttribute('aria-label','来源');for(const value of ['github','discord']){const o=el('option',value==='github'?'GitHub':'Discord');o.value=value;source.append(o);}source.value=item?.sourceType||'github';form.prepend(source);
@@ -792,7 +815,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
       platformWrap.hidden=type.value==='tavern_extension';
     }
     function refreshSave(){if(save)save.disabled=submitting;}
-    function invalidatePreview(){++previewSerial;if(autoTimer!==null)host.clearTimeout(autoTimer);autoTimer=null;pendingPreview=null;inspectedPackage=null;inspectionState='waiting';detection.textContent='';refreshProduct();}
+    function invalidatePreview(){++previewSerial;if(autoTimer!==null)host.clearTimeout(autoTimer);autoTimer=null;pendingPreview=null;inspectedPackage=null;inspectionState='waiting';detection.textContent='';githubDescription.textContent='';githubDescription.hidden=true;refreshProduct();}
     type.onchange=()=>{invalidatePreview();scheduleInspection();};refreshProduct();
     const visibilityWrap=el('label','可见范围'),visibility=el('select');visibility.name='visibility';
     for(const [value,label]of [['public','所有人'],['discord_guild','仅该 Discord 服务器成员']]){const option=el('option',label);option.value=value;visibility.append(option);}
@@ -825,6 +848,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
         fields[key].closest('label').hidden=!shown;fields[key].disabled=!shown;
       }
       fields.githubUrl.required=github;fields.discordUrl.required=!github;
+      fields.description.closest('label').hidden=github;fields.description.disabled=github;fields.description.required=!github;
       visibilityWrap.hidden=!github;visibility.disabled=!github;choices?.refresh();
       guildWrap.hidden=!restricted;guildSource.required=restricted;guildSource.disabled=!restricted;
       if(restricted&&!guildSource.value.trim())guildSource.value=fields.discordPostUrl.value.trim();
@@ -834,7 +858,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
     }
     fields.discordUrl.addEventListener('input',clearVerification);
     visibility.onchange=()=>{clearVerification();refreshVisibility();};source.onchange=()=>{clearVerification();invalidatePreview();refreshVisibility();scheduleInspection();};refreshVisibility();
-    prefillWrap.append(detection);githubWrap.append(prefillWrap);
+    prefillWrap.append(detection,githubDescription);githubWrap.append(prefillWrap);
     const validRepository=()=>{try{const u=new URL(fields.githubUrl.value.trim());return u.protocol==='https:'&&u.hostname==='github.com'&&!u.port&&!u.username&&!u.password&&!u.search&&!u.hash&&/^\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9_.-]+\/?$/.test(u.pathname);}catch{return false;}};
     function scheduleInspection(){if(autoTimer!==null)host.clearTimeout(autoTimer);autoTimer=host.setTimeout(()=>{autoTimer=null;if(!disposed&&generation===serial&&form.isConnected)void inspectGithub(false);},0);}
     fields.githubUrl.addEventListener('input',invalidatePreview);
@@ -849,7 +873,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
       if(!manual&&inspectedPackage)return;
       previewWantsPrefill=manual;
       const sourceUrl=fields.githubUrl.value.trim(),request=++previewSerial,declaredType=type.value;
-      const before=Object.fromEntries(['name','author','description','icon'].map(key=>[key,fields[key].value]));
+      const before=Object.fromEntries(['name','author','icon'].map(key=>[key,fields[key].value]));
       inspectedPackage=null;inspectionState='pending';refreshProduct();detection.textContent='正在检测 GitHub Package / Release…';
       const current=()=>!disposed&&generation===serial&&request===previewSerial&&source.value==='github'&&type.value===declaredType&&fields.githubUrl.value.trim()===sourceUrl;
       const task=(async()=>{try{
@@ -857,8 +881,15 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
         if(!current())return;
         inspectedPackage=result;inspectionState='waiting';refreshProduct();
         detection.textContent=result.compatibility==='installable'?'已检测到标准 Hub 可安装扩展包。':'未检测到 Hub 安装包，将作为 GitHub 外部发布项目收录。';
+        const showAbout=value=>{
+          if(!current())return;
+          githubDescription.textContent=(value??'仓库简介暂不可读。')||emptyRepositoryAbout;
+          githubDescription.hidden=false;
+        };
+        if(typeof result.repositoryDescription==='string')showAbout(result.repositoryDescription);
+        else void readRepositoryAbout(sourceUrl).then(showAbout);
         if(previewWantsPrefill){const m=result.manifest||result.github?.manifest;if(!m){report('展示信息请手动填写。');return;}
-          for(const key of ['name','author','description'])if(typeof m[key]==='string'&&fields[key].value===before[key])fields[key].value=m[key];updateDescriptionHint();if(m.iconUrl&&fields.icon.value===before.icon)fields.icon.value=m.iconUrl;
+          for(const key of ['name','author'])if(typeof m[key]==='string'&&fields[key].value===before[key])fields[key].value=m[key];if(m.iconUrl&&fields.icon.value===before.icon)fields.icon.value=m.iconUrl;
           report('已预填，请确认展示信息后提交。读取仓库不会自动创建投稿。');}
       }catch(error){if(current()){inspectionState='error';refreshProduct();detection.textContent='GitHub 检测失败：'+error.message+'。可点击读取 GitHub 资料重试。';}}
       finally{if(current())pendingPreview=null;}})();pendingPreview=task;await task;
@@ -871,7 +902,7 @@ export function createExtensionCenter({host, body, accountContainer, progressCon
       try {
         if(!['github','discord'].includes(source.value)||!productDistribution(type.value,source.value))throw Error('产品类型、来源与分发方式不兼容。');
         const payload={sourceType:source.value,visibility:source.value==='discord'?'discord_guild':visibility.value,type:type.value,platforms:platforms.value.split(',').map(x=>x.trim()).filter(Boolean)};
-        for(const [key,input]of Object.entries(fields))if(!['githubUrl','discordUrl','discordPostUrl'].includes(key))payload[key]=key==='tags'?input.value.split(',').map(x=>x.trim()).filter(Boolean):input.value.trim();
+        for(const [key,input]of Object.entries(fields))if(!input.disabled&&!['githubUrl','discordUrl','discordPostUrl'].includes(key))payload[key]=input.value.trim();
         payload.sourceUrl=(source.value==='github'?fields.githubUrl:fields.discordUrl).value.trim();
         if(source.value==='github')payload.discordPostUrl=fields.discordPostUrl.value.trim();
         if(payload.visibility==='discord_guild')payload.visibilitySourceUrl=source.value==='discord'?payload.sourceUrl:guildSource.value.trim();
